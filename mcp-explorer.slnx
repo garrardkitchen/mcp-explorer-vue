@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Garrard.Mcp.Explorer.Api/Garrard.Mcp.Explorer.Api.csproj" />
+    <Project Path="src/Garrard.Mcp.Explorer.Core/Garrard.Mcp.Explorer.Core.csproj" />
+    <Project Path="src/Garrard.Mcp.Explorer.Gateway/Garrard.Mcp.Explorer.Gateway.csproj" />
+    <Project Path="src/Garrard.Mcp.Explorer.Infrastructure/Garrard.Mcp.Explorer.Infrastructure.csproj" />
+    <Project Path="src/Garrard.Mcp.MessageContentProtection/Garrard.Mcp.MessageContentProtection.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Garrard.Tests.Mcp.Explorer.Api/Garrard.Tests.Mcp.Explorer.Api.csproj" />
+    <Project Path="tests/Garrard.Tests.Mcp.Explorer.Core/Garrard.Tests.Mcp.Explorer.Core.csproj" />
+    <Project Path="tests/Garrard.Tests.Mcp.Explorer.Infrastructure/Garrard.Tests.Mcp.Explorer.Infrastructure.csproj" />
+  </Folder>
+</Solution>

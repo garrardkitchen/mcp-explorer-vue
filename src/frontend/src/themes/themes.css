@@ -1,0 +1,305 @@
+/* ============================================================
+   MCP Explorer — Command Center Theme System
+   All 6 themes defined as CSS custom properties on :root
+   PrimeVue tokens are overridden via the p-* variable pattern.
+   ============================================================ */
+
+/* ----------------------------------------------------------
+   Base design tokens (shared across all themes)
+   ---------------------------------------------------------- */
+:root {
+  --font-family-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --transition-fast: 120ms ease;
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 56px;
+  --topbar-height: 52px;
+  --output-panel-width: 420px;
+}
+
+/* ----------------------------------------------------------
+   Theme: Command Dark (default)
+   ---------------------------------------------------------- */
+:root,
+:root.theme-command-dark {
+  --bg-base:      #0f172a;
+  --bg-surface:   #1e293b;
+  --bg-raised:    #263040;
+  --bg-overlay:   #1a2535;
+  --border:       #2d3f55;
+  --border-focus: #3b82f6;
+
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+  --text-inverse:   #0f172a;
+
+  --accent:         #3b82f6;
+  --accent-hover:   #2563eb;
+  --accent-muted:   rgba(59,130,246,.15);
+
+  --success:  #22c55e;
+  --warning:  #f59e0b;
+  --danger:   #ef4444;
+  --info:     #06b6d4;
+
+  --nav-bg:       #0c1525;
+  --nav-item-hover: rgba(59,130,246,.1);
+  --nav-item-active: rgba(59,130,246,.2);
+  --nav-item-active-border: #3b82f6;
+
+  --code-bg:  #0c1525;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.5);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.6);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------
+   Theme: Command Light
+   ---------------------------------------------------------- */
+:root.theme-command-light {
+  --bg-base:      #f8fafc;
+  --bg-surface:   #ffffff;
+  --bg-raised:    #f1f5f9;
+  --bg-overlay:   #e2e8f0;
+  --border:       #cbd5e1;
+  --border-focus: #3b82f6;
+
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+  --text-inverse:   #f8fafc;
+
+  --accent:         #2563eb;
+  --accent-hover:   #1d4ed8;
+  --accent-muted:   rgba(37,99,235,.1);
+
+  --success:  #16a34a;
+  --warning:  #d97706;
+  --danger:   #dc2626;
+  --info:     #0891b2;
+
+  --nav-bg:       #f1f5f9;
+  --nav-item-hover: rgba(37,99,235,.07);
+  --nav-item-active: rgba(37,99,235,.12);
+  --nav-item-active-border: #2563eb;
+
+  --code-bg:  #f1f5f9;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.1);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.12);
+
+  color-scheme: light;
+}
+
+/* ----------------------------------------------------------
+   Theme: Nord
+   ---------------------------------------------------------- */
+:root.theme-nord {
+  --bg-base:      #2e3440;
+  --bg-surface:   #3b4252;
+  --bg-raised:    #434c5e;
+  --bg-overlay:   #3b4252;
+  --border:       #4c566a;
+  --border-focus: #88c0d0;
+
+  --text-primary:   #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted:     #81a1c1;
+  --text-inverse:   #2e3440;
+
+  --accent:         #88c0d0;
+  --accent-hover:   #81a1c1;
+  --accent-muted:   rgba(136,192,208,.15);
+
+  --success:  #a3be8c;
+  --warning:  #ebcb8b;
+  --danger:   #bf616a;
+  --info:     #5e81ac;
+
+  --nav-bg:       #272e3a;
+  --nav-item-hover: rgba(136,192,208,.1);
+  --nav-item-active: rgba(136,192,208,.18);
+  --nav-item-active-border: #88c0d0;
+
+  --code-bg:  #272e3a;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.5);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.6);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------
+   Theme: Dracula
+   ---------------------------------------------------------- */
+:root.theme-dracula {
+  --bg-base:      #282a36;
+  --bg-surface:   #323443;
+  --bg-raised:    #3d3f50;
+  --bg-overlay:   #2c2e3d;
+  --border:       #44475a;
+  --border-focus: #bd93f9;
+
+  --text-primary:   #f8f8f2;
+  --text-secondary: #cdd6f4;
+  --text-muted:     #6272a4;
+  --text-inverse:   #282a36;
+
+  --accent:         #bd93f9;
+  --accent-hover:   #a87ee8;
+  --accent-muted:   rgba(189,147,249,.15);
+
+  --success:  #50fa7b;
+  --warning:  #f1fa8c;
+  --danger:   #ff5555;
+  --info:     #8be9fd;
+
+  --nav-bg:       #21222c;
+  --nav-item-hover: rgba(189,147,249,.1);
+  --nav-item-active: rgba(189,147,249,.18);
+  --nav-item-active-border: #bd93f9;
+
+  --code-bg:  #21222c;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.5);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.6);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------
+   Theme: Catppuccin Mocha
+   ---------------------------------------------------------- */
+:root.theme-catppuccin {
+  --bg-base:      #1e1e2e;
+  --bg-surface:   #181825;
+  --bg-raised:    #313244;
+  --bg-overlay:   #1e1e2e;
+  --border:       #45475a;
+  --border-focus: #cba6f7;
+
+  --text-primary:   #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-muted:     #585b70;
+  --text-inverse:   #1e1e2e;
+
+  --accent:         #cba6f7;
+  --accent-hover:   #b4a4e8;
+  --accent-muted:   rgba(203,166,247,.15);
+
+  --success:  #a6e3a1;
+  --warning:  #f9e2af;
+  --danger:   #f38ba8;
+  --info:     #89dceb;
+
+  --nav-bg:       #161622;
+  --nav-item-hover: rgba(203,166,247,.1);
+  --nav-item-active: rgba(203,166,247,.18);
+  --nav-item-active-border: #cba6f7;
+
+  --code-bg:  #11111b;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.5);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.6);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------
+   Theme: Solarized Light
+   ---------------------------------------------------------- */
+:root.theme-solarized {
+  --bg-base:      #fdf6e3;
+  --bg-surface:   #eee8d5;
+  --bg-raised:    #e8e1cb;
+  --bg-overlay:   #f5efdc;
+  --border:       #cdc8b1;
+  --border-focus: #268bd2;
+
+  --text-primary:   #002b36;
+  --text-secondary: #586e75;
+  --text-muted:     #93a1a1;
+  --text-inverse:   #fdf6e3;
+
+  --accent:         #268bd2;
+  --accent-hover:   #2176ae;
+  --accent-muted:   rgba(38,139,210,.12);
+
+  --success:  #859900;
+  --warning:  #b58900;
+  --danger:   #dc322f;
+  --info:     #2aa198;
+
+  --nav-bg:       #eee8d5;
+  --nav-item-hover: rgba(38,139,210,.07);
+  --nav-item-active: rgba(38,139,210,.13);
+  --nav-item-active-border: #268bd2;
+
+  --code-bg:  #e8e1cb;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.1);
+
+  color-scheme: light;
+}
+
+/* ----------------------------------------------------------
+   Global base styles
+   ---------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-ui);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar — dark themes */
+:root.dark-mode {
+  scrollbar-color: var(--border) var(--bg-base);
+  scrollbar-width: thin;
+}
+:root.dark-mode ::-webkit-scrollbar { width: 6px; height: 6px; }
+:root.dark-mode ::-webkit-scrollbar-track { background: var(--bg-base); }
+:root.dark-mode ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+:root.dark-mode ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Typography helpers */
+.text-primary   { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-muted     { color: var(--text-muted); }
+.text-accent    { color: var(--accent); }
+.text-success   { color: var(--success); }
+.text-warning   { color: var(--warning); }
+.text-danger    { color: var(--danger); }
+
+/* Monospace */
+code, pre, kbd, .mono {
+  font-family: var(--font-family-mono);
+  font-size: 0.88em;
+}
+
+/* Utility */
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+           overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }

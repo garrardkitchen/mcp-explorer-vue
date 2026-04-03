@@ -1,0 +1,67 @@
+name: mcp-explorer
+
+# ─── Separate-services deployment ─────────────────────────────────────────────
+# Usage:
+#   cp .env.example .env        # fill in your values
+#   docker compose up -d
+#
+# Single-container alternative:
+#   docker build -t mcp-explorer .
+#   docker run -p 8080:8080 -v mcp-data:/root/.local/share/McpExplorer mcp-explorer
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - ASPNETCORE_URLS=http://+:5000
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      - AppMetadata__Version=${AppMetadata__Version:-0.5.0}
+      - LlmService__OpenAiBaseUrl=${LlmService__OpenAiBaseUrl:-https://api.openai.com/v1}
+      - LlmService__TimeoutSeconds=${LlmService__TimeoutSeconds:-30}
+      - Elicitation__TimeoutSeconds=${Elicitation__TimeoutSeconds:-0}
+      # Point to an existing settings.json (e.g. from the original MCP Explorer)
+      # Leave empty to use the default path inside the container (/data/settings.json)
+      - PREFERENCES__StoragePath=${PREFERENCES__StoragePath:-/data/settings.json}
+    volumes:
+      # Mount host settings directory into the container.
+      # Set MCP_DATA_PATH in .env to your existing settings folder, e.g.:
+      #   MCP_DATA_PATH=/Users/you/Library/Application Support/McpExplorer
+      - ${MCP_DATA_PATH:-mcp-data}:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8090}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+
+volumes:
+  # Only used when MCP_DATA_PATH is not set in .env (anonymous fallback volume)
+  mcp-data:
+    driver: local
+
+networks:
+  internal:
+    driver: bridge

@@ -1,0 +1,39 @@
+# .env — secrets, never commit
+.env
+
+# .NET build outputs
+bin/
+obj/
+out/
+*.user
+.vs/
+.vscode/settings.json
+
+# Test results
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+
+# NuGet local cache (not the NuGet.Config itself)
+packages/
+*.nupkg
+
+# Frontend
+src/frontend/node_modules/
+src/frontend/dist/
+src/frontend/.vite/
+
+# Docker data volumes
+docker-data/
+
+# macOS
+.DS_Store
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# User-specific preferences store (if placed in repo root during dev)
+*.json.bak
+McpExplorer/
