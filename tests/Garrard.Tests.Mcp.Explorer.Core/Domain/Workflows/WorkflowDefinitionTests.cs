@@ -85,14 +85,16 @@ public class WorkflowDefinitionTests
     {
         var mapping = new ParameterMapping
         {
-            ParameterName = "city",
-            Value = "London"
+            TargetParameter = "city",
+            SourceType = MappingSourceType.ManualValue,
+            ManualValue = "London"
         };
 
-        Assert.Equal("city", mapping.ParameterName);
-        Assert.Equal("London", mapping.Value);
-        Assert.Null(mapping.SourceStepNumber);
-        Assert.Null(mapping.SourcePropertyName);
+        Assert.Equal("city", mapping.TargetParameter);
+        Assert.Equal("London", mapping.ManualValue);
+        Assert.Equal(MappingSourceType.ManualValue, mapping.SourceType);
+        Assert.Null(mapping.SourceStepIndex);
+        Assert.Null(mapping.SourcePropertyPath);
     }
 
     [Fact]
@@ -100,14 +102,16 @@ public class WorkflowDefinitionTests
     {
         var mapping = new ParameterMapping
         {
-            ParameterName = "fileList",
-            SourceStepNumber = 1,
-            SourcePropertyName = "result"
+            TargetParameter = "fileList",
+            SourceType = MappingSourceType.FromPreviousStep,
+            SourceStepIndex = 0,
+            SourcePropertyPath = "result"
         };
 
-        Assert.Equal(1, mapping.SourceStepNumber);
-        Assert.Equal("result", mapping.SourcePropertyName);
-        Assert.Null(mapping.Value);
+        Assert.Equal(0, mapping.SourceStepIndex);
+        Assert.Equal("result", mapping.SourcePropertyPath);
+        Assert.Equal(MappingSourceType.FromPreviousStep, mapping.SourceType);
+        Assert.Null(mapping.ManualValue);
     }
 
     // ── WorkflowExecution & status transitions ────────────────────────────────

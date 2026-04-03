@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import DataTable from 'primevue/datatable'
@@ -19,10 +19,11 @@ import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import ProgressBar from 'primevue/progressbar'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import WorkflowExecutionViewer from '@/components/workflows/WorkflowExecutionViewer.vue'
 import { workflowsApi } from '@/api/workflows'
 import { connectionsApi } from '@/api/connections'
 import { useConnectionsStore } from '@/stores/connections'
-import type { WorkflowDefinition, WorkflowStep, WorkflowExecution, LoadTestResult, ParameterMapping } from '@/api/types'
+import type { WorkflowDefinition, WorkflowStep, WorkflowExecution, LoadTestResult, ParameterMapping, MappingSourceType, ArrayIterationMode } from '@/api/types'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -63,12 +64,168 @@ const loadTestResult = ref<LoadTestResult | null>(null)
 // Import/Export
 const fileInputRef = ref<HTMLInputElement>()
 
+// Property path browser
+const showPathBrowser = ref(false)
+const pathBrowserPaths = ref<string[]>([])
+const pathBrowserLoading = ref(false)
+const activeMappingForPath = ref<ParameterMapping | null>(null)
+
+function flattenJsonPaths(obj: unknown, prefix = ''): string[] {
+  if (obj === null || obj === undefined) return []
+  const paths: string[] = []
+  if (Array.isArray(obj)) {
+    if (obj.length > 0) {
+      paths.push(`${prefix}[]`)
+      const elementPaths = flattenJsonPaths(obj[0], `${prefix}[]`)
+      paths.push(...elementPaths)
+    }
+  } else if (typeof obj === 'object') {
+    for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+      paths.push(fullKey)
+      if (typeof val === 'object' && val !== null) {
+        paths.push(...flattenJsonPaths(val, fullKey))
+      }
+    }
+  }
+  return paths
+}
+
+async function openPathBrowser(mapping: ParameterMapping, step: WorkflowStep) {
+  activeMappingForPath.value = mapping
+  pathBrowserPaths.value = []
+  pathBrowserLoading.value = true
+  showPathBrowser.value = true
+  try {
+    // step.stepNumber is 1-based; previous step is at 0-based index (stepNumber - 2)
+    const prevStepIdx = mapping.sourceStepIndex === null || mapping.sourceStepIndex === undefined
+      ? step.stepNumber - 2
+      : Number(mapping.sourceStepIndex)
+    if (prevStepIdx < 0) {
+      pathBrowserLoading.value = false
+      return
+    }
+
+    let prevOutputJson: string | undefined
+
+    // 1. Try from live execResult first
+    if (execResult.value?.stepResults?.[prevStepIdx]) {
+      prevOutputJson = execResult.value.stepResults[prevStepIdx].outputJson
+    }
+    // 2. Fall back to most recent history entry
+    if (!prevOutputJson && history.value.length > 0) {
+      prevOutputJson = history.value[0].stepResults?.[prevStepIdx]?.outputJson
+    }
+    // 3. Fall back to a live sample invocation of the previous step's tool
+    if (!prevOutputJson) {
+      const prevStep = form.value.steps?.[prevStepIdx]
+      const connName = execConnName.value || form.value.defaultConnectionName
+      if (prevStep?.toolName && connName) {
+        // Build params from ManualValue mappings only (safe — no side-effectful upstream steps needed)
+        const params: Record<string, unknown> = {}
+        for (const m of prevStep.parameterMappings ?? []) {
+          if (m.sourceType === 'ManualValue' && m.targetParameter && m.manualValue != null) {
+            params[m.targetParameter] = m.manualValue
+          }
+        }
+        const toolResp = await connectionsApi.invokeTool(connName, prevStep.toolName, params)
+        prevOutputJson = toolResp.result
+      }
+    }
+
+    if (prevOutputJson) {
+      const parsed = JSON.parse(prevOutputJson)
+      pathBrowserPaths.value = flattenJsonPaths(parsed)
+    }
+  } catch {
+    // silently ignore — show empty state with helpful message
+  } finally {
+    pathBrowserLoading.value = false
+  }
+}
+
+function selectPath(path: string) {
+  if (activeMappingForPath.value) {
+    activeMappingForPath.value.sourcePropertyPath = path
+  }
+  showPathBrowser.value = false
+}
+
 const errorModeOptions = [
   { label: 'Stop on Error', value: 'StopOnError' },
   { label: 'Continue on Error', value: 'ContinueOnError' },
 ]
 
+const sourceModeOptions = [
+  { label: 'Manual Value', value: 'ManualValue' },
+  { label: 'From Previous Step', value: 'FromPreviousStep' },
+  { label: 'Prompt at Runtime', value: 'PromptAtRuntime' },
+]
+
+const iterationModeOptions = [
+  { label: 'None (as-is)', value: 'None' },
+  { label: 'Each – iterate all elements', value: 'Each' },
+  { label: 'First element only', value: 'First' },
+  { label: 'Last element only', value: 'Last' },
+]
+
+function addMapping(step: WorkflowStep) {
+  step.parameterMappings.push({
+    targetParameter: '',
+    sourceType: 'ManualValue',
+    sourceStepIndex: null,
+    sourcePropertyPath: null,
+    manualValue: null,
+    iterationMode: 'None'
+  })
+}
+
+function removeMapping(step: WorkflowStep, idx: number) {
+  step.parameterMappings.splice(idx, 1)
+}
+
+function pathContainsArray(path?: string | null) {
+  return !!path && /\[/.test(path)
+}
+
 const connectedConnections = computed(() => connStore.activeConnections.filter(c => c.isConnected))
+
+// Tool objects per connection name — stores full ActiveTool so we can extract parameter names
+const connectionToolsMap = ref<Record<string, ActiveTool[]>>({})
+const toolsLoading = ref(false)
+
+async function fetchConnectionTools(connectionName: string) {
+  if (!connectionName) return
+  // Only skip if we already have a non-empty cached list — errors are NOT cached
+  if (connectionToolsMap.value[connectionName]?.length) return
+  toolsLoading.value = true
+  try {
+    const tools = await connectionsApi.getTools(connectionName)
+    connectionToolsMap.value[connectionName] = tools.sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    // Don't cache failures — the connection may not be connected yet; allow re-fetch next time
+  } finally {
+    toolsLoading.value = false
+  }
+}
+
+const currentConnectionToolNames = computed(() => {
+  const name = form.value.defaultConnectionName
+  return name ? (connectionToolsMap.value[name]?.map(t => t.name) ?? []) : []
+})
+
+function getToolParamNames(connectionName: string | undefined, toolName: string): string[] {
+  if (!connectionName || !toolName) return []
+  const tool = connectionToolsMap.value[connectionName]?.find(t => t.name === toolName)
+  if (!tool?.inputSchema) return []
+  const props = (tool.inputSchema as any)?.properties
+  return props ? Object.keys(props).sort() : []
+}
+
+// When the default connection changes in the edit dialog, load its tools
+watch(() => form.value.defaultConnectionName, (name) => {
+  if (name && showEditDialog.value) fetchConnectionTools(name)
+})
 
 async function load() {
   loading.value = true
@@ -89,7 +246,10 @@ function openCreate() {
 function openEdit(wf: WorkflowDefinition) {
   editMode.value = true
   form.value = JSON.parse(JSON.stringify(wf))
+  // Normalise stepNumbers to 1-based for the UI (stored as 0-based in settings.json)
+  form.value.steps?.forEach((s, i) => { s.stepNumber = i + 1 })
   showEditDialog.value = true
+  if (form.value.defaultConnectionName) fetchConnectionTools(form.value.defaultConnectionName)
 }
 
 async function save() {
@@ -291,22 +451,7 @@ onMounted(load)
                   <div v-if="execError" class="error-box"><i class="pi pi-times-circle" /> {{ execError }}</div>
 
                   <div v-if="execResult" class="exec-result">
-                    <div class="result-header">
-                      <Tag :value="execResult.status" :severity="statusSeverity(execResult.status)" />
-                      <span class="muted">{{ formatDuration(execResult.duration) }}</span>
-                    </div>
-                    <div v-for="sr in execResult.stepResults" :key="sr.stepNumber" class="step-result"
-                         :class="{ success: sr.success, error: !sr.success }">
-                      <div class="sr-header">
-                        <span class="step-num">{{ sr.stepNumber }}</span>
-                        <span class="sr-tool">{{ sr.toolName }}</span>
-                        <Tag :value="sr.success ? 'OK' : 'FAIL'" :severity="sr.success ? 'success' : 'danger'" />
-                      </div>
-                      <div v-if="sr.errorMessage" class="sr-error">{{ sr.errorMessage }}</div>
-                      <div v-if="sr.result !== undefined" class="sr-result-wrap">
-                        <JsonViewer :data="sr.result" title="Result" />
-                      </div>
-                    </div>
+                    <WorkflowExecutionViewer :execution="execResult" />
                   </div>
                 </div>
               </TabPanel>
@@ -325,7 +470,7 @@ onMounted(load)
                       <span class="muted">{{ formatDuration(exec.duration) }}</span>
                     </div>
                     <div v-if="selectedExecution" class="exec-detail">
-                      <JsonViewer :data="selectedExecution" title="Execution Detail" :initially-expanded="true" />
+                      <WorkflowExecutionViewer :execution="selectedExecution" />
                     </div>
                   </div>
                 </div>
@@ -407,7 +552,14 @@ onMounted(load)
             <div class="step-editor-body">
               <div class="form-field">
                 <label>Tool Name</label>
-                <InputText v-model="step.toolName" placeholder="e.g. get_weather" class="w-full" />
+                <Select v-if="currentConnectionTools.length > 0"
+                        v-model="step.toolName"
+                        :options="currentConnectionTools"
+                        editable
+                        placeholder="Select or type tool name"
+                        class="w-full"
+                        :loading="toolsLoading" />
+                <InputText v-else v-model="step.toolName" placeholder="e.g. get_weather (connect first to browse)" class="w-full" />
               </div>
               <div class="form-field">
                 <label>Error Handling</label>
@@ -416,6 +568,65 @@ onMounted(load)
               <div v-if="step.notes !== undefined" class="form-field full-width">
                 <label>Notes</label>
                 <InputText v-model="step.notes" class="w-full" />
+              </div>
+            </div>
+
+            <!-- Parameter Mappings -->
+            <div class="param-mappings-section">
+              <div class="param-mappings-header">
+                <span class="section-label">Parameter Mappings</span>
+                <Button label="Add Mapping" icon="pi pi-plus" text size="small" @click="addMapping(step)" />
+              </div>
+              <div v-if="step.parameterMappings.length === 0" class="no-mappings-hint">
+                No mappings — add mappings to pass data between steps or set fixed values.
+              </div>
+              <div v-for="(mapping, mIdx) in step.parameterMappings" :key="mIdx" class="mapping-row">
+                <div class="mapping-fields">
+                  <!-- Target parameter -->
+                  <div class="form-field mapping-field">
+                    <label>Parameter</label>
+                    <InputText v-model="mapping.targetParameter" placeholder="e.g. userId" class="w-full" size="small" />
+                  </div>
+                  <!-- Source type -->
+                  <div class="form-field mapping-field">
+                    <label>Source</label>
+                    <Select v-model="mapping.sourceType" :options="sourceModeOptions" optionLabel="label" optionValue="value" class="w-full" size="small" />
+                  </div>
+                  <!-- Manual value -->
+                  <div v-if="mapping.sourceType === 'ManualValue'" class="form-field mapping-field full-mapping-width">
+                    <label>Value</label>
+                    <InputText v-model="mapping.manualValue" placeholder="Enter value" class="w-full" size="small" />
+                  </div>
+                   <!-- From previous step -->
+                  <template v-if="mapping.sourceType === 'FromPreviousStep'">
+                    <div class="form-field mapping-field">
+                      <label>Step</label>
+                      <Select
+                        :model-value="mapping.sourceStepIndex === null || mapping.sourceStepIndex === undefined ? '__auto__' : String(mapping.sourceStepIndex)"
+                        @update:model-value="v => mapping.sourceStepIndex = v === '__auto__' ? null : Number(v)"
+                        :options="[{ label: 'Previous step (auto)', value: '__auto__' }, ...Array.from({length: step.stepNumber - 1}, (_, i) => ({ label: `Step ${i + 1}`, value: String(i) }))]"
+                        optionLabel="label" optionValue="value" class="w-full" size="small" />
+                    </div>
+                    <div class="form-field mapping-field full-mapping-width">
+                      <label>Property Path</label>
+                      <div class="path-input-row">
+                        <InputText v-model="mapping.sourcePropertyPath" placeholder="e.g. data[0].id or data[].id" class="w-full" size="small" />
+                        <Button icon="pi pi-sitemap" text size="small" v-tooltip="'Browse output fields from previous step'" @click="openPathBrowser(mapping, step)" />
+                      </div>
+                    </div>
+                    <div v-if="pathContainsArray(mapping.sourcePropertyPath)" class="form-field mapping-field full-mapping-width">
+                      <label>Array Iteration</label>
+                      <Select v-model="mapping.iterationMode" :options="iterationModeOptions" optionLabel="label" optionValue="value" class="w-full" size="small" />
+                    </div>
+                  </template>
+                  <!-- Prompt at runtime hint -->
+                  <div v-if="mapping.sourceType === 'PromptAtRuntime'" class="form-field mapping-field full-mapping-width">
+                    <label>Runtime Key</label>
+                    <InputText :model-value="mapping.targetParameter" disabled placeholder="Uses parameter name as key" class="w-full" size="small" />
+                    <small class="muted-sm">Value will be prompted when executing the workflow.</small>
+                  </div>
+                </div>
+                <Button icon="pi pi-times" text severity="danger" size="small" @click="removeMapping(step, mIdx)" />
               </div>
             </div>
           </div>
@@ -428,6 +639,31 @@ onMounted(load)
     </Dialog>
 
     <ConfirmDialog />
+
+    <!-- Property path browser dialog -->
+    <Dialog v-model:visible="showPathBrowser" header="Browse Output Fields" modal :style="{ width: '480px' }">
+      <div class="path-browser">
+        <p class="muted-sm" style="margin-bottom:12px">
+          Select a property path from the previous step's output. Use <code>[]</code> paths with <strong>Each</strong> iteration to loop over arrays.
+        </p>
+        <div v-if="pathBrowserLoading" class="path-browser-empty">Loading fields from tool…</div>
+        <div v-else-if="pathBrowserPaths.length === 0" class="path-browser-empty">
+          No output available. Ensure the connection is active and the previous step's tool name is set.
+        </div>
+        <div v-else class="path-list">
+          <button
+            v-for="path in pathBrowserPaths"
+            :key="path"
+            class="path-item"
+            :class="{ 'is-array': path.includes('[]') }"
+            @click="selectPath(path)"
+          >
+            <i :class="path.includes('[]') ? 'pi pi-list' : 'pi pi-key'" />
+            <code>{{ path }}</code>
+          </button>
+        </div>
+      </div>
+    </Dialog>
   </div>
 </template>
 
@@ -499,6 +735,25 @@ onMounted(load)
 .step-editor-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .step-order-btns { display:flex; }
 .step-editor-body { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.param-mappings-section { margin-top:10px; border-top:1px solid var(--border); padding-top:10px; }
+.param-mappings-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.no-mappings-hint { font-size:12px; color:var(--text-muted); padding:4px 0 8px; }
+.mapping-row { display:flex; align-items:flex-start; gap:8px; padding:8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--border-radius-sm); margin-bottom:6px; }
+.mapping-fields { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.mapping-field { }
+.full-mapping-width { grid-column:1 / -1; }
 .native-num-input { width:100%; background:var(--bg-raised); border:1px solid var(--border); color:var(--text-primary); padding:8px 10px; border-radius:var(--border-radius-sm); font-size:14px; }
 .native-num-input:focus { outline:none; border-color:var(--accent); }
+.path-input-row { display:flex; align-items:center; gap:4px; }
+.path-input-row .p-inputtext { flex:1; }
+/* Property path browser */
+.path-browser { }
+.path-browser-empty { color:var(--text-muted); font-size:13px; padding:12px 0; text-align:center; }
+.path-list { display:flex; flex-direction:column; gap:4px; max-height:380px; overflow-y:auto; }
+.path-item { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--border-radius-sm); cursor:pointer; text-align:left; font-size:13px; transition:var(--transition-fast); }
+.path-item:hover { background:var(--nav-item-hover); border-color:var(--accent); }
+.path-item.is-array { border-left:2px solid var(--accent); }
+.path-item i { color:var(--text-muted); font-size:11px; flex-shrink:0; }
+.path-item.is-array i { color:var(--accent); }
+.path-item code { font-family:var(--font-family-mono); font-size:12px; color:var(--text-primary); word-break:break-all; }
 </style>

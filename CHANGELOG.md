@@ -2,6 +2,38 @@
 
 All notable changes to MCP Explorer v2 are documented here.
 
+## [Unreleased] — 2026-04-04 (10)
+- fix: Extract `McpToolResultHelper.ConvertToJson` shared helper — used by both `WorkflowService` and `ConnectionService.InvokeToolAsync` so all tool result JSON is consistent (real response, not raw MCP content blocks)
+- fix: `isError` flag now propagated for all code paths in tool result conversion, including when `StructuredContent` is present or the text is valid JSON (HIGH severity bug caught in code review)
+- fix: Property path browser now falls back to live tool invocation of the previous step (using ManualValue params) when no cached execution output exists — no longer requires executing the workflow first
+- fix: Don't cache empty tool lists on connection errors — allows re-fetch once the connection becomes available (MEDIUM severity bug caught in code review)
+- fix: `ConnectionService.InvokeToolAsync` now returns real tool response JSON instead of raw MCP content blocks — also fixes ToolsView display
+- fix: Port `ConvertToolResultToJson` from v1 — `outputJson` now contains real tool response JSON instead of raw MCP `[{type, text}]` content blocks; fixes property path browser, manual-value chaining, and downstream property extraction
+- fix: Tool name field in workflow step editor is now a `Select` dropdown populated from the connected connection's tools (falls back to `InputText` when connection is not connected or has no tools)
+- fix: `sourceStepIndex` dropdown no longer loses persisted value — replaced `null` option value with `'__auto__'` sentinel to avoid PrimeVue Select's known issue with falsy option values
+- fix: Watch `defaultConnectionName` in workflow edit dialog to eagerly load tool list when connection changes
+
+- fix: Port array iteration execution from v1 — `ExecuteStepWithIterationAsync`, `ExtractArrayElementsForIteration`, `NavigateJsonPath`, `ApplyIterationModeFilter` now handle Each/First/Last iteration modes
+- fix: `ParseJsonPath` now recognises empty brackets `[]` as array iteration marker (supports `data[].id` paths)
+- fix: `BuildParameters` accepts `iterationOverrides` dict and skips mappings with empty `targetParameter`
+- fix: Guard negative array indices in `ExtractJsonPathValue` and `NavigateJsonPath`
+- fix: Clear error message when first workflow step attempts array iteration (no previous results)
+- feat: Property path browser — 🔍 button next to sourcePropertyPath opens a dialog listing all selectable paths extracted from the previous step's output JSON (from live run or most recent history)
+- fix: `openEdit` now normalises stepNumbers to 1-based so "previous step" dropdown generates correct option count
+- fix: `openPathBrowser` uses array indexing (not stepNumber matching) for reliable result lookup across 0-based and 1-based stored data
+
+## [Unreleased] — 2026-04-03 (8)
+- fix: ParameterMapping rewritten to match v1 model — TargetParameter, SourceType (ManualValue/FromPreviousStep/PromptAtRuntime), SourceStepIndex, SourcePropertyPath (JSONPath with array indexing), ManualValue, IterationMode (None/Each/First/Last)
+- fix: WorkflowService.BuildParameters ported from v1 — proper MappingSourceType switch, ExtractJsonPathValue with bracket notation, ConvertJsonNodeToValue
+- feat: Workflow edit dialog now shows full parameter mapping UI per step — source type selector, conditional fields for each mode, array iteration mode when path contains brackets
+- fix: Tests updated to use new ParameterMapping field names
+
+## [Unreleased] — 2026-04-03 (7)
+- feat: Workflow execution viewer — rich step-tabs UI showing Input Parameters and Output Result JSON per step
+- feat: WorkflowStepResult now persists InputJson/OutputJson/StepExecutionStatus for new executions
+- feat: MCP error banner shown when tool response contains isError=true
+- feat: Legacy history entries with `result` field still render correctly via fallback
+
 ## [Unreleased] — 2026-04-03 (6)
 
 - Add: Connection Groups CRUD — `GET/POST/PUT/DELETE /api/v1/connections/groups` now persists `ConnectionGroup` objects (name, color, description) in `UserPreferences.ConnectionGroups` instead of deriving group names from connections

@@ -173,11 +173,16 @@ export interface UserPreferences {
 
 export type ErrorHandlingMode = 'StopOnError' | 'ContinueOnError'
 
+export type MappingSourceType = 'FromPreviousStep' | 'PromptAtRuntime' | 'ManualValue'
+export type ArrayIterationMode = 'None' | 'Each' | 'First' | 'Last'
+
 export interface ParameterMapping {
-  parameterName: string
-  value?: string
-  sourceStepNumber?: number
-  sourcePropertyName?: string
+  targetParameter: string
+  sourceType: MappingSourceType
+  sourceStepIndex?: number | null
+  sourcePropertyPath?: string | null
+  manualValue?: string | null
+  iterationMode: ArrayIterationMode
 }
 
 export interface WorkflowStep {
@@ -201,14 +206,21 @@ export interface WorkflowDefinition {
 
 export type WorkflowExecutionStatus = 'Running' | 'Completed' | 'Failed' | 'PartiallyCompleted'
 
+export type StepExecutionStatus = 'Pending' | 'Running' | 'Completed' | 'Failed' | 'Skipped'
+
 export interface WorkflowStepResult {
   stepNumber: number
   toolName: string
-  startedUtc: string
+  status: StepExecutionStatus
+  startedUtc?: string
   completedUtc?: string
-  success: boolean
-  result?: unknown
+  duration?: string
+  inputJson?: string
+  outputJson?: string
   errorMessage?: string
+  // legacy fields (still returned by old history entries)
+  success?: boolean
+  result?: unknown
 }
 
 export interface WorkflowExecution {

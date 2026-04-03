@@ -213,7 +213,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         var result = await connection.Context.Client
             .CallToolAsync(toolName, parameters, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        return JsonSerializer.Serialize(result.Content);
+        return McpToolResultHelper.ConvertToJson(result);
     }
 
     public async Task<string> ExecutePromptAsync(
