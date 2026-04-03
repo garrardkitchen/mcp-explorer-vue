@@ -48,6 +48,10 @@ const execConnName = ref('')
 const execResult = ref<WorkflowExecution | null>(null)
 const execError = ref<string | null>(null)
 
+// Runtime parameter prompt dialog
+const showRuntimeParamsDialog = ref(false)
+const runtimeParamPrompts = ref<{ key: string; label: string; value: string }[]>([])
+
 // History
 const history = ref<WorkflowExecution[]>([])
 const historyLoading = ref(false)
@@ -301,9 +305,33 @@ async function loadHistory(id: string) {
 
 async function execute() {
   if (!selectedWorkflow.value) return
+
+  // Collect all PromptAtRuntime mappings across all steps
+  const prompts: { key: string; label: string; value: string }[] = []
+  const seen = new Set<string>()
+  for (const step of selectedWorkflow.value.steps ?? []) {
+    for (const m of step.parameterMappings ?? []) {
+      if (m.sourceType === 'PromptAtRuntime' && m.targetParameter && !seen.has(m.targetParameter)) {
+        seen.add(m.targetParameter)
+        prompts.push({ key: m.targetParameter, label: m.targetParameter, value: '' })
+      }
+    }
+  }
+
+  if (prompts.length > 0) {
+    runtimeParamPrompts.value = prompts
+    showRuntimeParamsDialog.value = true
+    return
+  }
+
+  await executeWithRuntimeParams({})
+}
+
+async function executeWithRuntimeParams(runtimeParameters: Record<string, string>) {
+  if (!selectedWorkflow.value) return
   executing.value = true; execResult.value = null; execError.value = null
   try {
-    const r = await workflowsApi.execute(selectedWorkflow.value.id, execConnName.value)
+    const r = await workflowsApi.execute(selectedWorkflow.value.id, execConnName.value, runtimeParameters)
     execResult.value = r
     await loadHistory(selectedWorkflow.value.id)
     toast.add({ severity: r.status === 'Completed' ? 'success' : 'warn', summary: `Execution ${r.status}`, life: 3000 })
@@ -311,6 +339,13 @@ async function execute() {
     execError.value = e.message
     toast.add({ severity: 'error', summary: 'Execution failed', detail: e.message, life: 5000 })
   } finally { executing.value = false }
+}
+
+async function confirmRuntimeParams() {
+  showRuntimeParamsDialog.value = false
+  const rp: Record<string, string> = {}
+  for (const p of runtimeParamPrompts.value) rp[p.key] = p.value
+  await executeWithRuntimeParams(rp)
 }
 
 async function runLoadTest() {
@@ -666,6 +701,23 @@ onMounted(load)
     </Dialog>
 
     <ConfirmDialog />
+
+    <!-- Runtime parameter prompts dialog -->
+    <Dialog v-model:visible="showRuntimeParamsDialog" header="🔑 Runtime Parameters" modal :style="{ width: '440px' }" :closable="!executing">
+      <div class="runtime-params-dialog">
+        <p class="muted-sm" style="margin-bottom: 16px">
+          This workflow requires values for the following parameters before it can run.
+        </p>
+        <div v-for="prompt in runtimeParamPrompts" :key="prompt.key" class="form-field" style="margin-bottom: 14px">
+          <label>{{ prompt.label }}</label>
+          <InputText v-model="prompt.value" :placeholder="`Enter value for ${prompt.label}`" class="w-full" autofocus />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="showRuntimeParamsDialog = false" />
+        <Button label="Run Workflow" icon="pi pi-play" @click="confirmRuntimeParams" :loading="executing" />
+      </template>
+    </Dialog>
 
     <!-- Property path browser dialog -->
     <Dialog v-model:visible="showPathBrowser" header="Browse Output Fields" modal :style="{ width: '480px' }">
