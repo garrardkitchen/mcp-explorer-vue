@@ -1,6 +1,6 @@
 // src/api/workflows.ts
 import { apiClient } from './client'
-import type { WorkflowDefinition, WorkflowExecution, LoadTestResult } from './types'
+import type { WorkflowDefinition, WorkflowExecution, LoadTestResult, LoadTestProgress } from './types'
 
 export const workflowsApi = {
   getAll: () => apiClient.get<WorkflowDefinition[]>('/workflows').then(r => r.data),
@@ -19,8 +19,14 @@ export const workflowsApi = {
   getHistory: (id: string) =>
     apiClient.get<WorkflowExecution[]>(`/workflows/${id}/history`).then(r => r.data),
 
-  runLoadTest: (id: string, connectionName: string, durationSeconds: number, maxParallel: number, runtimeParameters?: Record<string, string>) =>
-    apiClient.post<LoadTestResult>(`/workflows/${id}/load-test`, { connectionName, durationSeconds, maxParallel, runtimeParameters }).then(r => r.data),
+  startLoadTest: (id: string, connectionName: string, durationSeconds: number, maxParallel: number, runtimeParameters?: Record<string, string>) =>
+    apiClient.post<{ runId: string }>(`/workflows/${id}/load-test`, { connectionName, durationSeconds, maxParallel, runtimeParameters }).then(r => r.data),
+
+  getLoadTestProgress: (runId: string) =>
+    apiClient.get<LoadTestProgress>(`/workflows/load-test-progress/${runId}`).then(r => r.data),
+
+  getLoadTestHistory: (id: string) =>
+    apiClient.get<LoadTestResult[]>(`/workflows/${id}/load-test-history`).then(r => r.data),
 
   exportToJson: (id: string) =>
     apiClient.get<string>(`/workflows/export/${id}`).then(r => r.data),

@@ -236,8 +236,19 @@ export interface WorkflowExecution {
   duration: string
 }
 
+export interface LoadTestSnapshot {
+  elapsedMs: number
+  cumulativeSuccesses: number
+  cumulativeFailures: number
+  activeExecutions: number
+}
+
 export interface LoadTestResult {
   workflowId: string
+  workflowName: string
+  connectionName: string
+  durationSeconds: number
+  maxParallelExecutions: number
   startedUtc: string
   completedUtc: string
   totalRequests: number
@@ -249,6 +260,18 @@ export interface LoadTestResult {
   p90ResponseMs: number
   p99ResponseMs: number
   errorRate: number
+  snapshots: LoadTestSnapshot[]
+}
+
+export interface LoadTestProgress {
+  runId: string
+  isComplete: boolean
+  percentComplete: number
+  totalExecutions: number
+  successfulExecutions: number
+  failedExecutions: number
+  activeExecutions: number
+  result?: LoadTestResult
 }
 
 export interface ElicitationRequest {

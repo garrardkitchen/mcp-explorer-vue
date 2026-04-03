@@ -203,6 +203,7 @@ public sealed class WorkflowService : IWorkflowService
         int durationSeconds,
         int maxParallelExecutions,
         Dictionary<string, string>? runtimeParameters = null,
+        Action<LoadTestProgress>? progressCallback = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
@@ -211,8 +212,9 @@ public sealed class WorkflowService : IWorkflowService
         var started = DateTime.UtcNow;
         var endTime = started.AddSeconds(durationSeconds);
 
-        int totalRequests = 0, successful = 0, failed = 0;
+        int totalRequests = 0, successful = 0, failed = 0, active = 0;
         var durations = new System.Collections.Concurrent.ConcurrentBag<double>();
+        var snapshots = new System.Collections.Concurrent.ConcurrentBag<LoadTestSnapshot>();
 
         using var durationCts = new CancellationTokenSource(TimeSpan.FromSeconds(durationSeconds));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, durationCts.Token);
@@ -220,11 +222,40 @@ public sealed class WorkflowService : IWorkflowService
         var semaphore = new SemaphoreSlim(maxParallelExecutions);
         var tasks = new List<Task>();
 
+        // Snapshot timer — fires every second
+        var snapshotTimer = progressCallback is not null ? Task.Run(async () =>
+        {
+            while (!linked.Token.IsCancellationRequested)
+            {
+                await Task.Delay(1000, linked.Token).ConfigureAwait(false);
+                var elapsed = (DateTime.UtcNow - started).TotalMilliseconds;
+                var pct = Math.Min(100.0, elapsed / (durationSeconds * 1000.0) * 100.0);
+                var snap = new LoadTestSnapshot
+                {
+                    ElapsedMs = elapsed,
+                    CumulativeSuccesses = Volatile.Read(ref successful),
+                    CumulativeFailures = Volatile.Read(ref failed),
+                    ActiveExecutions = Volatile.Read(ref active)
+                };
+                snapshots.Add(snap);
+                progressCallback(new LoadTestProgress
+                {
+                    IsComplete = false,
+                    PercentComplete = pct,
+                    TotalExecutions = Volatile.Read(ref totalRequests),
+                    SuccessfulExecutions = Volatile.Read(ref successful),
+                    FailedExecutions = Volatile.Read(ref failed),
+                    ActiveExecutions = Volatile.Read(ref active)
+                });
+            }
+        }, CancellationToken.None) : Task.CompletedTask;
+
         while (!linked.Token.IsCancellationRequested && DateTime.UtcNow < endTime)
         {
             await semaphore.WaitAsync(linked.Token).ConfigureAwait(false);
 
             Interlocked.Increment(ref totalRequests);
+            Interlocked.Increment(ref active);
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             var t = Task.Run(async () =>
@@ -242,6 +273,7 @@ public sealed class WorkflowService : IWorkflowService
                 }
                 finally
                 {
+                    Interlocked.Decrement(ref active);
                     semaphore.Release();
                 }
             }, linked.Token);
@@ -252,26 +284,34 @@ public sealed class WorkflowService : IWorkflowService
         try { await Task.WhenAll(tasks).ConfigureAwait(false); } catch { /* ignore */ }
 
         var completed = DateTime.UtcNow;
-        var elapsed = (completed - started).TotalSeconds;
+        var elapsed2 = (completed - started).TotalSeconds;
         var sortedDurations = durations.OrderBy(d => d).ToList();
 
         double Percentile(double p) => sortedDurations.Count == 0 ? 0 :
             sortedDurations[Math.Min(sortedDurations.Count - 1, (int)(sortedDurations.Count * p / 100.0))];
 
+        var workflow = await GetByIdAsync(workflowId, cancellationToken).ConfigureAwait(false);
+        var workflowName = workflow?.Name ?? workflowId;
+
         return new LoadTestResult
         {
             WorkflowId = workflowId,
+            WorkflowName = workflowName,
+            ConnectionName = connectionName,
+            DurationSeconds = durationSeconds,
+            MaxParallelExecutions = maxParallelExecutions,
             StartedUtc = started,
             CompletedUtc = completed,
             TotalRequests = totalRequests,
             SuccessfulRequests = successful,
             FailedRequests = failed,
-            RequestsPerSecond = elapsed > 0 ? totalRequests / elapsed : 0,
+            RequestsPerSecond = elapsed2 > 0 ? totalRequests / elapsed2 : 0,
             AverageResponseMs = sortedDurations.Count > 0 ? sortedDurations.Average() : 0,
             P50ResponseMs = Percentile(50),
             P90ResponseMs = Percentile(90),
             P99ResponseMs = Percentile(99),
-            ErrorRate = totalRequests > 0 ? (double)failed / totalRequests : 0
+            ErrorRate = totalRequests > 0 ? (double)failed / totalRequests : 0,
+            Snapshots = snapshots.OrderBy(s => s.ElapsedMs).ToList()
         };
     }
 

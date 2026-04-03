@@ -2,6 +2,34 @@
 
 All notable changes to MCP Explorer v2 are documented here.
 
+## [Unreleased] — 2026-04-04 (17)
+- fix: Load test results and snapshots now save correctly — background `Task.Run` was capturing the HTTP request's `CancellationToken` which gets cancelled when the response is returned; changed to `CancellationToken.None` for both `RunLoadTestAsync` and `SaveResultAsync`
+- fix: `📊` chart button is no longer disabled for new runs (snapshots now persist)
+- fix: Progress bar and percentage label no longer show decimal places (`Math.round()`)
+- feat: Load test form redesigned as a single compact horizontal row (Connection flex-1, Duration + Max Parallel side-by-side, Run button)
+- feat: Load test history item stats now show duration and max parallel as a grouped pair (⏱ Xs · ⚡ Y×) with totals/success/fail right-aligned
+- feat: Load test history list expanded from `max-height:220px` to `max-height:340px` for better space utilisation
+
+## [Unreleased] — 2026-04-04 (16)
+- feat: Load test history items now show duration, max parallel, total/successful/failed executions inline
+- feat: Load test now runs asynchronously — `POST /{id}/load-test` returns `{ runId }` immediately; frontend polls `GET /workflows/load-test-progress/{runId}` every second
+- feat: Progress dialog shows live percentage bar, total executions, successful, failed, and active counts during execution
+- feat: `📊` button on each history item opens a chart dialog with line graph of Cumulative Successes, Cumulative Failures, and Active Executions (dashed) over elapsed time — powered by Chart.js via PrimeVue Chart component
+- feat: `LoadTestResult` gains `DurationSeconds`, `MaxParallelExecutions`, and `Snapshots[]` (one per second) fields
+- feat: `LoadTestProgress` domain record tracks live run state; `LoadTestService` stores per-runId progress in `ConcurrentDictionary`
+- fix: `active` execution counter tracked via `Interlocked.Increment/Decrement` around each task
+
+## [Unreleased] — 2026-04-04 (15)
+- fix: `LoadTestService` now derives its storage directory from `IUserPreferencesStore.StoragePath` instead of the platform-specific path — results are written to `/data/load_tests` inside the container (the mounted volume) rather than the ephemeral `~/.local/share/McpExplorer/load_tests`
+- fix: `LoadTestService` is now properly injected with `IUserPreferencesStore` via constructor DI; static initialiser removed
+
+## [Unreleased] — 2026-04-04 (14)
+- feat: Load test results are now persisted to disk after each run via `LoadTestService.SaveResultAsync`
+- feat: New `GET /api/v1/workflows/{id}/load-test-history` endpoint returns all saved load test runs for a workflow
+- feat: Load Test tab now shows a scrollable history list — click any entry to expand its full stats (P50/P90/P99, req/s, connection name, error rate badge)
+- feat: `LoadTestResult` gains `WorkflowName` and `ConnectionName` fields for richer history display
+- fix: `WorkflowsController.LoadTest` now injects `LoadTestService` and calls `SaveResultAsync` — previously results were discarded after every run
+
 ## [Unreleased] — 2026-04-04 (13)
 - feat: Workflow execute now detects `PromptAtRuntime` parameter mappings and shows a dialog to collect values before running — values are passed as `runtimeParameters` to the API
 
