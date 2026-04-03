@@ -23,7 +23,7 @@ import WorkflowExecutionViewer from '@/components/workflows/WorkflowExecutionVie
 import { workflowsApi } from '@/api/workflows'
 import { connectionsApi } from '@/api/connections'
 import { useConnectionsStore } from '@/stores/connections'
-import type { WorkflowDefinition, WorkflowStep, WorkflowExecution, LoadTestResult, ParameterMapping, MappingSourceType, ArrayIterationMode } from '@/api/types'
+import type { WorkflowDefinition, WorkflowStep, WorkflowExecution, LoadTestResult, ParameterMapping, MappingSourceType, ArrayIterationMode, ActiveTool } from '@/api/types'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -552,9 +552,9 @@ onMounted(load)
             <div class="step-editor-body">
               <div class="form-field">
                 <label>Tool Name</label>
-                <Select v-if="currentConnectionTools.length > 0"
+                <Select v-if="currentConnectionToolNames.length > 0"
                         v-model="step.toolName"
-                        :options="currentConnectionTools"
+                        :options="currentConnectionToolNames"
                         editable
                         placeholder="Select or type tool name"
                         class="w-full"
@@ -585,7 +585,13 @@ onMounted(load)
                   <!-- Target parameter -->
                   <div class="form-field mapping-field">
                     <label>Parameter</label>
-                    <InputText v-model="mapping.targetParameter" placeholder="e.g. userId" class="w-full" size="small" />
+                    <Select v-if="getToolParamNames(form.defaultConnectionName, step.toolName).length > 0"
+                            v-model="mapping.targetParameter"
+                            :options="getToolParamNames(form.defaultConnectionName, step.toolName)"
+                            editable
+                            placeholder="Select parameter"
+                            class="w-full" size="small" />
+                    <InputText v-else v-model="mapping.targetParameter" placeholder="e.g. userId" class="w-full" size="small" />
                   </div>
                   <!-- Source type -->
                   <div class="form-field mapping-field">
