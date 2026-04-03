@@ -25,6 +25,6 @@ export const workflowsApi = {
   exportToJson: (id: string) =>
     apiClient.get<string>(`/workflows/export/${id}`).then(r => r.data),
 
-  importFromJson: (json: string) =>
-    apiClient.post<WorkflowDefinition>('/workflows/import', json).then(r => r.data),
+  importFromJson: (workflow: unknown) =>
+    apiClient.post<WorkflowDefinition>('/workflows/import', workflow).then(r => r.data),
 }

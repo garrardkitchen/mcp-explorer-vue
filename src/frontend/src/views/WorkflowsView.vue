@@ -350,11 +350,32 @@ async function exportWorkflow(wf: WorkflowDefinition) {
 }
 
 function triggerImport() { fileInputRef.value?.click() }
+
+function resolveUniqueName(baseName: string): string {
+  const existing = new Set(workflows.value.map(w => w.name))
+  if (!existing.has(baseName)) return baseName
+  // Strip any existing "(vN)" suffix so we don't pile up "(v2) (v3)"
+  const stripped = baseName.replace(/\s*\(v\d+\)$/, '')
+  let n = 2
+  while (existing.has(`${stripped} (v${n})`)) n++
+  return `${stripped} (v${n})`
+}
+
 async function onImportFile(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return
   try {
     const text = await file.text()
-    await workflowsApi.importFromJson(text)
+    let parsed: any
+    try { parsed = JSON.parse(text) } catch { throw new Error('File is not valid JSON') }
+    // Export uses PascalCase ("Name"); camelCase ("name") is also accepted for interop
+    const nameKey = 'name' in parsed ? 'name' : 'Name'
+    const originalName: string = parsed[nameKey] ?? 'Imported Workflow'
+    const resolvedName = resolveUniqueName(originalName)
+    if (resolvedName !== originalName) {
+      parsed[nameKey] = resolvedName
+      toast.add({ severity: 'info', summary: 'Name conflict', detail: `Imported as "${resolvedName}"`, life: 4000 })
+    }
+    await workflowsApi.importFromJson(parsed)
     await load(); toast.add({ severity: 'success', summary: 'Imported', life: 2000 })
   } catch (e: any) { toast.add({ severity: 'error', summary: 'Import failed', detail: e.message, life: 5000 }) }
   finally { if (fileInputRef.value) fileInputRef.value.value = '' }

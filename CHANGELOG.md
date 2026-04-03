@@ -2,6 +2,12 @@
 
 All notable changes to MCP Explorer v2 are documented here.
 
+## [Unreleased] — 2026-04-04 (12)
+- fix: `ImportFromJson` now uses `PropertyNameCaseInsensitive = true` so both PascalCase (exported files) and camelCase (settings.json) workflow JSON are deserialized correctly
+- fix: `WorkflowsController.Import` now accepts `[FromBody] JsonElement` — resolves 400 Bad Request when Axios posts a JSON object body
+- fix: Frontend `importFromJson` now sends the parsed object directly to Axios instead of re-stringifying, preventing `text/plain` body rejection
+- fix: `workflowsApi.importFromJson` parameter type changed from `string` to `unknown` to match the corrected call site
+
 ## [Unreleased] — 2026-04-03 (11)
 - fix: Parameter field in workflow step mappings is now a `Select` dropdown populated from the selected tool's `inputSchema.properties` — prevents entering invalid parameter names; falls back to `InputText` when tool schema is unavailable
 - fix: `connectionToolsMap` now stores full `ActiveTool[]` objects (was just names) so `inputSchema` is available for parameter name extraction

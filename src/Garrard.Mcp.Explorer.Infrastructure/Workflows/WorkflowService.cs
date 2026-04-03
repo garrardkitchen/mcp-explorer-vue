@@ -286,7 +286,9 @@ public sealed class WorkflowService : IWorkflowService
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         try
         {
-            var w = JsonSerializer.Deserialize<WorkflowDefinition>(json);
+            // PropertyNameCaseInsensitive handles both PascalCase (exported files) and camelCase (settings.json)
+            var opts = new JsonSerializerOptions(JsonOpts) { PropertyNameCaseInsensitive = true };
+            var w = JsonSerializer.Deserialize<WorkflowDefinition>(json, opts);
             if (w is not null)
                 w = w with { Id = Guid.NewGuid().ToString(), CreatedUtc = DateTime.UtcNow, ModifiedUtc = DateTime.UtcNow };
             return w;

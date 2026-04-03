@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Garrard.Mcp.Explorer.Core.Domain.Workflows;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 
@@ -50,9 +51,9 @@ public sealed class WorkflowsController(IWorkflowService workflowService) : Cont
     }
 
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromBody] string json, CancellationToken ct)
+    public async Task<IActionResult> Import([FromBody] JsonElement payload, CancellationToken ct)
     {
-        var wf = workflowService.ImportFromJson(json);
+        var wf = workflowService.ImportFromJson(payload.GetRawText());
         if (wf is null) return BadRequest("Invalid workflow JSON.");
         return Ok(await workflowService.CreateAsync(wf, ct));
     }
