@@ -659,7 +659,8 @@ onMounted(load)
                         <input v-model.number="loadTestParallel" type="number" min="1" max="50" class="native-num-input" />
                       </div>
                     </div>
-                    <div class="load-test-run-btn">
+                    <div class="form-field load-test-run-btn">
+                      <label>&nbsp;</label>
                       <Button label="Run Load Test" icon="pi pi-chart-bar" :loading="loadTestRunning" :disabled="!loadTestConnName" @click="runLoadTest" />
                     </div>
                   </div>
@@ -1043,7 +1044,7 @@ onMounted(load)
 .load-test-conn-field { flex:1; min-width:0; }
 .load-test-num-fields { display:flex; gap:8px; flex-shrink:0; }
 .load-test-num-fields .form-field { width:100px; }
-.load-test-run-btn { flex-shrink:0; align-self:end; }
+.load-test-run-btn { flex-shrink:0; }
 .load-test-results { }
 .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
 .stat-card { background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--border-radius-sm); padding:12px; text-align:center; }
