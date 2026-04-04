@@ -3,6 +3,12 @@
 ## [Unreleased] - 2026-04-04
 
 ### Added
+- Two additional light themes: **Material Light** (Material Design 3 light scheme — deep violet `#6750a4` accent, M3 tonal surface container layers, `#fffbfe` base) and **GitHub Light** (GitHub Primer light palette — GitHub blue `#0969da` accent, exact canvas/border values from github.com `#ffffff` base). The theme switcher now offers 10 themes total (6 dark, 4 light).
+
+### Added
+- Two new themes: **Material Dark** (Material Design 3 dark scheme — tonal violet `#d0bcff` accent, M3 tonal surface layers) and **GitHub Dark** (GitHub Primer dark palette — GitHub blue `#58a6ff` accent, exact canvas/border values from github.com). Both themes are dark mode and appear in the theme switcher alongside the existing 6 themes.
+
+### Added
 - Elicitation dialog now renders **radio buttons** for single-select enum schemas (`UntitledSingleSelectEnumSchema` → `{type:"string",enum:[...]}`, `TitledSingleSelectEnumSchema` → `{type:"string",oneOf:[{const,title}]}`) and **checkboxes** for multi-select schemas (`UntitledMultiSelectEnumSchema` → `{type:"array",items:{enum:[...]}}`, `TitledMultiSelectEnumSchema` → `{type:"array",items:{anyOf:[{const,title}]}}`). Options render as styled interactive cards with a highlighted border and custom radio/check indicator when selected. Multi-select values are submitted as a JSON array.
 
 ### Fixed
