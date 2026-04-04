@@ -1,6 +1,28 @@
 # Changelog
 
-## [Unreleased] - 2025-04-05
+## [Unreleased] - 2026-04-04
+
+### Added
+- Elicitation dialog now renders **radio buttons** for single-select enum schemas (`UntitledSingleSelectEnumSchema` → `{type:"string",enum:[...]}`, `TitledSingleSelectEnumSchema` → `{type:"string",oneOf:[{const,title}]}`) and **checkboxes** for multi-select schemas (`UntitledMultiSelectEnumSchema` → `{type:"array",items:{enum:[...]}}`, `TitledMultiSelectEnumSchema` → `{type:"array",items:{anyOf:[{const,title}]}}`). Options render as styled interactive cards with a highlighted border and custom radio/check indicator when selected. Multi-select values are submitted as a JSON array.
+
+### Fixed
+- Elicitation dialog now correctly renders all schema fields (boolean toggle, enum dropdown, number input, date picker, string input). Root cause was two bugs: (1) schema property objects were stored as `Dictionary<string, object>` causing STJ to emit `{}` for each field due to polymorphic boxing — fixed by serializing each property using its concrete runtime type via `JsonSerializer.SerializeToElement`; (2) `ElicitationDialog.vue` was looking for `schema.properties` but the backend sends properties as the schema root — fixed to iterate the schema map directly
+- Elicitation number fields now correctly coerce the HTML string input value to a number before sending to the backend (MCP server calls `GetInt32()`/`GetDouble()` on the `JsonElement`)
+- Elicitation date/datetime fields now render a native `<input type="date">` / `<input type="datetime-local">` instead of a plain text field
+- Type-pill in field rows now shows the format when present (e.g. `string (date)`)
+
+### Added
+- Elicitation dialogs now appear directly inside the Tools page when the MCP server requests user input mid-tool-call
+- `useElicitation` composable (`src/composables/useElicitation.ts`): opens an SSE stream scoped to the selected connection; maintains a FIFO queue so multi-step elicitation flows (multiple consecutive requests) are handled one at a time; automatically reopens stream when the selected connection changes
+- `ElicitationDialog.vue` (`src/components/common/ElicitationDialog.vue`): reusable modal with ⚡ amber-accented header, server message quote block, schema-aware field rendering (boolean toggle, enum select, number, password, URI, string), step counter for multi-step flows, Accept / Decline actions
+
+### Added
+- Frontend auto-retry on tool invocation failure: up to 3 attempts with an automatic reconnect between each; Execute button label updates to `Retrying (1/2)…` / `Reconnecting (1/2)…` during the loop
+- "Reconnect & Retry" button appears inline in the error panel after all retry attempts are exhausted — no sidebar hunting required
+- `MAX_INVOKE_RETRIES` constant (3) in `ToolsView.vue` controls frontend retry budget
+- `invokingLabel` and `retryExhausted` refs drive the dynamic button label and contextual retry action
+- `retryExhausted` is cleared automatically when the user changes tool or connection
+
 
 ### Added
 - Connection health tracking: `IActiveConnection.IsHealthy` flag, set to `false` when all tool-invoke retry attempts are exhausted and restored to `true` on the next successful call

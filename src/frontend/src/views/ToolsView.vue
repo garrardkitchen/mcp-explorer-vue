@@ -12,10 +12,12 @@ import Tag from 'primevue/tag'
 import Popover from 'primevue/popover'
 import JsonViewer from '@/components/common/JsonViewer.vue'
 import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
+import ElicitationDialog from '@/components/common/ElicitationDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { preferencesApi } from '@/api/preferences'
 import { extractApiError } from '@/api/client'
+import { useElicitation } from '@/composables/useElicitation'
 import type { ActiveTool } from '@/api/types'
 
 const toast = useToast()
@@ -27,13 +29,29 @@ const tools = ref<ActiveTool[]>([])
 const toolsLoading = ref(false)
 const toolSearch = ref('')
 
+// ── Elicitation — live dialog for server-initiated input requests ──────
+const { current: elicitRequest, visible: elicitVisible, stepNumber: elicitStep, respond: elicitRespond } =
+  useElicitation(selectedConnName)
+
+async function onElicitRespond(action: string, content?: Record<string, unknown>) {
+  try {
+    await elicitRespond(action, content)
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Elicitation submit failed', detail: e.message, life: 5000 })
+  }
+}
+
 // ── Tool selection + execution ─────────────────────────────────────────
 const selectedTool = ref<ActiveTool | null>(null)
 const params = ref<Record<string, unknown>>({})
 const invoking = ref(false)
+const invokingLabel = ref('Execute')
+const retryExhausted = ref(false)
 const result = ref<unknown>(null)
 const resultError = ref<string | null>(null)
 const paramErrors = ref(new Set<string>())
+
+const MAX_INVOKE_RETRIES = 3
 
 // ── Per-field history ──────────────────────────────────────────────────
 const fieldHistoryPanel = ref<InstanceType<typeof Popover> | null>(null)
@@ -143,12 +161,14 @@ async function loadTools(name: string) {
 }
 
 watch(selectedConnName, async (name) => {
+  retryExhausted.value = false
   if (!name) { tools.value = []; return }
   await loadTools(name)
 })
 
-watch(selectedTool, (t) => {
-  params.value = {}; result.value = null; resultError.value = null; paramErrors.value = new Set()
+watch(selectedTool, () => {
+  params.value = {}; result.value = null; resultError.value = null
+  paramErrors.value = new Set(); retryExhausted.value = false
 })
 
 // ── Methods ────────────────────────────────────────────────────────────
@@ -171,27 +191,50 @@ async function invoke() {
   }
   paramErrors.value = new Set()
 
-  invoking.value = true; result.value = null; resultError.value = null
-  try {
-    const r = await connectionsApi.invokeTool(selectedConnName.value, selectedTool.value.name, params.value)
-    result.value = r
+  invoking.value = true; result.value = null; resultError.value = null; retryExhausted.value = false
 
-    // Save history to backend
-    const toolName = selectedTool.value.name
-    const histJson = JSON.stringify(params.value)
-    const existing = allParamHistory.value[toolName] ?? []
-    const updated = [histJson, ...existing.filter(h => h !== histJson)].slice(0, 5)
-    allParamHistory.value = { ...allParamHistory.value, [toolName]: updated }
-    await preferencesApi.patch({ parameterHistory: allParamHistory.value })
+  for (let attempt = 1; attempt <= MAX_INVOKE_RETRIES; attempt++) {
+    invokingLabel.value = attempt === 1 ? 'Execute' : `Retrying (${attempt - 1}/${MAX_INVOKE_RETRIES - 1})…`
+    try {
+      const r = await connectionsApi.invokeTool(selectedConnName.value, selectedTool.value.name, params.value)
+      result.value = r
 
-    toast.add({ severity: 'success', summary: 'Tool executed', life: 2000 })
-  } catch (e: unknown) {
-    const msg = extractApiError(e)
-    resultError.value = msg
-    toast.add({ severity: 'error', summary: 'Invocation failed', detail: msg, life: 8000 })
-    // Refresh active connections so isHealthy reflects any degraded state set by the backend
-    await store.loadActive()
-  } finally { invoking.value = false }
+      // Save history to backend
+      const toolName = selectedTool.value.name
+      const histJson = JSON.stringify(params.value)
+      const existing = allParamHistory.value[toolName] ?? []
+      const updated = [histJson, ...existing.filter(h => h !== histJson)].slice(0, 5)
+      allParamHistory.value = { ...allParamHistory.value, [toolName]: updated }
+      await preferencesApi.patch({ parameterHistory: allParamHistory.value })
+
+      toast.add({ severity: 'success', summary: 'Tool executed', life: 2000 })
+      invoking.value = false
+      return
+    } catch (e: unknown) {
+      const msg = extractApiError(e)
+      resultError.value = msg
+
+      if (attempt < MAX_INVOKE_RETRIES) {
+        // Attempt a reconnect before the next try
+        const connName = selectedConnName.value
+        if (connName) {
+          try {
+            invokingLabel.value = `Reconnecting (${attempt}/${MAX_INVOKE_RETRIES - 1})…`
+            await store.connect(connName)
+          } catch {
+            // Reconnect failed — continue to next attempt anyway; the invoke will surface the real error
+          }
+        }
+      } else {
+        // All attempts exhausted
+        retryExhausted.value = true
+        toast.add({ severity: 'error', summary: 'Invocation failed', detail: msg, life: 8000 })
+        await store.loadActive()
+      }
+    }
+  }
+  invoking.value = false
+  invokingLabel.value = 'Execute'
 }
 
 function loadHistoryParams(h: Record<string, unknown>) {
@@ -423,7 +466,7 @@ watch(() => store.initialized, async (ready, wasReady) => {
             </div>
 
             <div class="invoke-bar">
-              <Button label="Execute" icon="pi pi-play" :loading="invoking" @click="invoke" />
+              <Button :label="invokingLabel" icon="pi pi-play" :loading="invoking" @click="invoke" />
             </div>
 
             <Popover ref="fieldHistoryPanel">
@@ -436,7 +479,18 @@ watch(() => store.initialized, async (ready, wasReady) => {
             </Popover>
 
             <div v-if="resultError" class="error-box">
-              <i class="pi pi-times-circle" /> {{ resultError }}
+              <div class="error-box-message">
+                <i class="pi pi-times-circle" /> {{ resultError }}
+              </div>
+              <Button
+                v-if="retryExhausted"
+                label="Reconnect & Retry"
+                icon="pi pi-refresh"
+                severity="warning"
+                size="small"
+                class="error-retry-btn"
+                @click="retryExhausted = false; invoke()"
+              />
             </div>
 
             <div v-if="result !== null" class="result-section">
@@ -450,6 +504,13 @@ watch(() => store.initialized, async (ready, wasReady) => {
 
   <ToolDocsDialog v-model:visible="docsVisible" :tool="docsTool" />
   <ToolDocsDialog v-model:visible="listDocsVisible" :tools="filteredToolsOnly" />
+
+  <!-- Elicitation dialog: appears automatically when the MCP server requests user input -->
+  <ElicitationDialog
+    :request="elicitRequest"
+    :step-number="elicitStep"
+    @respond="onElicitRespond"
+  />
 </template>
 
 <style scoped>
@@ -515,7 +576,9 @@ watch(() => store.initialized, async (ready, wasReady) => {
 .history-item:hover { background:var(--bg-raised); border-color:var(--accent); }
 .history-preview { font-family:var(--font-family-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .invoke-bar { padding:12px 20px; border-bottom:1px solid var(--border); }
-.error-box { margin:12px 20px; padding:10px 14px; background:rgba(239,68,68,.1); border:1px solid var(--danger); border-radius:var(--border-radius-sm); color:var(--danger); font-size:13px; display:flex; gap:8px; }
+.error-box { margin:12px 20px; padding:10px 14px; background:rgba(239,68,68,.1); border:1px solid var(--danger); border-radius:var(--border-radius-sm); color:var(--danger); font-size:13px; display:flex; flex-direction:column; gap:10px; }
+.error-box-message { display:flex; align-items:flex-start; gap:8px; }
+.error-retry-btn { align-self:flex-start; }
 .result-section { flex:1; padding:12px 20px; min-height:200px; }
 .tool-section-header { padding:4px 14px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); background:var(--bg-raised); border-bottom:1px solid var(--border); }
 .history-btn { display:flex; width:100%; justify-content:flex-start; margin-bottom:4px; }

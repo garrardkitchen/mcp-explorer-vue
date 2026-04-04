@@ -50,11 +50,21 @@ export const useConnectionsStore = defineStore('connections', () => {
     error.value = null
     try {
       const conn = await connectionsApi.connect(name)
+      // A successful connect response always means isConnected = true.
+      // Normalise here so a partial server response never drops the connection
+      // from the connectedConnections filter in consumer components.
+      const normalised: ActiveConnection = { ...conn, isConnected: true }
       const existing = activeConnections.value.findIndex(c => c.name === name)
-      if (existing >= 0) activeConnections.value[existing] = conn
-      else activeConnections.value.push(conn)
+      if (existing >= 0) {
+        // Replace the whole array so Vue always detects the change.
+        const updated = [...activeConnections.value]
+        updated[existing] = normalised
+        activeConnections.value = updated
+      } else {
+        activeConnections.value = [...activeConnections.value, normalised]
+      }
       selectedConnectionName.value = name
-      return conn
+      return normalised
     } catch (e: any) {
       error.value = e.message
       throw e

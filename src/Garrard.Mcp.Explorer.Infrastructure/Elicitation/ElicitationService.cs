@@ -48,9 +48,13 @@ public sealed class ElicitationService : IElicitationService
 
         var requestId = Guid.NewGuid().ToString("N");
 
+        // Serialize each schema property using its concrete runtime type so that
+        // STJ captures all fields (type, enum, minimum, format, etc.) rather than
+        // boxing to object and emitting an empty {} for each entry.
         var schema = new Dictionary<string, object>();
+        var serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         foreach (var kvp in requestParams.RequestedSchema.Properties)
-            schema[kvp.Key] = kvp.Value;
+            schema[kvp.Key] = JsonSerializer.SerializeToElement(kvp.Value, kvp.Value.GetType(), serializerOptions);
 
         var request = new ElicitationRequest(
             requestId,
