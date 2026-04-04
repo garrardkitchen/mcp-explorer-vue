@@ -9,7 +9,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
-import OverlayPanel from 'primevue/overlaypanel'
+import Popover from 'primevue/popover'
 import JsonViewer from '@/components/common/JsonViewer.vue'
 import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
@@ -35,7 +35,7 @@ const resultError = ref<string | null>(null)
 const paramErrors = ref(new Set<string>())
 
 // ── Per-field history ──────────────────────────────────────────────────
-const fieldHistoryPanel = ref<InstanceType<typeof OverlayPanel> | null>(null)
+const fieldHistoryPanel = ref<InstanceType<typeof Popover> | null>(null)
 const fieldHistoryField = ref('')
 const fieldHistoryValues = ref<string[]>([])
 
@@ -389,14 +389,14 @@ watch(() => store.initialized, async (ready, wasReady) => {
               <Button label="Execute" icon="pi pi-play" :loading="invoking" @click="invoke" />
             </div>
 
-            <OverlayPanel ref="fieldHistoryPanel">
+            <Popover ref="fieldHistoryPanel">
               <div class="field-history-popup">
                 <div class="field-history-header">Previous values for <strong>{{ fieldHistoryField }}</strong></div>
                 <div v-for="val in fieldHistoryValues" :key="val" class="field-history-item" @click="selectFieldHistoryValue(val)">
                   {{ val }}
                 </div>
               </div>
-            </OverlayPanel>
+            </Popover>
 
             <div v-if="resultError" class="error-box">
               <i class="pi pi-times-circle" /> {{ resultError }}

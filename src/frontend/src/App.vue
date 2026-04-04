@@ -142,8 +142,8 @@ onUnmounted(() => {
       <!-- Main content area -->
       <main class="main-content">
         <RouterView v-slot="{ Component }">
-          <Transition name="page" mode="out-in">
-            <component :is="Component" />
+          <Transition name="page">
+            <component :is="Component" :key="route.name" />
           </Transition>
         </RouterView>
       </main>
@@ -356,8 +356,8 @@ onUnmounted(() => {
 }
 
 /* ── Page transitions ── */
-.page-enter-active,
-.page-leave-active { transition: opacity 150ms ease, transform 150ms ease; }
-.page-enter-from   { opacity: 0; transform: translateY(6px); }
-.page-leave-to     { opacity: 0; transform: translateY(-4px); }
+.page-enter-active { transition: opacity 120ms ease; }
+.page-leave-active { transition: opacity 80ms ease; position: absolute; width: 100%; pointer-events: none; }
+.page-enter-from   { opacity: 0; }
+.page-leave-to     { opacity: 0; }
 </style>
