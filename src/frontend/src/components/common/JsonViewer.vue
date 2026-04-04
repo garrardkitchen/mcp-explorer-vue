@@ -380,6 +380,21 @@ async function copy() {
 .jvp .vjs-tree__brackets { color: var(--text-muted) !important; }
 .jvp .vjs-tree__content--inside { border-left: 1px dotted var(--border) !important; }
 
+/* Fix: override the library's near-white hover (#e6f7ff) with a dark theme-aware colour */
+.jvp .vjs-tree-node:hover,
+.jvp .vjs-tree-node.is-highlight {
+  background-color: rgba(56, 189, 248, 0.08) !important;
+  border-radius: 4px !important;
+}
+.jvp .vjs-tree-node .vjs-tree-node-actions {
+  background-color: rgba(56, 189, 248, 0.12) !important;
+  border-radius: 4px !important;
+}
+.jvp .vjs-carets:hover,
+.jvp .vjs-tree-brackets:hover {
+  color: var(--accent, #38bdf8) !important;
+}
+
 /* Search highlights — applied by mark.js */
 mark[data-markjs="true"].jv-mark {
   background: rgba(251, 191, 36, 0.30);

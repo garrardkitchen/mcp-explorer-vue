@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>JSON Viewer — Selection Style Designs</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: 32px 24px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; font-weight: 600; color: #e6edf3; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #8b949e; margin-bottom: 36px; }
+  .designs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .card-label {
+    padding: 12px 14px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    border-bottom: 1px solid #30363d;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .badge {
+    font-size: 10px; font-weight: 500; text-transform: none; letter-spacing: 0;
+    padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,.08);
+  }
+  .viewer-chrome {
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 6px 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .viewer-title {
+    font-size: 10px; font-weight: 700; color: #8b949e;
+    text-transform: uppercase; letter-spacing: .05em; flex: 1;
+  }
+  .search-input {
+    width: 130px; font-size: 11px; padding: 3px 8px; border-radius: 4px;
+    outline: none; font-family: inherit;
+  }
+  .action-btn {
+    background: none; font-size: 13px; cursor: default;
+    padding: 3px 5px; border-radius: 3px;
+    color: #8b949e;
+  }
+  .json-body {
+    background: #0d1117;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    flex: 1;
+  }
+  .key { color: #79b8ff; }
+  .str { color: #85e89d; }
+  .num { color: #f8c555; }
+  .bool { color: #b392f0; }
+  .null { color: #f97583; }
+  .bracket { color: #8b949e; }
+  .indent { margin-left: 18px; }
+  .desc {
+    padding: 12px 14px;
+    font-size: 12px;
+    color: #8b949e;
+    border-top: 1px solid #30363d;
+    line-height: 1.5;
+  }
+  .desc strong { color: #c9d1d9; display: block; margin-bottom: 3px; }
+
+  /* ═══ OPTION A — Teal Accent ══════════════════════════════════════════════ */
+  .card-a .card-label { color: #38bdf8; border-color: rgba(56,189,248,.25); }
+  .card-a .badge { background: rgba(56,189,248,.12); color: #38bdf8; }
+  .card-a .search-input {
+    background: #161b22;
+    border: 1px solid rgba(56,189,248,.4);
+    color: #e6edf3;
+    box-shadow: 0 0 0 2px rgba(56,189,248,.1);
+  }
+  /* Simulated selection — teal */
+  .card-a .selected-text {
+    background: rgba(56,189,248,.22);
+    outline: 1px solid rgba(56,189,248,.5);
+    border-radius: 2px;
+    color: #e6edf3;
+    padding: 0 1px;
+  }
+
+  /* ═══ OPTION B — Amber Warm ═══════════════════════════════════════════════ */
+  .card-b .card-label { color: #f8c555; border-color: rgba(248,197,85,.25); }
+  .card-b .badge { background: rgba(248,197,85,.12); color: #f8c555; }
+  .card-b .search-input {
+    background: rgba(248,197,85,.06);
+    border: 1px solid rgba(248,197,85,.35);
+    color: #e6edf3;
+    box-shadow: 0 0 0 2px rgba(248,197,85,.08);
+  }
+  /* Simulated selection — amber */
+  .card-b .selected-text {
+    background: rgba(251,191,36,.28);
+    outline: 1px solid rgba(251,191,36,.55);
+    border-radius: 2px;
+    color: #1a1a2e;
+    padding: 0 1px;
+    font-weight: 600;
+  }
+
+  /* ═══ OPTION C — Violet Bold ══════════════════════════════════════════════ */
+  .card-c .card-label { color: #c084fc; border-color: rgba(192,132,252,.25); }
+  .card-c .badge { background: rgba(192,132,252,.12); color: #c084fc; }
+  .card-c .search-input {
+    background: rgba(139,92,246,.1);
+    border: 1px solid rgba(139,92,246,.45);
+    color: #e6edf3;
+    box-shadow: 0 0 0 2px rgba(139,92,246,.12);
+  }
+  /* Simulated selection — violet */
+  .card-c .selected-text {
+    background: rgba(124,58,237,.55);
+    outline: 1px solid rgba(139,92,246,.85);
+    border-radius: 2px;
+    color: #fff;
+    padding: 0 1px;
+    font-weight: 500;
+  }
+
+  /* ═══ OPTION D — Subtle Gray ══════════════════════════════════════════════ */
+  .card-d .card-label { color: #e6edf3; border-color: rgba(230,237,243,.15); }
+  .card-d .badge { background: rgba(255,255,255,.08); color: #c9d1d9; }
+  .card-d .search-input {
+    background: #21262d;
+    border: 1px solid #484f58;
+    color: #e6edf3;
+    box-shadow: none;
+  }
+  /* Simulated selection — neutral gray-blue */
+  .card-d .selected-text {
+    background: #2d3748;
+    outline: 1px solid #4a5568;
+    border-radius: 2px;
+    color: #e6edf3;
+    padding: 0 1px;
+  }
+
+  .designs-2col { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 24px; }
+  .note { font-size: 12px; color: #8b949e; margin-top: 20px; line-height: 1.6; }
+  .note code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<h1>JSON Viewer — Selection Style Designs</h1>
+<p class="subtitle">How selected text inside the JSON tree will look. The highlighted spans simulate a text selection drag.</p>
+
+<div class="designs">
+
+  <!-- OPTION A: Teal Accent -->
+  <div class="card card-a">
+    <div class="card-label">Option A — Teal Accent <span class="badge">Recommended</span></div>
+    <div class="viewer-chrome">
+      <span class="viewer-title">JSON Output</span>
+      <input class="search-input" type="text" value="connectionId" readonly />
+      <span class="action-btn">⟨</span>
+      <span class="action-btn">⟩</span>
+      <span class="action-btn">⛶</span>
+    </div>
+    <div class="json-body">
+      <span class="bracket">{</span><br/>
+      <div class="indent">
+        <span class="key">"name"</span>: <span class="str">"my-server"</span>,<br/>
+        <span class="key">"connectionId"</span>: <span class="selected-text str">"abc-123-def"</span>,<br/>
+        <span class="key">"port"</span>: <span class="num">8080</span>,<br/>
+        <span class="key">"active"</span>: <span class="bool">true</span>,<br/>
+        <span class="key">"tags"</span>: <span class="bracket">[</span><span class="str">"prod"</span>, <span class="str">"v2"</span><span class="bracket">]</span>
+      </div>
+      <span class="bracket">}</span>
+    </div>
+    <div class="desc">
+      <strong>Teal `rgba(56,189,248, 0.22)` + teal outline</strong>
+      Matches the app accent colour. Subtle, readable, doesn't compete with the syntax highlights. Search input gets a teal border glow to match.
+    </div>
+  </div>
+
+  <!-- OPTION B: Amber Warm -->
+  <div class="card card-b">
+    <div class="card-label">Option B — Amber Warm</div>
+    <div class="viewer-chrome">
+      <span class="viewer-title">JSON Output</span>
+      <input class="search-input" type="text" value="connectionId" readonly />
+      <span class="action-btn">⟨</span>
+      <span class="action-btn">⟩</span>
+      <span class="action-btn">⛶</span>
+    </div>
+    <div class="json-body">
+      <span class="bracket">{</span><br/>
+      <div class="indent">
+        <span class="key">"name"</span>: <span class="str">"my-server"</span>,<br/>
+        <span class="key">"connectionId"</span>: <span class="selected-text str">"abc-123-def"</span>,<br/>
+        <span class="key">"port"</span>: <span class="num">8080</span>,<br/>
+        <span class="key">"active"</span>: <span class="bool">true</span>,<br/>
+        <span class="key">"tags"</span>: <span class="bracket">[</span><span class="str">"prod"</span>, <span class="str">"v2"</span><span class="bracket">]</span>
+      </div>
+      <span class="bracket">}</span>
+    </div>
+    <div class="desc">
+      <strong>Amber `rgba(251,191,36, 0.28)` + amber outline</strong>
+      Same palette as the search mark highlights — creates visual consistency between search results and manual selection. Dark text forced for contrast.
+    </div>
+  </div>
+
+  <!-- OPTION C: Violet Bold -->
+  <div class="card card-c">
+    <div class="card-label">Option C — Violet</div>
+    <div class="viewer-chrome">
+      <span class="viewer-title">JSON Output</span>
+      <input class="search-input" type="text" value="connectionId" readonly />
+      <span class="action-btn">⟨</span>
+      <span class="action-btn">⟩</span>
+      <span class="action-btn">⛶</span>
+    </div>
+    <div class="json-body">
+      <span class="bracket">{</span><br/>
+      <div class="indent">
+        <span class="key">"name"</span>: <span class="str">"my-server"</span>,<br/>
+        <span class="key">"connectionId"</span>: <span class="selected-text str">"abc-123-def"</span>,<br/>
+        <span class="key">"port"</span>: <span class="num">8080</span>,<br/>
+        <span class="key">"active"</span>: <span class="bool">true</span>,<br/>
+        <span class="key">"tags"</span>: <span class="bracket">[</span><span class="str">"prod"</span>, <span class="str">"v2"</span><span class="bracket">]</span>
+      </div>
+      <span class="bracket">}</span>
+    </div>
+    <div class="desc">
+      <strong>Violet `rgba(124,58,237, 0.55)` + violet outline</strong>
+      Bold and high-contrast. White text forced on selection. Coordinates with the prompt invocation block palette. Harder to miss.
+    </div>
+  </div>
+
+</div>
+
+<!-- Option D full-width -->
+<div class="designs-2col">
+  <div class="card card-d">
+    <div class="card-label">Option D — Neutral Gray-Blue</div>
+    <div class="viewer-chrome">
+      <span class="viewer-title">JSON Output</span>
+      <input class="search-input" type="text" value="connectionId" readonly />
+      <span class="action-btn">⟨</span>
+      <span class="action-btn">⟩</span>
+      <span class="action-btn">⛶</span>
+    </div>
+    <div class="json-body">
+      <span class="bracket">{</span><br/>
+      <div class="indent">
+        <span class="key">"name"</span>: <span class="str">"my-server"</span>,<br/>
+        <span class="key">"connectionId"</span>: <span class="selected-text str">"abc-123-def"</span>,<br/>
+        <span class="key">"port"</span>: <span class="num">8080</span>,<br/>
+        <span class="key">"active"</span>: <span class="bool">true</span>,<br/>
+        <span class="key">"tags"</span>: <span class="bracket">[</span><span class="str">"prod"</span>, <span class="str">"v2"</span><span class="bracket">]</span>
+      </div>
+      <span class="bracket">}</span>
+    </div>
+    <div class="desc">
+      <strong>Gray-blue `#2d3748` + mid-gray outline</strong>
+      The most conservative option. Replaces the jarring white with a dark slate, so text always remains readable. Search input gets a plain gray border — the "outer light gray border" you suggested.
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px;justify-content:center;padding:4px 0;">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8b949e;margin-bottom:10px;">What changes</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.8;">
+        <span style="color:#79b8ff;">1.</span> Text selection colour (<code style="background:#21262d;padding:1px 4px;border-radius:3px;font-size:11px;">::selection</code>) inside the JSON tree<br/>
+        <span style="color:#79b8ff;">2.</span> Search input field background + border (replacing PrimeVue white default)<br/>
+        <span style="color:#79b8ff;">3.</span> Consistent across inline view + fullscreen dialog
+      </div>
+    </div>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8b949e;margin-bottom:8px;">My recommendation</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.6;">
+        <span style="color:#38bdf8;font-weight:600;">Option A</span> — teal is already the app's accent, so selection highlights feel native rather than decorative. The search input glow also reinforces which field is active.
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="note">Drag-select the text in any card above to preview the browser's actual <code>::selection</code> colour — Note: mockup uses <code>outline</code> on a <code>span</code> to simulate selection since real <code>::selection</code> can't be conditionally applied in HTML.</p>
+
+</body>
+</html>
