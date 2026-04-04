@@ -53,10 +53,20 @@ export interface ActiveConnection {
   toolCount: number
 }
 
+export interface ToolAnnotations {
+  title?: string | null
+  readOnlyHint?: boolean | null
+  destructiveHint?: boolean | null
+  idempotentHint?: boolean | null
+  openWorldHint?: boolean | null
+}
+
 export interface ActiveTool {
   name: string
   description: string
   inputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown> | null
+  annotations?: ToolAnnotations | null
   iconUrl?: string
 }
 

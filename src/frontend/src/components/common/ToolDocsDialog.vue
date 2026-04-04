@@ -26,6 +26,7 @@ const emit = defineEmits<{
 const toast = useToast()
 const activeTab = ref('preview')
 const previewRef = ref<HTMLElement | null>(null)
+const isMaximized = ref(false)
 
 const isListMode = computed(() => Array.isArray(props.tools) && props.tools.length > 0)
 
@@ -52,37 +53,15 @@ async function copyMarkdown() {
 
 /** Intercept in-page anchor clicks and scroll within the preview container. */
 function onPreviewClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  const anchor = target.closest('a') as HTMLAnchorElement | null
+  const anchor = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null
   if (!anchor) return
-
   const href = anchor.getAttribute('href')
   if (!href?.startsWith('#')) return
 
   e.preventDefault()
   const id = href.slice(1)
-  if (!previewRef.value) return
-
-  // Try matching by id attribute first, then by generated slug from heading text
-  let el = previewRef.value.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
-
-  if (!el) {
-    // Fallback: match headings whose text slugifies to the id
-    const headings = previewRef.value.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6')
-    for (const h of headings) {
-      if (slugify(h.textContent ?? '') === id) { el = h; break }
-    }
-  }
-
+  const el = previewRef.value?.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
 }
 </script>
 
@@ -91,9 +70,13 @@ function slugify(text: string): string {
     :visible="visible"
     @update:visible="emit('update:visible', $event)"
     modal
+    maximizable
+    @maximize="isMaximized = true"
+    @unmaximize="isMaximized = false"
     :header="dialogHeader"
     :style="{ width: '780px', maxHeight: '85vh' }"
-    :pt="{ content: { style: 'padding: 0; overflow: hidden;' } }"
+    :pt="{ content: { style: 'padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0;' } }"
+    class="docs-dialog"
   >
     <Tabs v-model:value="activeTab" class="docs-tabs">
       <TabList>
@@ -106,15 +89,24 @@ function slugify(text: string): string {
           Raw Markdown
         </Tab>
       </TabList>
-      <TabPanels>
-        <TabPanel value="preview">
-          <div class="docs-preview" ref="previewRef" v-html="renderedHtml" @click="onPreviewClick" />
+      <TabPanels class="docs-tabpanels">
+        <TabPanel value="preview" class="docs-tabpanel">
+          <div
+            class="docs-preview"
+            :class="{ 'docs-preview--expanded': isMaximized }"
+            ref="previewRef"
+            v-html="renderedHtml"
+            @click="onPreviewClick"
+          />
         </TabPanel>
-        <TabPanel value="raw">
+        <TabPanel value="raw" class="docs-tabpanel">
           <div class="docs-raw-bar">
             <Button icon="pi pi-copy" text size="small" label="Copy Markdown" @click="copyMarkdown" />
           </div>
-          <pre class="docs-raw">{{ markdown }}</pre>
+          <pre
+            class="docs-raw"
+            :class="{ 'docs-raw--expanded': isMaximized }"
+          >{{ markdown }}</pre>
         </TabPanel>
       </TabPanels>
     </Tabs>
@@ -122,7 +114,28 @@ function slugify(text: string): string {
 </template>
 
 <style scoped>
-.docs-tabs { height: 100%; display: flex; flex-direction: column; }
+.docs-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Make tab panels fill remaining height */
+.docs-tabpanels {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.docs-tabpanel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 !important;
+}
+
 .docs-preview {
   padding: 20px 24px;
   overflow-y: auto;
@@ -130,13 +143,23 @@ function slugify(text: string): string {
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.7;
+  flex: 1;
+  min-height: 0;
 }
+
+.docs-preview--expanded {
+  max-height: none;
+  height: 100%;
+}
+
 .docs-raw-bar {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
+
 .docs-raw {
   padding: 16px 20px;
   margin: 0;
@@ -149,6 +172,13 @@ function slugify(text: string): string {
   overflow-y: auto;
   max-height: 55vh;
   background: var(--code-bg);
+  flex: 1;
+  min-height: 0;
+}
+
+.docs-raw--expanded {
+  max-height: none;
+  height: 100%;
 }
 </style>
 
@@ -166,4 +196,11 @@ function slugify(text: string): string {
 .docs-preview td { padding: 7px 12px; border: 1px solid var(--border); color: var(--text-primary); vertical-align: top; }
 .docs-preview tr:nth-child(even) td { background: var(--bg-raised); }
 .docs-preview em { font-style: italic; color: var(--text-muted); }
+/* When the docs dialog is maximized, let content panels fill the full height */
+.docs-dialog.p-dialog-maximized .docs-preview,
+.docs-dialog.p-dialog-maximized .docs-raw {
+  max-height: none !important;
+  height: 100%;
+}
 </style>
+

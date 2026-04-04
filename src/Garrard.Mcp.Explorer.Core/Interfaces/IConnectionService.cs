@@ -16,7 +16,21 @@ public interface IActiveConnection
     IReadOnlyList<ActiveResourceTemplate> ResourceTemplates { get; }
 }
 
-public sealed record ActiveTool(string Name, string Description, object? InputSchema, string? IconUrl = null);
+public sealed record ActiveTool(
+    string Name,
+    string Description,
+    object? InputSchema,
+    string? IconUrl = null,
+    object? OutputSchema = null,
+    ToolAnnotations? Annotations = null);
+
+/// <summary>Hints about a tool's behaviour. All values are advisory only.</summary>
+public sealed record ToolAnnotations(
+    string? Title = null,
+    bool? ReadOnlyHint = null,
+    bool? DestructiveHint = null,
+    bool? IdempotentHint = null,
+    bool? OpenWorldHint = null);
 public sealed record ActivePrompt(string Name, string? Description, IReadOnlyList<PromptArgument> Arguments, string? IconUrl = null);
 public sealed record PromptArgument(string Name, string? Description, bool Required);
 public sealed record ActiveResource(string Uri, string Name, string? Description, string? MimeType, string? IconUrl = null);
