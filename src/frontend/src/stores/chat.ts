@@ -79,16 +79,11 @@ export const useChatStore = defineStore('chat', () => {
 
     _streamAbort = new AbortController()
 
-    // Add assistant message placeholder — tool calls will be spliced before it
-    const assistantMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: '',
-      timestampUtc: new Date().toISOString(),
-      modelName,
-    }
-    messages.value.push(assistantMsg)
-    let assistantIdx = messages.value.length - 1
+    // Track accumulated data for the final assistant message
+    let assistantId: string | null = null
+    let assistantThinkingMs: number | null = null
+    let assistantTokenUsage: ChatTokenUsage | null = null
+    let assistantContent = ''
 
     try {
       for await (const evt of chatApi.streamMessage(
@@ -101,15 +96,14 @@ export const useChatStore = defineStore('chat', () => {
         if (evt.type === 'token' && evt.text) {
           if (!firstToken) {
             firstToken = true
-            const elapsed = Date.now() - startMs
-            thinkingMs.value = elapsed
-            messages.value[assistantIdx].thinkingMilliseconds = elapsed
+            assistantThinkingMs = Date.now() - startMs
+            thinkingMs.value = assistantThinkingMs
             if (_thinkingInterval) { clearInterval(_thinkingInterval); _thinkingInterval = null }
           }
-          messages.value[assistantIdx].content += evt.text
-          streamingContent.value = messages.value[assistantIdx].content
+          assistantContent += evt.text
+          streamingContent.value = assistantContent
         } else if (evt.type === 'tool-call') {
-          // Insert a tool call message before the assistant placeholder
+          // Push tool call message — it appears above the streaming placeholder in the DOM
           const toolMsg: ChatMessage = {
             id: crypto.randomUUID(),
             role: 'system',
@@ -120,15 +114,13 @@ export const useChatStore = defineStore('chat', () => {
             connectionName: evt.connectionName,
             modelName,
           }
-          messages.value.splice(assistantIdx, 0, toolMsg)
-          assistantIdx++ // assistant is now one further back
-          await nextTick() // flush DOM so tool call appears immediately
+          messages.value.push(toolMsg)
+          await nextTick() // flush DOM so tool call renders immediately
         } else if (evt.type === 'usage' && evt.usage) {
-          // Replace object to guarantee Vue reactive update detects the new tokenUsage property
-          messages.value[assistantIdx] = { ...messages.value[assistantIdx], tokenUsage: evt.usage }
+          assistantTokenUsage = evt.usage
           lastUsage.value = evt.usage
         } else if (evt.type === 'done') {
-          if (evt.messageId) messages.value[assistantIdx].id = evt.messageId
+          if (evt.messageId) assistantId = evt.messageId
         } else if (evt.type === 'error') {
           error.value = evt.errorMessage ?? 'Unknown streaming error'
         }
@@ -136,6 +128,16 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e: any) {
       if (e.name !== 'AbortError') error.value = e.message
     } finally {
+      // Push complete assistant message — replaces the streaming placeholder visually
+      messages.value.push({
+        id: assistantId ?? crypto.randomUUID(),
+        role: 'assistant',
+        content: assistantContent,
+        timestampUtc: new Date().toISOString(),
+        modelName,
+        thinkingMilliseconds: assistantThinkingMs ?? undefined,
+        tokenUsage: assistantTokenUsage ?? undefined,
+      })
       streaming.value = false
       streamingContent.value = ''
       if (_thinkingInterval) { clearInterval(_thinkingInterval); _thinkingInterval = null }

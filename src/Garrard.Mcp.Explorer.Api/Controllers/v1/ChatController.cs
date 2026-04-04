@@ -106,7 +106,10 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             return;
         }
 
-        // Save user message immediately
+        // Snapshot history BEFORE adding the new user message — BuildMessages appends
+        // the new message itself, so passing the snapshot avoids sending it twice.
+        var historySnapshot = session.Messages.ToList();
+
         var userMessage = new ChatMessage
         {
             Role = "user",
@@ -128,9 +131,14 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         try
         {
             await foreach (var evt in chatService.StreamAsync(
-                request.Message, session.Messages, model, request.ConnectionNames ?? [], cancellationToken))
+                request.Message, historySnapshot, model, request.ConnectionNames ?? [], cancellationToken))
             {
-                var eventName = evt.Type.ToString().ToLowerInvariant().Replace("_", "-");
+                // Convert PascalCase enum to kebab-case: ToolCall → tool-call
+                var eventName = evt.Type switch
+                {
+                    ChatStreamEventType.ToolCall => "tool-call",
+                    _ => evt.Type.ToString().ToLowerInvariant()
+                };
                 await WriteSseEvent(eventName, evt, cancellationToken);
 
                 if (evt.Type == ChatStreamEventType.Token && evt.Text is not null)

@@ -2,6 +2,12 @@
 
 All notable changes to MCP Explorer v2 are documented here.
 
+## [Unreleased] — 2026-04-04 (19)
+- fix: Tool calls now appear in real-time during streaming — root cause was SSE event name mismatch (`toolcall` vs `tool-call`); backend now uses explicit kebab-case switch for `ToolCall → tool-call`
+- fix: Duplicate tool calls caused by LLM receiving user message twice — `session.Messages` snapshot is now taken BEFORE adding the new user message, so `BuildMessages` doesn't append it again
+- fix: Tool call messages (role=System) filtered out of LLM history context — they were being sent to the LLM as system prompts, causing confusing re-calls on subsequent turns
+- refactor: Chat store simplified — removed in-progress `assistantMsg` placeholder from `messages.value` during streaming; tool calls now push (not splice) and appear above the streaming placeholder naturally; final assistant message is pushed on stream completion
+
 ## [Unreleased] — 2026-04-04 (18)
 - fix: Token usage (input/output/total) now persists — backend captures `TokenUsage` from stream and saves it to the assistant message in settings.json; was previously never saved
 - fix: Tool call messages now appear in real-time as they are invoked — added `await nextTick()` after each splice to flush Vue's DOM update queue immediately
