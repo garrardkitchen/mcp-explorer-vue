@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 
 const emit = defineEmits<{ close: [] }>()
 const router = useRouter()
+const route = useRoute()
 
 const query = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -13,6 +14,7 @@ interface CommandItem {
   icon: string
   action: () => void
   group?: string
+  chatOnly?: boolean
 }
 
 const allCommands: CommandItem[] = [
@@ -26,19 +28,40 @@ const allCommands: CommandItem[] = [
   { label: 'Elicitations',       icon: 'pi-bell',          group: 'Navigate', action: () => go('elicitations') },
   { label: 'Workflows',          icon: 'pi-sitemap',       group: 'Navigate', action: () => go('workflows') },
   { label: 'Chat',               icon: 'pi-comments',      group: 'Navigate', action: () => go('chat') },
+  // Chat-only actions (shown only when on the Chat page)
+  { label: '📋 Prompt Picker',   icon: 'pi-align-left',    group: '💬 Chat Actions', chatOnly: true, action: () => injectSlash('/prompt') },
+  { label: '📈 Token Stats',     icon: 'pi-chart-bar',     group: '💬 Chat Actions', chatOnly: true, action: () => injectSlash('/stats') },
+  { label: '📄 Export Report',   icon: 'pi-file-export',   group: '💬 Chat Actions', chatOnly: true, action: () => injectSlash('/report') },
+  { label: '⚙️ System Prompt',   icon: 'pi-cog',           group: '💬 Chat Actions', chatOnly: true, action: () => injectSlash('/system') },
+  { label: '🤖 Switch Model',    icon: 'pi-microchip-ai',  group: '💬 Chat Actions', chatOnly: true, action: () => injectSlash('/model') },
+  { label: '🗑️ Clear Chat',      icon: 'pi-trash',         group: '💬 Chat Actions', chatOnly: true, action: () => injectSlash('/clear') },
 ]
+
+const isOnChat = computed(() => route.name === 'chat')
 
 const selectedIndex = ref(0)
 
 const filtered = computed(() => {
-  if (!query.value) return allCommands
+  const base = allCommands.filter(c => !c.chatOnly || isOnChat.value)
+  if (!query.value) return base
   const q = query.value.toLowerCase()
-  return allCommands.filter(c => c.label.toLowerCase().includes(q))
+  return base.filter(c => c.label.toLowerCase().includes(q))
 })
 
 function go(name: string) {
   router.push({ name })
   emit('close')
+}
+
+// Inject a slash command into the chat input by navigating to chat
+// and dispatching a custom event the ChatView can listen for
+function injectSlash(cmd: string) {
+  if (route.name !== 'chat') router.push({ name: 'chat' })
+  emit('close')
+  // Give the route time to render, then fire a custom event
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('slash-command', { detail: cmd }))
+  }, 50)
 }
 
 function run(item: CommandItem) {

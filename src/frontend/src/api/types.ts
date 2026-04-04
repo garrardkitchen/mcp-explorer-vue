@@ -105,6 +105,9 @@ export interface ChatMessage {
   modelName?: string
   tokenUsage?: ChatTokenUsage
   thinkingMilliseconds?: number
+  // Prompt invocation — persisted on the user message when a prompt picker ran it
+  promptName?: string | null
+  promptInvocationParams?: string | null  // JSON string e.g. {"topic":"ml"}
 }
 
 export interface ChatSession {

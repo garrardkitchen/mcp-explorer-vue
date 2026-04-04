@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Chat Slash Command Designs — MCP Explorer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0f1e; color: #e2e8f0; min-height: 100vh; padding: 32px 24px; }
+
+  h1 { text-align: center; font-size: 22px; color: #94a3b8; font-weight: 500; margin-bottom: 8px; letter-spacing: .04em; }
+  .subtitle { text-align: center; font-size: 13px; color: #475569; margin-bottom: 48px; }
+  .subtitle em { color: #3b82f6; font-style: normal; }
+
+  .designs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; max-width: 1320px; margin: 0 auto; }
+
+  /* Card */
+  .card { background: #0f172a; border: 1px solid #1e3a5f; border-radius: 16px; overflow: hidden; }
+  .card-header { padding: 20px 24px 16px; border-bottom: 1px solid #1e2d40; }
+  .card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 6px; }
+  .card-name  { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+  .card-desc  { font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.5; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 600; border-radius: 4px; padding: 2px 6px; margin-top: 8px; }
+  .badge.rec  { background: rgba(59,130,246,.2); color: #60a5fa; border: 1px solid rgba(59,130,246,.3); }
+  .badge.alt  { background: rgba(100,116,139,.15); color: #64748b; border: 1px solid rgba(100,116,139,.2); }
+  .canvas { padding: 24px; min-height: 420px; display: flex; flex-direction: column; gap: 20px; }
+
+  /* Shared chat input mock */
+  .chat-input-mock { background: #1e293b; border: 1px solid #2d3f55; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #94a3b8; display: flex; align-items: center; gap: 8px; position: relative; }
+  .chat-input-mock .cursor { display: inline-block; width: 8px; height: 14px; background: #3b82f6; border-radius: 1px; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .chat-input-mock .typed { color: #e2e8f0; }
+
+  /* ── DESIGN A — VS Code / Spotlight ──────────────────────────────── */
+  .a-popup {
+    background: #1a2540;
+    border: 1px solid #2d4a6e;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+    font-size: 13px;
+  }
+  .a-group-header {
+    padding: 6px 12px 4px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: #475569; border-bottom: 1px solid #1e3050;
+  }
+  .a-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; cursor: pointer; transition: background .1s;
+    border-bottom: 1px solid rgba(45,64,85,.4);
+  }
+  .a-item:last-child { border-bottom: none; }
+  .a-item.selected { background: rgba(59,130,246,.15); }
+  .a-item-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .a-item-body { flex: 1; min-width: 0; }
+  .a-item-name { font-weight: 600; color: #e2e8f0; }
+  .a-item-name .match { color: #60a5fa; }
+  .a-item-desc { font-size: 11px; color: #64748b; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a-item-kbd { background: #0f172a; border: 1px solid #2d3f55; border-radius: 4px; font-size: 10px; color: #475569; padding: 1px 5px; flex-shrink: 0; }
+  /* group colours */
+  .a-ic-prompt { background: rgba(59,130,246,.2); color: #60a5fa; }
+  .a-ic-history { background: rgba(245,158,11,.18); color: #fbbf24; }
+  .a-ic-control { background: rgba(20,184,166,.18); color: #2dd4bf; }
+  .a-ic-report  { background: rgba(168,85,247,.18);  color: #c084fc; }
+  .a-preview {
+    background: #0f1a2e; border-top: 1px solid #1e3050;
+    padding: 10px 14px; font-size: 11px; color: #475569;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .a-footer {
+    background: #0f1a2e; border-top: 1px solid #1e3050;
+    padding: 6px 12px; font-size: 10px; color: #334155;
+    display: flex; gap: 16px;
+  }
+  .a-footer span { display: flex; align-items: center; gap: 4px; }
+  .a-footer kbd { background: #1e293b; border: 1px solid #334155; border-radius: 3px; padding: 1px 4px; font-size: 10px; }
+
+  /* ── DESIGN B — Compact Inline Dropdown ─────────────────────────── */
+  .b-popup {
+    background: #131c2e;
+    border: 1px solid #1e3252;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    font-size: 13px;
+    overflow: hidden;
+  }
+  .b-search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid #1a2d47;
+    font-size: 12px; color: #64748b;
+  }
+  .b-search input-mock { flex: 1; color: #e2e8f0; }
+  .b-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  .b-item.selected { background: rgba(59,130,246,.12); }
+  .b-item.selected .b-cmd { color: #60a5fa; }
+  .b-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+  .b-cmd { font-weight: 600; color: #cbd5e1; font-family: 'SF Mono', monospace; font-size: 12px; min-width: 90px; }
+  .b-sep { color: #334155; margin: 0 2px; }
+  .b-desc { color: #475569; font-size: 12px; flex: 1; }
+  .b-tag { font-size: 10px; background: rgba(59,130,246,.15); color: #60a5fa; border-radius: 10px; padding: 1px 6px; flex-shrink: 0; }
+  .b-tag.new { background: rgba(20,184,166,.15); color: #2dd4bf; }
+  .b-divider { height: 1px; background: #1a2d47; margin: 2px 0; }
+  .b-sub-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px 5px 40px; color: #64748b; font-size: 12px; cursor: pointer;
+  }
+  .b-sub-item.selected { background: rgba(59,130,246,.08); color: #94a3b8; }
+  .b-sub-icon { font-size: 10px; width: 16px; text-align: center; }
+  .b-footer {
+    border-top: 1px solid #1a2d47; padding: 5px 12px;
+    font-size: 10px; color: #334155; display: flex; gap: 12px;
+  }
+  .b-footer kbd { background: #1e293b; border: 1px solid #334155; border-radius: 3px; padding: 1px 4px; }
+
+  /* ── DESIGN C — Rich Panel ───────────────────────────────────────── */
+  .c-popup {
+    background: #111827;
+    border: 1px solid #1f2e45;
+    border-radius: 12px;
+    box-shadow: 0 16px 56px rgba(0,0,0,.65);
+    font-size: 13px;
+    overflow: hidden;
+    display: flex;
+  }
+  .c-list { width: 210px; border-right: 1px solid #1f2e45; flex-shrink: 0; }
+  .c-list-header { padding: 10px 14px 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #334155; }
+  .c-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; cursor: pointer;
+  }
+  .c-item.selected { background: rgba(59,130,246,.15); border-left: 2px solid #3b82f6; padding-left: 12px; }
+  .c-item-icon { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .c-ic-a { background: rgba(59,130,246,.2); color: #60a5fa; }
+  .c-ic-b { background: rgba(245,158,11,.2); color: #fbbf24; }
+  .c-ic-c { background: rgba(20,184,166,.2); color: #2dd4bf; }
+  .c-ic-d { background: rgba(168,85,247,.2); color: #c084fc; }
+  .c-ic-e { background: rgba(239,68,68,.2); color: #f87171; }
+  .c-ic-f { background: rgba(34,197,94,.2); color: #4ade80; }
+  .c-item-label { font-weight: 600; color: #e2e8f0; font-size: 13px; }
+  .c-item-sub { font-size: 11px; color: #475569; margin-top: 1px; }
+  .c-detail { flex: 1; padding: 16px; display: flex; flex-direction: column; }
+  .c-detail-title { font-size: 15px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+  .c-detail-cmd { font-family: 'SF Mono', monospace; font-size: 12px; color: #60a5fa; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.2); border-radius: 4px; padding: 2px 8px; display: inline-block; margin-bottom: 10px; }
+  .c-detail-desc { font-size: 12px; color: #64748b; line-height: 1.6; flex: 1; }
+  .c-detail-preview {
+    background: #0f172a; border: 1px solid #1e2d40; border-radius: 6px;
+    padding: 8px 10px; font-size: 11px; color: #475569; margin-top: 10px; line-height: 1.6;
+  }
+  .c-detail-preview strong { color: #94a3b8; }
+  .c-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .c-btn { font-size: 11px; padding: 5px 12px; border-radius: 5px; border: 1px solid; cursor: pointer; }
+  .c-btn-prim { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  .c-btn-sec  { background: transparent; border-color: #2d3f55; color: #64748b; }
+  .c-footer { border-top: 1px solid #1f2e45; padding: 8px 14px; font-size: 10px; color: #334155; display: flex; gap: 12px; }
+  .c-footer kbd { background: #1e293b; border: 1px solid #334155; border-radius: 3px; padding: 1px 4px; }
+
+  /* Ctrl+K sidebar panel mock */
+  .ctrlk-mock {
+    background: #131c2e; border: 1px solid #1e3252; border-radius: 8px; overflow: hidden;
+    font-size: 12px;
+  }
+  .ctrlk-section { padding: 5px 0; border-bottom: 1px solid #1a2d47; }
+  .ctrlk-section:last-child { border-bottom: none; }
+  .ctrlk-label { padding: 4px 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #334155; }
+  .ctrlk-item { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; }
+  .ctrlk-item.sel { background: rgba(59,130,246,.15); }
+  .ctrlk-item-icon { font-size: 13px; width: 18px; text-align: center; color: #475569; }
+  .ctrlk-item-name { flex: 1; color: #cbd5e1; }
+  .ctrlk-item.sel .ctrlk-item-name { color: #60a5fa; }
+  .ctrlk-badge { font-size: 10px; background: rgba(59,130,246,.15); color: #60a5fa; border-radius: 3px; padding: 1px 5px; }
+  .ctrlk-badge.chat { background: rgba(168,85,247,.15); color: #c084fc; }
+
+  .section-label { font-size: 11px; font-weight: 600; color: #475569; letter-spacing: .04em; text-transform: uppercase; }
+
+  /* Trigger highlight in input */
+  .slash { color: #60a5fa; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>Chat Slash Command / Macro Designs</h1>
+<p class="subtitle">
+  Type <em>/</em> in the chat input to trigger autocomplete. Also available via <em>Ctrl+K</em> when on the Chat page.
+</p>
+
+<div class="designs">
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- DESIGN A                                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-label" style="color:#60a5fa">Design A</div>
+      <div class="card-name">Spotlight — Grouped with Preview</div>
+      <div class="card-desc">Full-featured command palette: categories, icon badges, keyboard hints, and a live description footer. Feels like VS Code's command palette, familiar to developers.</div>
+      <span class="badge rec">⭐ Recommended</span>
+    </div>
+    <div class="canvas">
+
+      <!-- Chat input showing /p typed -->
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Chat input</div>
+        <div class="chat-input-mock">
+          <span class="typed"><span class="slash">/p</span></span><span class="cursor"></span>
+        </div>
+      </div>
+
+      <!-- Popup -->
+      <div class="a-popup">
+        <div class="a-group-header">🔌 MCP Prompts</div>
+
+        <div class="a-item selected">
+          <div class="a-item-icon a-ic-prompt">📋</div>
+          <div class="a-item-body">
+            <div class="a-item-name"><span class="match">/p</span>rompt</div>
+            <div class="a-item-desc">Browse &amp; inject an MCP prompt template</div>
+          </div>
+          <div class="a-item-kbd">↵</div>
+        </div>
+
+        <div class="a-group-header">🕐 Recent Prompts</div>
+
+        <div class="a-item">
+          <div class="a-item-icon a-ic-history">1</div>
+          <div class="a-item-body">
+            <div class="a-item-name"><span class="match">/p</span>rev1</div>
+            <div class="a-item-desc">"Summarise the latest GitHub release notes for…"</div>
+          </div>
+        </div>
+
+        <div class="a-item">
+          <div class="a-item-icon a-ic-history">2</div>
+          <div class="a-item-body">
+            <div class="a-item-name"><span class="match">/p</span>rev2</div>
+            <div class="a-item-desc">"List all open PRs in the mcp-explorer repo"</div>
+          </div>
+        </div>
+
+        <div class="a-group-header">📊 Chat Controls</div>
+
+        <div class="a-item">
+          <div class="a-item-icon a-ic-control">📈</div>
+          <div class="a-item-body">
+            <div class="a-item-name">/stats</div>
+            <div class="a-item-desc">Show token usage: input / output / total</div>
+          </div>
+        </div>
+        <div class="a-item">
+          <div class="a-item-icon a-ic-report">📄</div>
+          <div class="a-item-body">
+            <div class="a-item-name">/report</div>
+            <div class="a-item-desc">Export conversation as Markdown report</div>
+          </div>
+        </div>
+
+        <div class="a-preview">
+          <span style="font-size:16px">📋</span>
+          <span><strong style="color:#94a3b8">/prompt</strong> — Opens the MCP prompt picker. Select a prompt from any connected server and fill in its parameters before sending.</span>
+        </div>
+        <div class="a-footer">
+          <span><kbd>↑↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> select</span>
+          <span><kbd>Esc</kbd> dismiss</span>
+          <span><kbd>Tab</kbd> insert</span>
+        </div>
+      </div>
+
+      <!-- Ctrl+K inset -->
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Ctrl+K — Chat-only commands appear when on Chat page</div>
+        <div class="ctrlk-mock">
+          <div class="ctrlk-section">
+            <div class="ctrlk-label">💬 Chat Actions</div>
+            <div class="ctrlk-item sel">
+              <div class="ctrlk-item-icon">📋</div>
+              <div class="ctrlk-item-name">Open Prompt Picker</div>
+              <div class="ctrlk-badge chat">Chat</div>
+            </div>
+            <div class="ctrlk-item">
+              <div class="ctrlk-item-icon">📈</div>
+              <div class="ctrlk-item-name">Show Token Stats</div>
+              <div class="ctrlk-badge chat">Chat</div>
+            </div>
+            <div class="ctrlk-item">
+              <div class="ctrlk-item-icon">📄</div>
+              <div class="ctrlk-item-name">Export as Report</div>
+              <div class="ctrlk-badge chat">Chat</div>
+            </div>
+          </div>
+          <div class="ctrlk-section">
+            <div class="ctrlk-label">🗂 Navigate</div>
+            <div class="ctrlk-item">
+              <div class="ctrlk-item-icon">🔌</div>
+              <div class="ctrlk-item-name">Connections</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- DESIGN B                                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-label" style="color:#a78bfa">Design B</div>
+      <div class="card-name">Compact Inline — with Sub-items</div>
+      <div class="card-desc">Minimal dropdown that appears just above the cursor. Recent prompts expand as sub-rows under <code>/recent</code>. Fast and non-intrusive — stays out of the way.</div>
+      <span class="badge alt">Alternative</span>
+    </div>
+    <div class="canvas">
+
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Chat input</div>
+        <div class="chat-input-mock">
+          <span class="typed"><span class="slash">/</span></span><span class="cursor"></span>
+        </div>
+      </div>
+
+      <div class="b-popup">
+        <div class="b-search">
+          <span>⌨</span>
+          <span style="color:#e2e8f0">Type a command…</span>
+        </div>
+
+        <div class="b-item selected">
+          <div class="b-icon">📋</div>
+          <div class="b-cmd"><span style="color:#60a5fa">/prompt</span></div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Pick &amp; inject MCP prompt</div>
+          <div class="b-tag">MCP</div>
+        </div>
+
+        <div class="b-item">
+          <div class="b-icon">🕐</div>
+          <div class="b-cmd">/recent</div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Re-use a recent message</div>
+        </div>
+        <div class="b-sub-item">
+          <div class="b-sub-icon">↳</div>
+          <div style="flex:1;color:#94a3b8">"Summarise the latest GitHub release notes…"</div>
+        </div>
+        <div class="b-sub-item selected">
+          <div class="b-sub-icon">↳</div>
+          <div style="flex:1">"List all open PRs in mcp-explorer repo"</div>
+        </div>
+        <div class="b-sub-item">
+          <div class="b-sub-icon">↳</div>
+          <div style="flex:1;color:#94a3b8">"What tools does the filesystem server expose?"</div>
+        </div>
+
+        <div class="b-divider"></div>
+
+        <div class="b-item">
+          <div class="b-icon">📈</div>
+          <div class="b-cmd">/stats</div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Token usage: in / out / total</div>
+        </div>
+        <div class="b-item">
+          <div class="b-icon">📄</div>
+          <div class="b-cmd">/report</div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Export chat as Markdown</div>
+        </div>
+        <div class="b-item">
+          <div class="b-icon">🗑</div>
+          <div class="b-cmd">/clear</div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Clear conversation history</div>
+          <div class="b-tag new">new</div>
+        </div>
+        <div class="b-item">
+          <div class="b-icon">⚙</div>
+          <div class="b-cmd">/system</div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Edit system prompt</div>
+        </div>
+        <div class="b-item">
+          <div class="b-icon">🔀</div>
+          <div class="b-cmd">/model</div>
+          <div class="b-sep">·</div>
+          <div class="b-desc">Switch AI model</div>
+        </div>
+
+        <div class="b-footer">
+          <span><kbd>↑↓</kbd> move</span>
+          <span><kbd>→</kbd> expand</span>
+          <span><kbd>↵</kbd> use</span>
+          <span><kbd>Esc</kbd> close</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Ctrl+K — chat commands injected at top when on Chat page</div>
+        <div class="ctrlk-mock">
+          <div class="ctrlk-section">
+            <div class="ctrlk-label">💬 Chat</div>
+            <div class="ctrlk-item sel">
+              <div class="ctrlk-item-icon">📋</div>
+              <div class="ctrlk-item-name">Prompt Picker  <span style="font-size:10px;color:#475569;font-family:monospace">/prompt</span></div>
+              <div class="ctrlk-badge chat">Chat only</div>
+            </div>
+            <div class="ctrlk-item">
+              <div class="ctrlk-item-icon">📈</div>
+              <div class="ctrlk-item-name">Token Stats  <span style="font-size:10px;color:#475569;font-family:monospace">/stats</span></div>
+              <div class="ctrlk-badge chat">Chat only</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- DESIGN C                                                        -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-label" style="color:#34d399">Design C</div>
+      <div class="card-name">Rich Split Panel — Macro Explorer</div>
+      <div class="card-desc">Two-column layout: command list on the left, rich detail + action buttons on the right. Best for discoverability — users can read exactly what each macro does before executing.</div>
+      <span class="badge alt">Alternative</span>
+    </div>
+    <div class="canvas">
+
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Chat input</div>
+        <div class="chat-input-mock">
+          <span class="typed"><span class="slash">/</span></span><span class="cursor"></span>
+        </div>
+      </div>
+
+      <div class="c-popup">
+        <div class="c-list">
+          <div class="c-list-header">Macros</div>
+          <div class="c-item selected">
+            <div class="c-item-icon c-ic-a">📋</div>
+            <div>
+              <div class="c-item-label">/prompt</div>
+              <div class="c-item-sub">MCP Prompts</div>
+            </div>
+          </div>
+          <div class="c-item">
+            <div class="c-item-icon c-ic-b">🕐</div>
+            <div>
+              <div class="c-item-label">/recent</div>
+              <div class="c-item-sub">Last 3 messages</div>
+            </div>
+          </div>
+          <div class="c-item">
+            <div class="c-item-icon c-ic-c">📈</div>
+            <div>
+              <div class="c-item-label">/stats</div>
+              <div class="c-item-sub">Token usage</div>
+            </div>
+          </div>
+          <div class="c-item">
+            <div class="c-item-icon c-ic-d">📄</div>
+            <div>
+              <div class="c-item-label">/report</div>
+              <div class="c-item-sub">Export chat</div>
+            </div>
+          </div>
+          <div class="c-item">
+            <div class="c-item-icon c-ic-f">⚙</div>
+            <div>
+              <div class="c-item-label">/system</div>
+              <div class="c-item-sub">System prompt</div>
+            </div>
+          </div>
+          <div class="c-item">
+            <div class="c-item-icon c-ic-e">🗑</div>
+            <div>
+              <div class="c-item-label">/clear</div>
+              <div class="c-item-sub">Reset chat</div>
+            </div>
+          </div>
+          <div class="c-footer">
+            <span><kbd>↑↓</kbd> select</span>
+            <span><kbd>Esc</kbd> close</span>
+          </div>
+        </div>
+        <div class="c-detail">
+          <div class="c-detail-title">Prompt Picker</div>
+          <div class="c-detail-cmd">/prompt [search]</div>
+          <div class="c-detail-desc">
+            Opens a searchable list of all MCP prompt templates available from your connected servers. Select a prompt, fill in any required parameters, and inject the rendered content directly into the chat input.
+          </div>
+          <div class="c-detail-preview">
+            <strong>Example:</strong><br>
+            <span style="color:#60a5fa">/prompt</span> summarize → opens picker filtered to "summarize"<br>
+            <span style="color:#60a5fa">/prompt</span> → opens picker showing all prompts
+          </div>
+          <div class="c-actions">
+            <button class="c-btn c-btn-prim">▶ Open Picker</button>
+            <button class="c-btn c-btn-sec">Esc</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full command reference -->
+      <div style="background:#0f172a;border:1px solid #1e2d40;border-radius:8px;padding:14px;font-size:11px;color:#475569;line-height:2">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#334155;margin-bottom:8px">All macros — full reference</div>
+        <div><span style="color:#60a5fa;font-family:monospace">/prompt</span>  — Pick &amp; inject an MCP prompt template (supports optional search filter)</div>
+        <div><span style="color:#fbbf24;font-family:monospace">/recent</span>  — Re-insert one of the last 3 messages you sent</div>
+        <div><span style="color:#2dd4bf;font-family:monospace">/stats</span>   — Show token usage inline (input / output / total this session)</div>
+        <div><span style="color:#c084fc;font-family:monospace">/report</span>  — Copy entire conversation as formatted Markdown to clipboard</div>
+        <div><span style="color:#4ade80;font-family:monospace">/system</span>  — Open system prompt editor panel</div>
+        <div><span style="color:#f87171;font-family:monospace">/clear</span>   — Clear current conversation (with confirm)</div>
+        <div><span style="color:#94a3b8;font-family:monospace">/model</span>   — Quick-switch the active AI model</div>
+        <div><span style="color:#94a3b8;font-family:monospace">/new</span>     — Start a fresh chat session</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -80,6 +80,8 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             m.TokenUsage,
             m.ThinkingMilliseconds,
             m.SensitiveSegments,
+            m.PromptName,
+            m.PromptInvocationParams,
         }));
     }
 
@@ -114,7 +116,9 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         {
             Role = "user",
             Content = request.Message,
-            TimestampUtc = DateTime.UtcNow
+            TimestampUtc = DateTime.UtcNow,
+            PromptName = request.PromptName,
+            PromptInvocationParams = request.PromptInvocationParams,
         };
         session.Messages.Add(userMessage);
         session.LastActivityUtc = DateTime.UtcNow;
@@ -246,5 +250,5 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
     }
 }
 
-public sealed record SendMessageRequest(string Message, string? ModelName, IReadOnlyList<string>? ConnectionNames);
+public sealed record SendMessageRequest(string Message, string? ModelName, IReadOnlyList<string>? ConnectionNames, string? PromptName = null, string? PromptInvocationParams = null);
 public sealed record RenameSessionRequest(string? Name);

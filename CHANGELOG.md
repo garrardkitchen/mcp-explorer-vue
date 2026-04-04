@@ -1,8 +1,39 @@
 # Changelog
 
+## [Unreleased] - 2025-04-04
+
+### Fixed
+- Prompt invocation blocks now persist across chat reloads — `PromptName` and `PromptInvocationParams` fields added to `ChatMessage` domain model and threaded through `SendMessageRequest`, controller, and `GetMessages` response
+- Prompt picker no longer injects a synthetic client-side `system` message; metadata travels with the user message so no second bubble appears
+- `isPromptInvocation` now matches `role: 'user'` messages with `promptName` set (not `role: 'system'`)
+- `isToolCall` guard simplified (no longer needs to exclude prompt messages)
+
+### Added
+- Expand/collapse toggle on prompt invocation blocks to reveal the full rendered prompt content sent to the AI
+- `parsePromptParams` helper in ChatView parses the JSON-string `promptInvocationParams` for key/value chip rendering
+- `expandedPromptContent` set and `togglePromptContent()` in ChatView for per-message expand state
+- CSS classes `.prompt-content-expanded`, `.prompt-content-pre`, `.prompt-content-toggle`, `.prompt-no-params-hint`
+
 All notable changes to MCP Explorer v2 are documented here.
 
-## [Unreleased] — 2026-04-04 (21)
+## [Unreleased] — 2026-04-04 (24)
+- feat: Prompt invocation block (Design A) — violet card with gradient header, connection badge, model badge, parameter key-value chips, and "↳ sent to chat" hint; distinct from amber tool-call blocks
+- feat: `ChatMessage` type extended with `promptName` and `promptInvocationParams` (client-side only)
+- fix: Prompt Picker "Run in Chat" now pushes invocation block into timeline before sending prompt result to AI
+
+## [Unreleased] — 2026-04-04 (23)
+- feat: Stats dialog redesigned — hero banner with animated token ratio bar, 4 metric cards with icons, tool call breakdown list grouped by tool+connection with call count badges
+- feat: Prompt Picker now sends the executed prompt directly into chat (calls `sendMessage`) instead of pasting raw text into the textarea — button renamed "Run in Chat"
+
+## [Unreleased] — 2026-04-04 (22)
+- feat: Slash command menu in Chat (`/prompt`, `/recent1-3`, `/stats`, `/report`, `/system`, `/model`, `/clear`) — floating Design A popup with fuzzy search, keyboard nav (↑↓↵ Esc), group headers, icon badges, and enter-hint
+- feat: Prompt Picker dialog — browse prompts from all connected servers, filter, select, fill parameters, inject result into chat input
+- feat: Token Stats dialog (`/stats`) — shows input/output/total tokens and AI turn count for the session
+- feat: Model Picker dialog (`/model`) — quick-switch active model inline
+- feat: `/clear` clears current session via confirm dialog
+- feat: `clearMessages()` added to chat Pinia store
+- fix: Input placeholder updated to hint at `/` commands
+
 - fix: Nav accent colours now use CSS custom properties (`--nav-accent-blue/amber/teal/violet`) per theme instead of hardcoded hex — all 6 themes now render correct accent tints
 - fix: Added `aria-label="Main navigation"` to sidebar `<nav>` for accessibility
 

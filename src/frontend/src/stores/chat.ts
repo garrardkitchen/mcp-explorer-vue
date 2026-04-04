@@ -51,7 +51,9 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(
     text: string,
     modelName: string | undefined,
-    connectionNames: string[]
+    connectionNames: string[],
+    promptName?: string,
+    promptInvocationParams?: Record<string, string>,
   ) {
     if (!activeSessionId.value) throw new Error('No active session')
     error.value = null
@@ -60,13 +62,20 @@ export const useChatStore = defineStore('chat', () => {
     thinkingMs.value = 0
     lastUsage.value = null
 
-    // Add user message optimistically (include model so user bubble can show the pill)
+    const paramsJson = promptInvocationParams && Object.keys(promptInvocationParams).length
+      ? JSON.stringify(promptInvocationParams)
+      : undefined
+
+    // Add user message optimistically — include prompt metadata so the timeline
+    // renders the invocation block immediately before the server confirms it
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: text,
       timestampUtc: new Date().toISOString(),
       modelName,
+      promptName,
+      promptInvocationParams: paramsJson,
     }
     messages.value.push(userMsg)
 
@@ -91,7 +100,9 @@ export const useChatStore = defineStore('chat', () => {
         text,
         modelName,
         connectionNames,
-        _streamAbort.signal
+        _streamAbort.signal,
+        promptName,
+        paramsJson,
       )) {
         if (evt.type === 'token' && evt.text) {
           if (!firstToken) {
@@ -150,9 +161,19 @@ export const useChatStore = defineStore('chat', () => {
     _streamAbort?.abort()
   }
 
+  async function clearMessages() {
+    if (!activeSessionId.value) return
+    // Delete and recreate the session to clear messages
+    const id = activeSessionId.value
+    await chatApi.deleteSession(id)
+    const newSession = await chatApi.createSession()
+    await loadSessions()
+    await selectSession(newSession.id)
+  }
+
   return {
     sessions, activeSessionId, messages, streaming,
     streamingContent, thinkingMs, error, lastUsage,
-    loadSessions, createSession, deleteSession, selectSession, sendMessage, cancelStream,
+    loadSessions, createSession, deleteSession, selectSession, sendMessage, cancelStream, clearMessages,
   }
 })

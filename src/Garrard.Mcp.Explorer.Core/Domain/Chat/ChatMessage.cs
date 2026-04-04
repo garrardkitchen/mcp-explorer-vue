@@ -13,4 +13,7 @@ public sealed class ChatMessage
     public ChatTokenUsage? TokenUsage { get; set; }
     public int? ThinkingMilliseconds { get; set; }
     public List<SensitiveSegment> SensitiveSegments { get; init; } = [];
+    // Prompt invocation — set when a user message originated from the prompt picker
+    public string? PromptName { get; set; }
+    public string? PromptInvocationParams { get; set; }  // JSON string {"key":"value"}
 }
