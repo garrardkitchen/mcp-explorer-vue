@@ -10,6 +10,11 @@ public interface IActiveConnection
     string Name { get; }
     string Endpoint { get; }
     bool IsConnected { get; }
+    /// <summary>
+    /// False when all retry attempts to invoke a tool have been exhausted, indicating the
+    /// underlying transport has failed. Cleared automatically when the connection is re-established.
+    /// </summary>
+    bool IsHealthy { get; }
     IReadOnlyList<ActiveTool> Tools { get; }
     IReadOnlyList<ActivePrompt> Prompts { get; }
     IReadOnlyList<ActiveResource> Resources { get; }

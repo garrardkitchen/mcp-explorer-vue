@@ -50,6 +50,7 @@ export interface ActiveConnection {
   name: string
   endpoint: string
   isConnected: boolean
+  isHealthy: boolean
   toolCount: number
 }
 

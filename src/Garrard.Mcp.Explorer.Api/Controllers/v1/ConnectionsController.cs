@@ -142,7 +142,7 @@ public sealed class ConnectionsController(IConnectionService connectionService, 
         var definition = prefs.Connections.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (definition is null) return NotFound();
         var connection = await connectionService.ConnectAsync(definition, cancellationToken);
-        return Ok(new { name = connection.Name, endpoint = connection.Endpoint, toolCount = connection.Tools.Count });
+        return Ok(new { name = connection.Name, endpoint = connection.Endpoint, isHealthy = connection.IsHealthy, toolCount = connection.Tools.Count });
     }
 
     [HttpPost("{name}/disconnect")]
@@ -156,7 +156,7 @@ public sealed class ConnectionsController(IConnectionService connectionService, 
     public IActionResult GetActive()
     {
         var active = connectionService.GetActiveConnections()
-            .Select(c => new { c.Name, c.Endpoint, c.IsConnected, toolCount = c.Tools.Count });
+            .Select(c => new { c.Name, c.Endpoint, c.IsConnected, c.IsHealthy, toolCount = c.Tools.Count });
         return Ok(active);
     }
 

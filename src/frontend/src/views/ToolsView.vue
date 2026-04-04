@@ -15,6 +15,7 @@ import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { preferencesApi } from '@/api/preferences'
+import { extractApiError } from '@/api/client'
 import type { ActiveTool } from '@/api/types'
 
 const toast = useToast()
@@ -81,6 +82,23 @@ const paramHistory = computed<Record<string, unknown>[]>(() =>
 // ── Computed ───────────────────────────────────────────────────────────
 const connectedConnections = computed(() => store.activeConnections.filter(c => c.isConnected))
 
+// ── Reconnect unhealthy connection ─────────────────────────────────────
+const reconnecting = ref<Record<string, boolean>>({})
+
+async function reconnect(name: string) {
+  reconnecting.value = { ...reconnecting.value, [name]: true }
+  try {
+    await store.connect(name)
+    toast.add({ severity: 'success', summary: 'Reconnected', detail: `${name} is healthy again`, life: 3000 })
+    if (selectedConnName.value === name) await loadTools(name)
+  } catch {
+    toast.add({ severity: 'error', summary: 'Reconnect failed', detail: `Could not reconnect to ${name}`, life: 5000 })
+  } finally {
+    const { [name]: _, ...rest } = reconnecting.value
+    reconnecting.value = rest
+  }
+}
+
 type ToolListItem = ActiveTool | { isSeparator: true; label: string }
 
 const filteredTools = computed<ToolListItem[]>(() => {
@@ -116,13 +134,17 @@ const inputProps = computed(() => {
 })
 
 // ── Watchers ───────────────────────────────────────────────────────────
-watch(selectedConnName, async (name) => {
+async function loadTools(name: string) {
   selectedTool.value = null; tools.value = []; result.value = null
-  if (!name) return
   toolsLoading.value = true
   try { tools.value = await store.getTools(name) }
   catch (e: any) { toast.add({ severity: 'error', summary: 'Failed to load tools', detail: e.message, life: 5000 }) }
   finally { toolsLoading.value = false }
+}
+
+watch(selectedConnName, async (name) => {
+  if (!name) { tools.value = []; return }
+  await loadTools(name)
 })
 
 watch(selectedTool, (t) => {
@@ -163,9 +185,12 @@ async function invoke() {
     await preferencesApi.patch({ parameterHistory: allParamHistory.value })
 
     toast.add({ severity: 'success', summary: 'Tool executed', life: 2000 })
-  } catch (e: any) {
-    resultError.value = e.message
-    toast.add({ severity: 'error', summary: 'Invocation failed', detail: e.message, life: 5000 })
+  } catch (e: unknown) {
+    const msg = extractApiError(e)
+    resultError.value = msg
+    toast.add({ severity: 'error', summary: 'Invocation failed', detail: msg, life: 8000 })
+    // Refresh active connections so isHealthy reflects any degraded state set by the backend
+    await store.loadActive()
   } finally { invoking.value = false }
 }
 
@@ -241,11 +266,23 @@ watch(() => store.initialized, async (ready, wasReady) => {
               v-for="c in connectedConnections"
               :key="c.name"
               class="conn-item"
-              :class="{ active: selectedConnName === c.name }"
+              :class="{ active: selectedConnName === c.name, unhealthy: !c.isHealthy }"
               @click="selectedConnName = c.name"
             >
-              <i class="pi pi-circle-fill dot" />
-              <span>{{ c.name }}</span>
+              <i class="pi pi-circle-fill dot" :class="{ 'dot-degraded': !c.isHealthy }" />
+              <span class="conn-name">{{ c.name }}</span>
+              <Button
+                v-if="!c.isHealthy"
+                v-tooltip.right="'Retry connection'"
+                class="reconnect-btn"
+                text
+                rounded
+                size="small"
+                :loading="!!reconnecting[c.name]"
+                @click.stop="reconnect(c.name)"
+              >
+                <template #icon><span class="reconnect-emoji">🔄</span></template>
+              </Button>
             </div>
           </div>
         </div>
@@ -429,7 +466,12 @@ watch(() => store.initialized, async (ready, wasReady) => {
 .conn-item { display:flex; align-items:center; gap:8px; padding:10px 16px; cursor:pointer; font-size:13px; color:var(--text-secondary); transition:var(--transition-fast); border-left:2px solid transparent; }
 .conn-item:hover { background:var(--nav-item-hover); color:var(--text-primary); }
 .conn-item.active { background:var(--nav-item-active); color:var(--accent); border-left-color:var(--accent); }
+.conn-item.unhealthy { border-left-color: var(--warning, #f59e0b); }
+.conn-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dot { font-size:8px; color:var(--success); }
+.dot.dot-degraded { color: var(--warning, #f59e0b); }
+.reconnect-btn { padding:0 !important; width:22px !important; height:22px !important; flex-shrink:0; }
+.reconnect-emoji { font-size:13px; line-height:1; }
 .tool-list { overflow-y:auto; flex:1; }
 .tool-item { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border); border-left:2px solid transparent; transition:var(--transition-fast); }
 .tool-item:hover { background:var(--nav-item-hover); }

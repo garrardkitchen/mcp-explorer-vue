@@ -1,6 +1,19 @@
 # Changelog
 
-## [Unreleased] - 2025-04-04
+## [Unreleased] - 2025-04-05
+
+### Added
+- Connection health tracking: `IActiveConnection.IsHealthy` flag, set to `false` when all tool-invoke retry attempts are exhausted and restored to `true` on the next successful call
+- `GET /connections/active` now includes `isHealthy` in each active connection entry
+- Per-connection reconnect semaphore (`_reconnectGates`) in `ConnectionService` — serialises concurrent reconnect attempts so only one caller reconnects while others wait and benefit from the result
+- 🔄 reconnect button appears next to degraded connections in the Tools view sidebar; clicking it calls the connect endpoint and reloads tools on success
+- Amber dot and amber left-border on unhealthy connection items in the sidebar
+
+### Fixed
+- `ReconnectAsync` failure now correctly marks the connection as unhealthy and surfaces the reconnect error; previously the exception escaped the retry loop leaving `IsHealthy` unset
+- Frontend `reconnecting` state migrated from `ref<Set<string>>` to `ref<Record<string, boolean>>` for cleaner Vue 3 reactivity (no in-place mutation)
+- After a failed tool invocation the connections store is refreshed so the UI immediately reflects the degraded state without requiring a page reload
+
 
 ### Added
 - `GET /api/v1/system/info` endpoint returns `apiVersion` (from assembly `AssemblyInformationalVersion`) and `dotnetVersion` (from `RuntimeInformation.FrameworkDescription`)

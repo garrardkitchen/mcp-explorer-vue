@@ -23,7 +23,10 @@ services:
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
       - AppMetadata__Version=${AppMetadata__Version:-0.5.0}
       - LlmService__OpenAiBaseUrl=${LlmService__OpenAiBaseUrl:-https://api.openai.com/v1}
+      - LlmService__MaxRetryAttempts=${LlmService__MaxRetryAttempts:-3}
       - LlmService__TimeoutSeconds=${LlmService__TimeoutSeconds:-30}
+      - ToolInvoke__TimeoutSeconds=${ToolInvoke__TimeoutSeconds:-300}
+      - ToolInvoke__MaxRetryAttempts=${ToolInvoke__MaxRetryAttempts:-2}
       - Elicitation__TimeoutSeconds=${Elicitation__TimeoutSeconds:-0}
       # Point to an existing settings.json (e.g. from the original MCP Explorer)
       # Leave empty to use the default path inside the container (/data/settings.json)

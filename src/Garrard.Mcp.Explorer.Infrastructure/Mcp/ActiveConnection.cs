@@ -26,6 +26,7 @@ internal sealed class ActiveConnection : IActiveConnection, IAsyncDisposable
     public string Name => Context.Name;
     public string Endpoint => Context.Endpoint;
     public bool IsConnected => true;
+    public bool IsHealthy { get; internal set; } = true;
 
     public IReadOnlyList<ActiveTool> Tools => _tools ??= Context.Tools
         .Select(t =>
