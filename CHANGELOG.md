@@ -2,6 +2,16 @@
 
 All notable changes to MCP Explorer v2 are documented here.
 
+## [Unreleased] — 2026-04-04 (21)
+- fix: Nav accent colours now use CSS custom properties (`--nav-accent-blue/amber/teal/violet`) per theme instead of hardcoded hex — all 6 themes now render correct accent tints
+- fix: Added `aria-label="Main navigation"` to sidebar `<nav>` for accessibility
+
+## [Unreleased] — 2026-04-04 (20)
+- feat: Left navigation redesigned with Design A — 4 grouped sections (Infrastructure, Configuration, MCP Explorer, Intelligence) with colour-coded headers and separators
+- feat: Rename "Sensitive" → "Data Guard" in sidebar label, router meta, and page title
+- feat: Active nav items show per-group accent colour (blue/amber/teal/violet) as left border + background tint
+- feat: Group headers hidden when sidebar collapses to icon-only mode
+
 ## [Unreleased] — 2026-04-04 (19)
 - fix: Tool calls now appear in real-time during streaming — root cause was SSE event name mismatch (`toolcall` vs `tool-call`); backend now uses explicit kebab-case switch for `ToolCall → tool-call`
 - fix: Duplicate tool calls caused by LLM receiving user message twice — `session.Messages` snapshot is now taken BEFORE adding the new user message, so `BuildMessages` doesn't append it again

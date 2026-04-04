@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nav Design Options — MCP Explorer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #060d1a; color: #e2e8f0; padding: 32px; min-height: 100vh; }
+  h1 { text-align: center; font-size: 22px; font-weight: 700; color: #e2e8f0; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 40px; }
+  .designs { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+  .design-card { display: flex; flex-direction: column; border: 1px solid #1e2d40; border-radius: 12px; overflow: hidden; width: 220px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+  .design-label { background: #101928; border-bottom: 1px solid #1e2d40; padding: 14px 16px 12px; }
+  .design-label h2 { font-size: 14px; font-weight: 700; color: #e2e8f0; margin-bottom: 3px; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; background: rgba(59,130,246,.2); color: #3b82f6; border: 1px solid rgba(59,130,246,.3); border-radius: 20px; padding: 1px 8px; }
+  .badge.rec { background: rgba(34,197,94,.15); color: #22c55e; border-color: rgba(34,197,94,.3); }
+  .design-label p { font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.5; }
+  /* A */
+  .nav-a { background: #0c1525; padding: 8px 0 12px; }
+  .na-gh { display: flex; align-items: center; gap: 6px; padding: 12px 16px 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #475569; }
+  .na-gh:first-child { padding-top: 4px; }
+  .na-gh .d { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .na-sep { height: 1px; background: #1a2535; margin: 8px 12px; }
+  .na-i { display: flex; align-items: center; gap: 10px; padding: 8px 16px; font-size: 12.5px; color: #94a3b8; border-left: 2px solid transparent; cursor: pointer; }
+  .na-i:hover { background: rgba(255,255,255,.04); color: #e2e8f0; }
+  .na-i .ic { font-size: 14px; width: 18px; text-align: center; }
+  .gc .na-i.act { background:rgba(59,130,246,.15); border-left-color:#3b82f6; color:#e2e8f0; font-weight:500; }
+  .gc .na-gh .d { background:#3b82f6; } .gc .na-gh { color:rgba(59,130,246,.8); }
+  .gf .na-i.act { background:rgba(245,158,11,.12); border-left-color:#f59e0b; color:#e2e8f0; font-weight:500; }
+  .gf .na-gh .d { background:#f59e0b; }
+  .gm .na-i.act { background:rgba(20,184,166,.12); border-left-color:#14b8a6; color:#e2e8f0; font-weight:500; }
+  .gm .na-gh .d { background:#14b8a6; }
+  .ga .na-i.act { background:rgba(168,85,247,.12); border-left-color:#a855f7; color:#e2e8f0; font-weight:500; }
+  .ga .na-gh .d { background:#a855f7; }
+  /* B */
+  .nav-b { background: #0c1525; padding: 6px 0 12px; }
+  .nb-h { display:flex; align-items:center; gap:8px; padding:10px 12px 6px; }
+  .nb-hl { flex:1; height:1px; }
+  .nb-ht { font-size:9px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; white-space:nowrap; }
+  .nb-i { display:flex; align-items:center; gap:10px; padding:7px 12px 7px 14px; font-size:12.5px; color:#94a3b8; cursor:pointer; border-left:3px solid transparent; }
+  .nb-i:hover { background:rgba(255,255,255,.05); color:#e2e8f0; }
+  .nb-i .ic { font-size:14px; width:18px; text-align:center; }
+  .bc .nb-ht{color:#3b82f6;} .bc .nb-hl{background:linear-gradient(to right,#3b82f6,transparent);} .bc .nb-i .ic{color:#3b82f6;} .bc .nb-i.act{background:rgba(59,130,246,.18);border-left-color:#3b82f6;color:#93c5fd;font-weight:600;}
+  .bf .nb-ht{color:#f59e0b;} .bf .nb-hl{background:linear-gradient(to right,#f59e0b,transparent);} .bf .nb-i .ic{color:#f59e0b;} .bf .nb-i.act{background:rgba(245,158,11,.15);border-left-color:#f59e0b;color:#fcd34d;font-weight:600;}
+  .bm .nb-ht{color:#14b8a6;} .bm .nb-hl{background:linear-gradient(to right,#14b8a6,transparent);} .bm .nb-i .ic{color:#14b8a6;} .bm .nb-i.act{background:rgba(20,184,166,.12);border-left-color:#14b8a6;color:#5eead4;font-weight:600;}
+  .ba .nb-ht{color:#a855f7;} .ba .nb-hl{background:linear-gradient(to right,#a855f7,transparent);} .ba .nb-i .ic{color:#a855f7;} .ba .nb-i.act{background:rgba(168,85,247,.15);border-left-color:#a855f7;color:#d8b4fe;font-weight:600;}
+  /* C */
+  .nav-c { background: #0c1525; padding: 4px 0 12px; }
+  .nc-b { margin:2px 0; padding:2px 0 4px; position:relative; }
+  .nc-b::before { content:''; position:absolute; left:0; top:4px; bottom:4px; width:3px; border-radius:0 2px 2px 0; opacity:0.6; }
+  .nc-h { display:flex; align-items:center; gap:7px; padding:6px 14px 3px 12px; font-size:10px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; }
+  .nc-i { display:flex; align-items:center; gap:10px; padding:7px 12px; font-size:12.5px; color:#94a3b8; cursor:pointer; }
+  .nc-i:hover { color:#e2e8f0; }
+  .nc-i .ic { font-size:14px; width:18px; text-align:center; }
+  .nc-i .lb { flex:1; }
+  .nc-i .ct { font-size:10px; font-weight:700; background:rgba(255,255,255,.08); border-radius:10px; padding:1px 6px; color:#64748b; }
+  .nc-div { height:1px; margin:6px 12px; background:#1a2535; }
+  .cc::before{background:#3b82f6;} .cc .nc-h{color:#3b82f6;} .cc .nc-i:hover{background:rgba(59,130,246,.07);} .cc .nc-i.act{background:rgba(59,130,246,.16);color:#93c5fd;font-weight:500;}
+  .cf::before{background:#f59e0b;} .cf .nc-h{color:#f59e0b;} .cf .nc-i:hover{background:rgba(245,158,11,.06);} .cf .nc-i.act{background:rgba(245,158,11,.14);color:#fcd34d;font-weight:500;}
+  .cm::before{background:#14b8a6;} .cm .nc-h{color:#14b8a6;} .cm .nc-i:hover{background:rgba(20,184,166,.07);} .cm .nc-i.act{background:rgba(20,184,166,.14);color:#5eead4;font-weight:500;}
+  .ca::before{background:#a855f7;} .ca .nc-h{color:#a855f7;} .ca .nc-i:hover{background:rgba(168,85,247,.07);} .ca .nc-i.act{background:rgba(168,85,247,.15);color:#d8b4fe;font-weight:500;}
+  /* common */
+  .ann { display:flex; flex-direction:column; gap:6px; padding:14px 16px; background:#0d1b2a; border-top:1px solid #1a2535; font-size:11px; color:#64748b; }
+  .ann .p { display:flex; align-items:flex-start; gap:6px; }
+  .ann .p::before { content:'•'; color:#3b82f6; flex-shrink:0; }
+  .legend { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; margin:36px auto 0; padding:20px; background:#0c1525; border:1px solid #1a2535; border-radius:10px; max-width:720px; }
+  .legend h3 { width:100%; text-align:center; font-size:12px; font-weight:700; color:#64748b; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:4px; }
+  .li { display:flex; align-items:center; gap:7px; font-size:12px; color:#94a3b8; }
+  .ld { width:10px; height:10px; border-radius:50%; }
+</style>
+</head>
+<body>
+<h1>MCP Explorer — Navigation Redesign</h1>
+<p class="subtitle">3 design options · Choose one to implement</p>
+<div class="designs">
+
+  <!-- A -->
+  <div class="design-card">
+    <div class="design-label">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h2>A — Structured Clarity</h2><span class="badge rec">✦ Recommended</span>
+      </div>
+      <p>Dot + all-caps group headers. Per-group accent only on active indicator. Clean, VS Code–style. Lowest noise.</p>
+    </div>
+    <div class="nav-a">
+      <div class="gc"><div class="na-gh"><span class="d"></span> Infrastructure</div><div class="na-i act"><span class="ic">🔌</span> Connections</div></div>
+      <div class="na-sep"></div>
+      <div class="gf"><div class="na-gh"><span class="d"></span> Configuration</div><div class="na-i"><span class="ic">🤖</span> AI Models</div><div class="na-i"><span class="ic">🛡</span> Data Guard</div></div>
+      <div class="na-sep"></div>
+      <div class="gm"><div class="na-gh"><span class="d"></span> MCP Explorer</div><div class="na-i"><span class="ic">🔧</span> Tools</div><div class="na-i"><span class="ic">📝</span> Prompts</div><div class="na-i"><span class="ic">📦</span> Resources</div><div class="na-i"><span class="ic">📋</span> Templates</div><div class="na-i"><span class="ic">🔔</span> Elicitations</div></div>
+      <div class="na-sep"></div>
+      <div class="ga"><div class="na-gh"><span class="d"></span> Intelligence</div><div class="na-i"><span class="ic">🔀</span> Workflows</div><div class="na-i"><span class="ic">💬</span> Chat</div></div>
+    </div>
+    <div class="ann">
+      <div class="p">Colour only surfaces on active/hover</div>
+      <div class="p">Works equally well in light themes</div>
+      <div class="p">Collapsed: just icons, no header labels</div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="design-card">
+    <div class="design-label">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h2>B — Bold Colour Zones</h2><span class="badge">Option</span>
+      </div>
+      <p>Icons always group-coloured. Fading gradient header rule. Active row uses group tint. High visual impact.</p>
+    </div>
+    <div class="nav-b">
+      <div class="bc"><div class="nb-h"><span class="nb-ht">Infrastructure</span><div class="nb-hl"></div></div><div class="nb-i act"><span class="ic">🔌</span> Connections</div></div>
+      <div class="bf"><div class="nb-h"><span class="nb-ht">Configuration</span><div class="nb-hl"></div></div><div class="nb-i"><span class="ic">🤖</span> AI Models</div><div class="nb-i"><span class="ic">🛡</span> Data Guard</div></div>
+      <div class="bm"><div class="nb-h"><span class="nb-ht">MCP Explorer</span><div class="nb-hl"></div></div><div class="nb-i"><span class="ic">🔧</span> Tools</div><div class="nb-i"><span class="ic">📝</span> Prompts</div><div class="nb-i"><span class="ic">📦</span> Resources</div><div class="nb-i"><span class="ic">📋</span> Templates</div><div class="nb-i"><span class="ic">🔔</span> Elicitations</div></div>
+      <div class="ba"><div class="nb-h"><span class="nb-ht">Intelligence</span><div class="nb-hl"></div></div><div class="nb-i"><span class="ic">🔀</span> Workflows</div><div class="nb-i"><span class="ic">💬</span> Chat</div></div>
+    </div>
+    <div class="ann">
+      <div class="p">Icons always coloured — scannable at a glance</div>
+      <div class="p">Gradient rule = strong group boundary</div>
+      <div class="p">Most expressive; richest colour use</div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="design-card">
+    <div class="design-label">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h2>C — Gutter Bands</h2><span class="badge">Option</span>
+      </div>
+      <p>Thin left colour strip marks group. Compact emoji headers. Live count badges show tool/model quantities.</p>
+    </div>
+    <div class="nav-c">
+      <div class="nc-b cc"><div class="nc-h"><span>🔌</span> Infrastructure</div><div class="nc-i act"><span class="ic">🔌</span><span class="lb">Connections</span><span class="ct">3</span></div></div>
+      <div class="nc-div"></div>
+      <div class="nc-b cf"><div class="nc-h"><span>⚙️</span> Configuration</div><div class="nc-i"><span class="ic">🤖</span><span class="lb">AI Models</span><span class="ct">2</span></div><div class="nc-i"><span class="ic">🛡</span><span class="lb">Data Guard</span></div></div>
+      <div class="nc-div"></div>
+      <div class="nc-b cm"><div class="nc-h"><span>⚡</span> MCP Explorer</div><div class="nc-i"><span class="ic">🔧</span><span class="lb">Tools</span><span class="ct">14</span></div><div class="nc-i"><span class="ic">📝</span><span class="lb">Prompts</span><span class="ct">3</span></div><div class="nc-i"><span class="ic">📦</span><span class="lb">Resources</span></div><div class="nc-i"><span class="ic">📋</span><span class="lb">Templates</span></div><div class="nc-i"><span class="ic">🔔</span><span class="lb">Elicitations</span></div></div>
+      <div class="nc-div"></div>
+      <div class="nc-b ca"><div class="nc-h"><span>✨</span> Intelligence</div><div class="nc-i"><span class="ic">🔀</span><span class="lb">Workflows</span></div><div class="nc-i"><span class="ic">💬</span><span class="lb">Chat</span></div></div>
+    </div>
+    <div class="ann">
+      <div class="p">Persistent strip = always-visible zone marker</div>
+      <div class="p">Count badges surface live data at a glance</div>
+      <div class="p">Most information density</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h3>Consistent colour scheme across all designs</h3>
+  <div class="li"><div class="ld" style="background:#3b82f6"></div><strong style="color:#93c5fd">Blue</strong> — Infrastructure (Connections)</div>
+  <div class="li"><div class="ld" style="background:#f59e0b"></div><strong style="color:#fcd34d">Amber</strong> — Configuration (AI Models + Data Guard)</div>
+  <div class="li"><div class="ld" style="background:#14b8a6"></div><strong style="color:#5eead4">Teal</strong> — MCP Explorer (Tools · Prompts · Resources · Templates · Elicitations)</div>
+  <div class="li"><div class="ld" style="background:#a855f7"></div><strong style="color:#d8b4fe">Violet</strong> — Intelligence (Workflows + Chat)</div>
+</div>
+<p style="text-align:center;margin-top:24px;color:#475569;font-size:11px;">
+  Rename: <strong style="color:#e2e8f0">"Sensitive Fields"</strong> → <strong style="color:#fcd34d">"Data Guard"</strong>
+  &nbsp;·&nbsp; All designs work in collapsed sidebar mode
+</p>
+</body>
+</html>

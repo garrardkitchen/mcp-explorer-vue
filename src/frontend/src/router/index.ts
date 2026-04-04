@@ -60,7 +60,7 @@ const router = createRouter({
       path: '/sensitive-fields',
       name: 'sensitive-fields',
       component: () => import('@/views/SensitiveFieldsView.vue'),
-      meta: { title: 'Sensitive Fields', icon: 'pi pi-shield' },
+      meta: { title: 'Data Guard', icon: 'pi pi-shield' },
     },
     {
       path: '/elicitations',

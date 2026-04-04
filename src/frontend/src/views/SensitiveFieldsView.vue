@@ -83,7 +83,7 @@ onMounted(load)
   <div class="sf-view">
     <div class="toolbar">
       <div>
-        <h2 class="page-title">Sensitive Field Detection</h2>
+        <h2 class="page-title">Data Guard</h2>
         <p class="page-subtitle">Configure how sensitive data is detected and protected in MCP communications.</p>
       </div>
       <Button label="Save Configuration" icon="pi pi-save" :loading="saving" @click="save" />

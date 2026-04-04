@@ -15,17 +15,41 @@ const connectionsStore = useConnectionsStore()
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
 
-const navItems = [
-  { name: 'connections',       label: 'Connections',  icon: 'pi-server'       },
-  { name: 'tools',             label: 'Tools',        icon: 'pi-wrench'       },
-  { name: 'prompts',           label: 'Prompts',      icon: 'pi-file-edit'    },
-  { name: 'resources',         label: 'Resources',    icon: 'pi-database'     },
-  { name: 'resource-templates',label: 'Templates',    icon: 'pi-copy'         },
-  { name: 'chat',              label: 'Chat',         icon: 'pi-comments'     },
-  { name: 'workflows',         label: 'Workflows',    icon: 'pi-sitemap'      },
-  { name: 'ai-models',         label: 'AI Models',    icon: 'pi-microchip-ai' },
-  { name: 'sensitive-fields',  label: 'Sensitive',    icon: 'pi-shield'       },
-  { name: 'elicitations',      label: 'Elicitations', icon: 'pi-bell'         },
+const navGroups = [
+  {
+    label: 'Infrastructure',
+    accent: 'blue',
+    items: [
+      { name: 'connections', label: 'Connections', icon: 'pi-server' },
+    ],
+  },
+  {
+    label: 'Configuration',
+    accent: 'amber',
+    items: [
+      { name: 'ai-models',        label: 'AI Models',  icon: 'pi-microchip-ai' },
+      { name: 'sensitive-fields', label: 'Data Guard', icon: 'pi-shield'       },
+    ],
+  },
+  {
+    label: 'MCP Explorer',
+    accent: 'teal',
+    items: [
+      { name: 'tools',              label: 'Tools',        icon: 'pi-wrench'    },
+      { name: 'prompts',            label: 'Prompts',      icon: 'pi-file-edit' },
+      { name: 'resources',          label: 'Resources',    icon: 'pi-database'  },
+      { name: 'resource-templates', label: 'Templates',    icon: 'pi-copy'      },
+      { name: 'elicitations',       label: 'Elicitations', icon: 'pi-bell'      },
+    ],
+  },
+  {
+    label: 'Intelligence',
+    accent: 'violet',
+    items: [
+      { name: 'workflows', label: 'Workflows', icon: 'pi-sitemap'  },
+      { name: 'chat',      label: 'Chat',      icon: 'pi-comments' },
+    ],
+  },
 ]
 
 const isActive = (name: string) => route.name === name
@@ -87,19 +111,31 @@ onUnmounted(() => {
     <!-- Body: sidebar + main -->
     <div class="app-body">
       <!-- Sidebar nav -->
-      <nav class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+      <nav class="sidebar" :class="{ collapsed: sidebarCollapsed }" aria-label="Main navigation">
         <ul class="nav-list">
-          <li v-for="item in navItems" :key="item.name">
-            <RouterLink
-              :to="{ name: item.name }"
-              class="nav-item"
-              :class="{ active: isActive(item.name) }"
-              v-tooltip.right="sidebarCollapsed ? item.label : ''"
-            >
-              <i :class="`pi ${item.icon} nav-icon`" />
-              <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
-            </RouterLink>
-          </li>
+          <template v-for="(group, gi) in navGroups" :key="group.label">
+            <!-- Separator between groups (not before first) -->
+            <li v-if="gi > 0" class="nav-separator" aria-hidden="true" />
+
+            <!-- Group header (hidden when collapsed) -->
+            <li v-if="!sidebarCollapsed" class="nav-group-header" :class="`accent-${group.accent}`">
+              <span class="nav-group-dot" />
+              <span class="nav-group-label">{{ group.label }}</span>
+            </li>
+
+            <!-- Nav items -->
+            <li v-for="item in group.items" :key="item.name">
+              <RouterLink
+                :to="{ name: item.name }"
+                class="nav-item"
+                :class="{ active: isActive(item.name), [`accent-${group.accent}`]: isActive(item.name) }"
+                v-tooltip.right="sidebarCollapsed ? item.label : ''"
+              >
+                <i :class="`pi ${item.icon} nav-icon`" />
+                <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
+              </RouterLink>
+            </li>
+          </template>
         </ul>
       </nav>
 
@@ -221,8 +257,47 @@ onUnmounted(() => {
 .nav-list {
   list-style: none;
   margin: 0;
-  padding: 8px 0;
+  padding: 6px 0 12px;
 }
+
+/* ── Group headers ── */
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+.nav-group-header:first-child { padding-top: 4px; }
+.nav-group-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+.nav-group-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* accent colours on group headers */
+.nav-group-header.accent-blue   { color: var(--nav-accent-blue); opacity: 0.85; }
+.nav-group-header.accent-amber  { color: var(--nav-accent-amber); opacity: 0.85; }
+.nav-group-header.accent-teal   { color: var(--nav-accent-teal); opacity: 0.85; }
+.nav-group-header.accent-violet { color: var(--nav-accent-violet); opacity: 0.85; }
+
+/* ── Separators ── */
+.nav-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 12px;
+  opacity: 0.5;
+}
+
+/* ── Nav items ── */
 .nav-item {
   display: flex;
   align-items: center;
@@ -230,8 +305,7 @@ onUnmounted(() => {
   padding: 9px 16px;
   color: var(--text-secondary);
   text-decoration: none;
-  border-radius: 0;
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   font-size: 13px;
   white-space: nowrap;
@@ -241,12 +315,34 @@ onUnmounted(() => {
   background: var(--nav-item-hover);
   color: var(--text-primary);
 }
-.nav-item.active {
-  background: var(--nav-item-active);
-  color: var(--text-primary);
-  border-left-color: var(--nav-item-active-border);
-  font-weight: 500;
+
+/* Active state per accent group */
+.nav-item.active { color: var(--text-primary); font-weight: 500; }
+
+.nav-item.active.accent-blue {
+  background: color-mix(in srgb, var(--nav-accent-blue) 13%, transparent);
+  border-left-color: var(--nav-accent-blue);
 }
+.nav-item.active.accent-blue .nav-icon { color: var(--nav-accent-blue); }
+
+.nav-item.active.accent-amber {
+  background: color-mix(in srgb, var(--nav-accent-amber) 11%, transparent);
+  border-left-color: var(--nav-accent-amber);
+}
+.nav-item.active.accent-amber .nav-icon { color: var(--nav-accent-amber); }
+
+.nav-item.active.accent-teal {
+  background: color-mix(in srgb, var(--nav-accent-teal) 11%, transparent);
+  border-left-color: var(--nav-accent-teal);
+}
+.nav-item.active.accent-teal .nav-icon { color: var(--nav-accent-teal); }
+
+.nav-item.active.accent-violet {
+  background: color-mix(in srgb, var(--nav-accent-violet) 11%, transparent);
+  border-left-color: var(--nav-accent-violet);
+}
+.nav-item.active.accent-violet .nav-icon { color: var(--nav-accent-violet); }
+
 .nav-icon { width: 16px; font-size: 15px; flex-shrink: 0; }
 .nav-label { overflow: hidden; text-overflow: ellipsis; }
 
