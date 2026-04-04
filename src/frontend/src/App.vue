@@ -49,7 +49,7 @@ const navGroups = [
     ],
   },
   {
-    label: 'Intelligence',
+    label: 'Testing',
     accent: 'violet',
     items: [
       { name: 'workflows', label: 'Workflows', icon: 'pi-sitemap'  },
