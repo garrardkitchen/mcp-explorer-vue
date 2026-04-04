@@ -390,9 +390,10 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
             <!-- Tool call message -->
             <div v-if="isToolCall(msg)" class="tool-call-block">
               <div class="tool-call-header">
-                <span class="tool-icon">🔧</span>
+                <div class="avatar-circle tool-avatar-circle">🔧</div>
                 <span class="tool-label">Calling tool:&nbsp;<strong>{{ msg.toolCallName }}</strong></span>
                 <span v-if="msg.connectionName" class="conn-badge">🔌 {{ msg.connectionName }}</span>
+                <span v-if="msg.modelName" class="model-badge tool-model-badge">{{ msg.modelName }}</span>
                 <span class="tool-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                 <button
                   v-if="msg.toolCallParameters"
@@ -421,9 +422,10 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
                   <button class="copy-btn" @click="copyMessage(msg.content)" title="Copy message">
                     <i class="pi pi-copy" />
                   </button>
+                  <span v-if="msg.modelName" class="model-badge user-model-badge">{{ msg.modelName }}</span>
                   <span class="msg-time user-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                   <span class="msg-role-name">{{ getName(msg.role) }}</span>
-                  <span class="msg-avatar">{{ getAvatar(msg.role) }}</span>
+                  <div class="avatar-circle user-avatar-circle">👤</div>
                 </div>
                 <div class="message-content" v-html="escapeHtml(msg.content).replace(/\n/g, '<br />')" />
               </div>
@@ -431,16 +433,16 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 
             <!-- Assistant message -->
             <div v-else-if="msg.role.toLowerCase() === 'assistant'" class="message-row assistant">
-              <span class="msg-avatar-left">🤖</span>
               <div class="message-bubble assistant-bubble">
                 <div class="message-header assistant-header">
+                  <div class="avatar-circle asst-avatar-circle">🤖</div>
                   <span class="msg-role-name">Assistant</span>
                   <span class="msg-time asst-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                   <span v-if="msg.thinkingMilliseconds != null" class="thinking-badge" title="Time to first token">
                     🤔 {{ formatThinking(msg.thinkingMilliseconds) }}
                   </span>
                   <span v-if="msg.tokenUsage" class="token-badge" title="Token usage">
-                    💰 in {{ msg.tokenUsage.inputTokens }} · out {{ msg.tokenUsage.outputTokens }}
+                    💰 {{ msg.tokenUsage.inputTokens }}↑ {{ msg.tokenUsage.outputTokens }}↓ {{ msg.tokenUsage.totalTokens }}
                   </span>
                   <span v-if="msg.modelName" class="model-badge">{{ msg.modelName }}</span>
                   <button class="copy-btn asst-copy" @click="copyMessage(msg.content)" title="Copy message">
@@ -455,9 +457,9 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 
           <!-- Streaming placeholder -->
           <div v-if="chatStore.streaming" class="message-row assistant">
-            <span class="msg-avatar-left">🤖</span>
             <div class="message-bubble assistant-bubble streaming">
               <div class="message-header assistant-header">
+                <div class="avatar-circle asst-avatar-circle">🤖</div>
                 <span class="msg-role-name">Assistant</span>
                 <span v-if="!chatStore.streamingContent" class="thinking-live">
                   🤔 {{ formatMs(chatStore.thinkingMs) }}
@@ -605,11 +607,11 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 
 /* Tool call block */
 .tool-call-block { background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); border-left:3px solid #f59e0b; border-radius:6px; padding:8px 12px; font-size:12px; align-self:stretch; }
-.tool-call-header { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.tool-icon { font-size:14px; flex-shrink:0; }
+.tool-call-header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .tool-label { color:#f59e0b; flex:1; min-width:0; }
 .tool-label strong { font-weight:700; }
 .conn-badge { background:rgba(20,184,166,.15); color:#14b8a6; border:1px solid rgba(20,184,166,.4); padding:1px 8px; border-radius:10px; font-size:11px; white-space:nowrap; font-weight:500; }
+.tool-model-badge { background:rgba(251,191,36,.12); color:#f59e0b; border-color:rgba(251,191,36,.35) !important; }
 .tool-time { color:var(--text-muted); font-size:11px; margin-left:auto; white-space:nowrap; }
 .params-toggle { background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3); color:var(--accent); cursor:pointer; border-radius:3px; padding:2px 5px; font-size:10px; flex-shrink:0; }
 .params-toggle:hover { background:rgba(56,189,248,.2); }
@@ -624,11 +626,16 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .reveal-btn { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); color:rgba(239,68,68,.9); border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; white-space:nowrap; }
 .reveal-btn:hover { background:rgba(239,68,68,.2); }
 
+/* Avatar circles */
+.avatar-circle { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+.user-avatar-circle { background:rgba(255,255,255,.18); }
+.asst-avatar-circle { background:var(--bg-raised); border:1px solid var(--border); }
+.tool-avatar-circle { background:rgba(251,191,36,.18); border:1px solid rgba(251,191,36,.35); font-size:13px; width:26px; height:26px; }
+
 /* Message rows */
 .message-row { display:flex; gap:8px; align-items:flex-start; }
 .message-row.user { justify-content:flex-end; }
 .message-row.assistant { justify-content:flex-start; }
-.msg-avatar-left { font-size:20px; flex-shrink:0; margin-top:6px; }
 .message-bubble { max-width:76%; min-width:80px; border-radius:10px; padding:10px 14px; }
 .user-bubble { background:var(--accent); color:#fff; border-radius:10px 10px 4px 10px; }
 .assistant-bubble { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px 10px 10px 4px; color:var(--text-primary); }
@@ -642,12 +649,12 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .msg-role-name { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
 .user-bubble .msg-role-name { color:rgba(255,255,255,.7); }
 .assistant-bubble .msg-role-name { color:var(--accent); }
-.msg-avatar { font-size:16px; }
 .user-time { color:rgba(255,255,255,.55); font-size:11px; }
 .asst-time { color:var(--text-muted); font-size:11px; }
 .thinking-badge { font-size:11px; color:gold; background:rgba(255,215,0,.1); padding:1px 6px; border-radius:3px; white-space:nowrap; }
-.token-badge { font-size:11px; color:gold; background:rgba(255,215,0,.1); padding:1px 6px; border-radius:3px; font-family:var(--font-family-mono); white-space:nowrap; }
-.model-badge { font-size:11px; background:var(--bg-raised); color:var(--text-muted); padding:1px 5px; border-radius:3px; white-space:nowrap; }
+.token-badge { font-size:11px; color:#a3e635; background:rgba(163,230,53,.1); border:1px solid rgba(163,230,53,.25); padding:1px 7px; border-radius:3px; font-family:var(--font-family-mono); white-space:nowrap; letter-spacing:-.01em; }
+.model-badge { font-size:11px; background:var(--bg-raised); color:var(--text-muted); border:1px solid var(--border); padding:1px 6px; border-radius:3px; white-space:nowrap; }
+.user-model-badge { background:rgba(255,255,255,.12); color:rgba(255,255,255,.65); border-color:rgba(255,255,255,.2); }
 .thinking-live { font-size:11px; color:gold; margin-left:auto; }
 .copy-btn { background:none; border:none; cursor:pointer; padding:2px 4px; border-radius:3px; font-size:11px; opacity:.45; transition:opacity .15s; color:rgba(255,255,255,.8); }
 .asst-copy { color:var(--text-muted); margin-left:auto; }

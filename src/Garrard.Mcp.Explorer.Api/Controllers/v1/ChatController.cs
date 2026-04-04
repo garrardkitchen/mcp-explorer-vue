@@ -123,6 +123,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         var thinkingStart = DateTime.UtcNow;
         int? thinkingMilliseconds = null;
         bool firstToken = false;
+        ChatTokenUsage? tokenUsage = null;
 
         try
         {
@@ -151,7 +152,12 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
                         ToolCallName = evt.ToolName,
                         ToolCallParameters = evt.ToolParameters,
                         ConnectionName = evt.ConnectionName,
+                        ModelName = model.Name,
                     });
+                }
+                else if (evt.Type == ChatStreamEventType.Usage && evt.Usage is not null)
+                {
+                    tokenUsage = evt.Usage; // Keep the latest usage (final pass has the full totals)
                 }
                 else if (evt.Type == ChatStreamEventType.Done && evt.MessageId is not null)
                     assistantMessageId = evt.MessageId;
@@ -170,7 +176,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         foreach (var tc in toolCallMessages)
             session.Messages.Add(tc);
 
-        // Save assistant message
+        // Save assistant message with accumulated token usage
         var assistantMessage = new ChatMessage
         {
             Id = assistantMessageId ?? Guid.NewGuid().ToString(),
@@ -179,6 +185,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             TimestampUtc = DateTime.UtcNow,
             ModelName = model.Name,
             ThinkingMilliseconds = thinkingMilliseconds,
+            TokenUsage = tokenUsage,
         };
         session.Messages.Add(assistantMessage);
         session.LastActivityUtc = DateTime.UtcNow;

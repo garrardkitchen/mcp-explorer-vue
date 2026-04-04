@@ -1,6 +1,6 @@
 // src/stores/chat.ts
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { chatApi } from '@/api/chat'
 import type { ChatSession, ChatMessage, ChatTokenUsage } from '@/api/types'
 
@@ -60,12 +60,13 @@ export const useChatStore = defineStore('chat', () => {
     thinkingMs.value = 0
     lastUsage.value = null
 
-    // Add user message optimistically
+    // Add user message optimistically (include model so user bubble can show the pill)
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: text,
       timestampUtc: new Date().toISOString(),
+      modelName,
     }
     messages.value.push(userMsg)
 
@@ -117,11 +118,14 @@ export const useChatStore = defineStore('chat', () => {
             toolCallName: evt.toolName,
             toolCallParameters: evt.toolParameters,
             connectionName: evt.connectionName,
+            modelName,
           }
           messages.value.splice(assistantIdx, 0, toolMsg)
           assistantIdx++ // assistant is now one further back
+          await nextTick() // flush DOM so tool call appears immediately
         } else if (evt.type === 'usage' && evt.usage) {
-          messages.value[assistantIdx].tokenUsage = evt.usage
+          // Replace object to guarantee Vue reactive update detects the new tokenUsage property
+          messages.value[assistantIdx] = { ...messages.value[assistantIdx], tokenUsage: evt.usage }
           lastUsage.value = evt.usage
         } else if (evt.type === 'done') {
           if (evt.messageId) messages.value[assistantIdx].id = evt.messageId

@@ -2,6 +2,17 @@
 
 All notable changes to MCP Explorer v2 are documented here.
 
+## [Unreleased] — 2026-04-04 (18)
+- fix: Token usage (input/output/total) now persists — backend captures `TokenUsage` from stream and saves it to the assistant message in settings.json; was previously never saved
+- fix: Tool call messages now appear in real-time as they are invoked — added `await nextTick()` after each splice to flush Vue's DOM update queue immediately
+- fix: Vue reactive update for `tokenUsage` now uses object replacement (`{ ...msg, tokenUsage }`) instead of direct property mutation to guarantee reactivity
+- feat: `ModelName` now attached to tool call messages and user messages so both can display the model pill
+- feat: 🤖 robot avatar moved inside the assistant bubble and wrapped in a circle (`.asst-avatar-circle`)
+- feat: All emojis in chat messages placed in CSS circles — user 👤, assistant 🤖, tool call 🔧
+- feat: Tool call blocks now show a model pill next to the connection badge
+- feat: User message bubbles now show a model pill (indicating which model was selected at send time)
+- feat: Token badge redesigned — shows `↑in ↓out total` in green monospace with border; distinct from thinking badge
+
 ## [Unreleased] — 2026-04-04 (17)
 - fix: Load test results and snapshots now save correctly — background `Task.Run` was capturing the HTTP request's `CancellationToken` which gets cancelled when the response is returned; changed to `CancellationToken.None` for both `RunLoadTestAsync` and `SaveResultAsync`
 - fix: `📊` chart button is no longer disabled for new runs (snapshots now persist)
