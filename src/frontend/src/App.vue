@@ -7,6 +7,7 @@ import { useThemeStore } from '@/stores/themes'
 import { useConnectionsStore } from '@/stores/connections'
 import CommandPalette from '@/components/common/CommandPalette.vue'
 import ThemeSwitcher from '@/components/common/ThemeSwitcher.vue'
+import { systemApi } from '@/api/system'
 
 const route = useRoute()
 useThemeStore()  // ensure theme is initialised
@@ -14,6 +15,11 @@ const connectionsStore = useConnectionsStore()
 
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
+
+// Version info — fetched once on mount
+const apiVersion = ref<string | null>(null)
+const dotnetVersion = ref<string | null>(null)
+const frontendVersion = __APP_VERSION__
 
 const navGroups = [
   {
@@ -64,7 +70,14 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
-  await Promise.all([connectionsStore.loadSaved(), connectionsStore.loadActive()])
+  await Promise.all([
+    connectionsStore.loadSaved(),
+    connectionsStore.loadActive(),
+    systemApi.getInfo().then(info => {
+      apiVersion.value = info.apiVersion
+      dotnetVersion.value = info.dotnetVersion
+    }).catch(() => { /* non-fatal */ }),
+  ])
   connectionsStore.initialized = true
 })
 
@@ -88,6 +101,30 @@ onUnmounted(() => {
         </span>
       </div>
 
+      <div class="topbar-center">
+        <!-- Version pills -->
+        <span
+          v-if="dotnetVersion"
+          class="version-pill dotnet-pill"
+          v-tooltip="`Runtime: ${dotnetVersion}`"
+        >
+          <i class="pi pi-server" />
+          {{ dotnetVersion.replace('Microsoft .NET', '.NET') }}
+        </span>
+        <span class="version-pill fe-pill" v-tooltip="`Frontend v${frontendVersion}`">
+          <i class="pi pi-desktop" />
+          UI v{{ frontendVersion }}
+        </span>
+        <span
+          v-if="apiVersion"
+          class="version-pill api-pill"
+          v-tooltip="`API v${apiVersion}`"
+        >
+          <i class="pi pi-cloud" />
+          API v{{ apiVersion }}
+        </span>
+      </div>
+
       <div class="topbar-right">
         <!-- Command palette trigger -->
         <button class="topbar-btn" @click="showCommandPalette = true"
@@ -105,6 +142,18 @@ onUnmounted(() => {
           <i class="pi pi-circle-fill status-dot" />
           {{ connectionsStore.activeConnections.length }}
         </span>
+
+        <!-- Author credit -->
+        <a
+          class="author-credit"
+          href="mailto:garrardkitchen@gmail.com"
+          v-tooltip="'garrardkitchen@gmail.com'"
+          title="garrardkitchen@gmail.com"
+        >
+          <i class="pi pi-user author-icon" />
+          <span class="author-by">by</span>
+          <span class="author-name">Garrard Kitchen</span>
+        </a>
       </div>
     </header>
 
@@ -176,6 +225,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   z-index: 100;
+  gap: 12px;
 }
 
 .topbar-left,
@@ -183,6 +233,90 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.topbar-center {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Version pills */
+.version-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  cursor: default;
+  font-family: var(--font-family-mono);
+  letter-spacing: 0.02em;
+  transition: opacity var(--transition-fast);
+}
+.version-pill:hover { opacity: 0.85; }
+.version-pill .pi { font-size: 9px; }
+
+.dotnet-pill {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.fe-pill {
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+.api-pill {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+/* Author credit */
+.author-credit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(56, 189, 248, 0.12));
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+              box-shadow var(--transition-fast);
+}
+.author-credit:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(56, 189, 248, 0.2));
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.25);
+}
+.author-icon {
+  font-size: 11px;
+  color: #a78bfa;
+}
+.author-by {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+.author-name {
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(90deg, #a78bfa, #38bdf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.01em;
 }
 
 .sidebar-toggle,

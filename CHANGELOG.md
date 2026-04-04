@@ -2,6 +2,16 @@
 
 ## [Unreleased] - 2025-04-04
 
+### Added
+- `GET /api/v1/system/info` endpoint returns `apiVersion` (from assembly `AssemblyInformationalVersion`) and `dotnetVersion` (from `RuntimeInformation.FrameworkDescription`)
+- Topbar version pills: `.NET runtime`, `UI vX.Y.Z`, `API vX.Y.Z` — all dynamic, not static values
+- "Created by Garrard Kitchen" author credit in topbar with email tooltip on hover (`garrardkitchen@gmail.com`)
+- `src/frontend/src/api/system.ts` typed API client for the new system info endpoint
+- `src/frontend/src/env.d.ts` declaring `__APP_VERSION__` global injected by Vite at build time
+- Vite `define.__APP_VERSION__` reads `package.json#version` at build time — no runtime API call needed for frontend version
+
+## [Unreleased] - 2025-04-04
+
 ### Fixed
 - Prompt invocation blocks now persist across chat reloads — `PromptName` and `PromptInvocationParams` fields added to `ChatMessage` domain model and threaded through `SendMessageRequest`, controller, and `GetMessages` response
 - Prompt picker no longer injects a synthetic client-side `system` message; metadata travels with the user message so no second bubble appears
