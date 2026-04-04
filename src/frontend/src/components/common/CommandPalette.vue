@@ -16,16 +16,16 @@ interface CommandItem {
 }
 
 const allCommands: CommandItem[] = [
-  { label: 'Connections',       icon: 'pi-server',        group: 'Navigate', action: () => go('connections') },
-  { label: 'Tools',             icon: 'pi-wrench',        group: 'Navigate', action: () => go('tools') },
-  { label: 'Prompts',           icon: 'pi-file-edit',     group: 'Navigate', action: () => go('prompts') },
-  { label: 'Resources',         icon: 'pi-database',      group: 'Navigate', action: () => go('resources') },
-  { label: 'Resource Templates',icon: 'pi-copy',          group: 'Navigate', action: () => go('resource-templates') },
-  { label: 'Chat',              icon: 'pi-comments',      group: 'Navigate', action: () => go('chat') },
-  { label: 'Workflows',         icon: 'pi-sitemap',       group: 'Navigate', action: () => go('workflows') },
-  { label: 'AI Models',         icon: 'pi-microchip-ai',  group: 'Navigate', action: () => go('ai-models') },
-  { label: 'Sensitive Fields',  icon: 'pi-shield',        group: 'Navigate', action: () => go('sensitive-fields') },
-  { label: 'Elicitations',      icon: 'pi-bell',          group: 'Navigate', action: () => go('elicitations') },
+  { label: 'Connections',        icon: 'pi-server',        group: 'Navigate', action: () => go('connections') },
+  { label: 'AI Models',          icon: 'pi-microchip-ai',  group: 'Navigate', action: () => go('ai-models') },
+  { label: 'Data Guard',         icon: 'pi-shield',        group: 'Navigate', action: () => go('sensitive-fields') },
+  { label: 'Tools',              icon: 'pi-wrench',        group: 'Navigate', action: () => go('tools') },
+  { label: 'Prompts',            icon: 'pi-file-edit',     group: 'Navigate', action: () => go('prompts') },
+  { label: 'Resources',          icon: 'pi-database',      group: 'Navigate', action: () => go('resources') },
+  { label: 'Resource Templates', icon: 'pi-copy',          group: 'Navigate', action: () => go('resource-templates') },
+  { label: 'Elicitations',       icon: 'pi-bell',          group: 'Navigate', action: () => go('elicitations') },
+  { label: 'Workflows',          icon: 'pi-sitemap',       group: 'Navigate', action: () => go('workflows') },
+  { label: 'Chat',               icon: 'pi-comments',      group: 'Navigate', action: () => go('chat') },
 ]
 
 const selectedIndex = ref(0)
