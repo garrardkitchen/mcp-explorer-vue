@@ -2,6 +2,12 @@
 
 ## [Unreleased] - 2026-04-05
 
+### Added
+- **Encrypted connection export/import**: Export now opens a dialog where you select individual connections (filterable by name/endpoint), enter a password and confirm it, then download an encrypted `.json` file. Import opens a dedicated dialog with a drag-and-drop file zone and a password field; if the password doesn't match, the API returns a clear error. On name collision the imported connection is renamed `(v2)`, `(v3)`, etc. Encryption uses AES-256-GCM with PBKDF2-SHA256 key derivation (100,000 iterations). New `IConnectionExportService` / `ConnectionExportService` in Core/Infrastructure; 16 new unit tests covering round-trips, wrong-password rejection, tamper detection, and name-collision versioning.
+
+### Fixed
+- Connections export returned 405 Method Not Allowed. `GET /connections/export` and `POST /connections/import` endpoints were missing from `ConnectionsController`. Added both: export returns a downloadable `connections.json` file; import accepts a JSON array of connection definitions and merges them in, skipping any whose name already exists and returning `{ imported, skipped }` counts. Updated `connectionsApi` helper signatures to match.
+
 ### Changed
 - Prompts page: "Send to LLM" no longer navigates away to the Chat page. The result panel is now a two-tab panel: **JSON Result** tab (auto-focused on Execute) and **LLM Response** tab (auto-focused on Send to LLM). The model picker is now an inline popover triggered from a `✦ Send to LLM` button in the action bar — no full-screen dialog. The LLM response streams in real-time with a blinking cursor indicator and animated dot on the tab. A **Cancel** button appears during streaming. The response is rendered as DOMPurify-sanitised markdown. The LLM session is created in the background; streaming is cleanly cancelled on re-execute, prompt change, or page unmount. The args section caps at 40% height with overflow-scroll to prevent crowding when a prompt has many arguments.
 
