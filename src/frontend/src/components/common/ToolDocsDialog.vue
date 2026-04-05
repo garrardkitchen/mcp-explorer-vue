@@ -74,8 +74,11 @@ function onPreviewClick(e: MouseEvent) {
     @maximize="isMaximized = true"
     @unmaximize="isMaximized = false"
     :header="dialogHeader"
-    :style="{ width: '780px', maxHeight: '85vh' }"
-    :pt="{ content: { style: 'padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0;' } }"
+    :style="isMaximized ? {} : { width: '780px', maxHeight: '85vh' }"
+    :pt="{
+      root:    { style: 'display: flex; flex-direction: column;' },
+      content: { style: 'padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0;' }
+    }"
     class="docs-dialog"
   >
     <Tabs v-model:value="activeTab" class="docs-tabs">
@@ -119,17 +122,19 @@ function onPreviewClick(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1;
 }
 
-/* Make tab panels fill remaining height */
 .docs-tabpanels {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .docs-tabpanel {
-  height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -147,9 +152,9 @@ function onPreviewClick(e: MouseEvent) {
   min-height: 0;
 }
 
+/* Maximized: drop the viewport cap — flex chain constrains height */
 .docs-preview--expanded {
   max-height: none;
-  height: 100%;
 }
 
 .docs-raw-bar {
@@ -178,7 +183,6 @@ function onPreviewClick(e: MouseEvent) {
 
 .docs-raw--expanded {
   max-height: none;
-  height: 100%;
 }
 </style>
 
@@ -196,11 +200,46 @@ function onPreviewClick(e: MouseEvent) {
 .docs-preview td { padding: 7px 12px; border: 1px solid var(--border); color: var(--text-primary); vertical-align: top; }
 .docs-preview tr:nth-child(even) td { background: var(--bg-raised); }
 .docs-preview em { font-style: italic; color: var(--text-muted); }
-/* When the docs dialog is maximized, let content panels fill the full height */
-.docs-dialog.p-dialog-maximized .docs-preview,
-.docs-dialog.p-dialog-maximized .docs-raw {
-  max-height: none !important;
-  height: 100%;
+
+/*
+  Maximized: clear any inline width/maxHeight that would cap the dialog.
+  PrimeVue sets its own inset-0 / width:100% / height:100% via class styles,
+  but inline :style always wins — so we override here with !important.
+*/
+.docs-dialog.p-dialog-maximized {
+  max-height: 100dvh !important;
+  height: 100dvh !important;
+  width: 100vw !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.docs-dialog.p-dialog-maximized .p-dialog-content {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/*
+  PrimeVue renders .p-tabpanel with display:block and flex:0 1 auto which
+  breaks the flex scroll chain. Target ONLY the active panel so PrimeVue's
+  display:none on inactive panels is not overridden.
+*/
+.docs-dialog .p-tabpanels {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.docs-dialog .p-tabpanel.p-tabpanel-active {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
 }
 </style>
 
