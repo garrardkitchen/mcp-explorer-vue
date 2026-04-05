@@ -6,6 +6,7 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import Password from 'primevue/password'
 import Textarea from 'primevue/textarea'
 import Dialog from 'primevue/dialog'
 import Select from 'primevue/select'
@@ -36,6 +37,7 @@ const originalName = ref('')
 const providerOptions = [
   { label: 'OpenAI', value: 'OpenAI' },
   { label: 'Azure OpenAI', value: 'AzureOpenAI' },
+  { label: 'Azure AI Foundry', value: 'AzureAIFoundry' },
   { label: 'Ollama', value: 'Ollama' },
   { label: 'Custom', value: 'Custom' },
 ]
@@ -182,7 +184,7 @@ onMounted(load)
           <label>Model Name</label>
           <InputText v-model="form.modelName" placeholder="gpt-4o" class="w-full" />
         </div>
-        <div v-if="form.providerType === 'AzureOpenAI'" class="form-field">
+        <div v-if="form.providerType === 'AzureOpenAI' || form.providerType === 'AzureAIFoundry'" class="form-field">
           <label>Deployment Name</label>
           <InputText v-model="form.deploymentName" placeholder="my-deployment" class="w-full" />
         </div>
@@ -192,7 +194,7 @@ onMounted(load)
         </div>
         <div class="form-field">
           <label>API Key</label>
-          <InputText v-model="form.apiKey" type="password" placeholder="sk-…" class="w-full" />
+          <Password v-model="form.apiKey" placeholder="sk-…" :feedback="false" toggleMask class="w-full" inputClass="w-full" />
         </div>
         <div class="form-field full-width">
           <label>System Prompt</label>
