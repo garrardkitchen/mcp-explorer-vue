@@ -8,8 +8,10 @@ import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
+import { generateResourceTemplateMarkdown, generateResourceTemplatesListMarkdown } from '@/composables/useToolDocs'
 import type { ActiveResourceTemplate } from '@/api/types'
 
 const toast = useToast()
@@ -30,6 +32,9 @@ const filteredTemplates = computed(() => {
   const q = templateSearch.value.toLowerCase()
   return q ? templates.value.filter(t => t.name.toLowerCase().includes(q) || t.uriTemplate?.toLowerCase().includes(q)) : templates.value
 })
+
+const docsVisible = ref(false)
+const listDocsVisible = ref(false)
 
 // Extract {param} placeholders from URI template
 const templateVars = computed(() => {
@@ -100,6 +105,12 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           <div class="panel-header">
             Templates
             <Tag v-if="templates.length" :value="String(templates.length)" severity="secondary" />
+            <button
+              v-if="filteredTemplates.length > 0"
+              class="fav-btn"
+              @click="listDocsVisible = true"
+              :title="`View docs for ${filteredTemplates.length} visible template${filteredTemplates.length === 1 ? '' : 's'}`"
+            ><i class="pi pi-book" /></button>
           </div>
           <div class="panel-search">
             <InputText v-model="templateSearch" placeholder="Filter templates…" style="width:100%" />
@@ -131,9 +142,14 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           </div>
           <template v-else>
             <div class="detail-header">
-              <h3 class="item-title">{{ selectedTemplate.name }}</h3>
-              <p class="item-template">{{ selectedTemplate.uriTemplate }}</p>
-              <p v-if="selectedTemplate.description" class="item-desc-full">{{ selectedTemplate.description }}</p>
+              <div class="detail-header-row">
+                <div>
+                  <h3 class="item-title">{{ selectedTemplate.name }}</h3>
+                  <p class="item-template">{{ selectedTemplate.uriTemplate }}</p>
+                  <p v-if="selectedTemplate.description" class="item-desc-full">{{ selectedTemplate.description }}</p>
+                </div>
+                <button class="fav-btn" @click="docsVisible = true" title="View documentation"><i class="pi pi-book" /></button>
+              </div>
             </div>
 
             <div class="params-section">
@@ -160,6 +176,17 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         </div>
       </SplitterPanel>
     </Splitter>
+
+    <ToolDocsDialog
+      v-model:visible="docsVisible"
+      :raw-markdown="selectedTemplate ? generateResourceTemplateMarkdown(selectedTemplate) : ''"
+      :title="selectedTemplate ? `Documentation: ${selectedTemplate.name}` : 'Documentation'"
+    />
+    <ToolDocsDialog
+      v-model:visible="listDocsVisible"
+      :raw-markdown="generateResourceTemplatesListMarkdown(filteredTemplates)"
+      :title="`Documentation: ${filteredTemplates.length} template${filteredTemplates.length === 1 ? '' : 's'}`"
+    />
   </div>
 </template>
 
@@ -184,6 +211,9 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
 .item-desc { display:block; font-size:11px; color:var(--text-muted); }
 .dot { font-size:8px; color:var(--success); flex-shrink:0; margin-top:4px; }
 .detail-header { padding:16px 20px; border-bottom:1px solid var(--border); }
+.detail-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.fav-btn { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px 6px; border-radius:var(--border-radius-sm); transition:var(--transition-fast); flex-shrink:0; }
+.fav-btn:hover { color:var(--accent); background:var(--nav-item-hover); }
 .item-title { margin:0 0 4px; font-size:16px; font-weight:600; color:var(--text-primary); }
 .item-template { margin:0 0 4px; font-family:var(--font-family-mono); font-size:12px; color:var(--accent); }
 .item-desc-full { margin:0; font-size:13px; color:var(--text-secondary); }

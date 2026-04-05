@@ -11,11 +11,13 @@ import Tag from 'primevue/tag'
 import Dialog from 'primevue/dialog'
 import Select from 'primevue/select'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { llmModelsApi } from '@/api/llmModels'
 import { chatApi } from '@/api/chat'
 import { useChatStore } from '@/stores/chat'
+import { generatePromptMarkdown, generatePromptsListMarkdown } from '@/composables/useToolDocs'
 import type { ActivePrompt, LlmModelDefinition } from '@/api/types'
 
 const toast = useToast()
@@ -38,6 +40,10 @@ const showLlmDialog = ref(false)
 const llmModels = ref<LlmModelDefinition[]>([])
 const selectedModel = ref<string | null>(null)
 const sendingToLlm = ref(false)
+
+// Docs dialog
+const docsVisible = ref(false)
+const listDocsVisible = ref(false)
 
 const connectedConnections = computed(() => store.activeConnections.filter(c => c.isConnected))
 
@@ -126,6 +132,12 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           <div class="panel-header">
             Prompts
             <Tag v-if="prompts.length" :value="String(prompts.length)" severity="secondary" />
+            <button
+              v-if="filteredPrompts.length > 0"
+              class="fav-btn"
+              @click="listDocsVisible = true"
+              :title="`View docs for ${filteredPrompts.length} visible prompt${filteredPrompts.length === 1 ? '' : 's'}`"
+            ><i class="pi pi-book" /></button>
           </div>
           <div class="panel-search">
             <InputText v-model="promptSearch" placeholder="Filter prompts…" style="width:100%" />
@@ -157,8 +169,13 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           </div>
           <template v-else>
             <div class="detail-header">
-              <h3 class="item-title">{{ selectedPrompt.name }}</h3>
-              <p class="item-desc-full">{{ selectedPrompt.description }}</p>
+              <div class="detail-header-row">
+                <div>
+                  <h3 class="item-title">{{ selectedPrompt.name }}</h3>
+                  <p class="item-desc-full">{{ selectedPrompt.description }}</p>
+                </div>
+                <button class="fav-btn" @click="docsVisible = true" title="View documentation"><i class="pi pi-book" /></button>
+              </div>
             </div>
             <div class="args-section">
               <div class="section-label">Arguments</div>
@@ -192,6 +209,17 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         <Button label="Send" icon="pi pi-send" :loading="sendingToLlm" :disabled="!selectedModel" @click="sendToLlm" />
       </template>
     </Dialog>
+
+    <ToolDocsDialog
+      v-model:visible="docsVisible"
+      :raw-markdown="selectedPrompt ? generatePromptMarkdown(selectedPrompt) : ''"
+      :title="selectedPrompt ? `Documentation: ${selectedPrompt.name}` : 'Documentation'"
+    />
+    <ToolDocsDialog
+      v-model:visible="listDocsVisible"
+      :raw-markdown="generatePromptsListMarkdown(filteredPrompts)"
+      :title="`Documentation: ${filteredPrompts.length} prompt${filteredPrompts.length === 1 ? '' : 's'}`"
+    />
   </div>
 </template>
 
@@ -217,6 +245,9 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
 .item-desc { display:block; font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dot { font-size:8px; color:var(--success); flex-shrink:0; }
 .detail-header { padding:16px 20px; border-bottom:1px solid var(--border); }
+.detail-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.fav-btn { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px 6px; border-radius:var(--border-radius-sm); transition:var(--transition-fast); flex-shrink:0; }
+.fav-btn:hover { color:var(--accent); background:var(--nav-item-hover); }
 .item-title { margin:0 0 4px; font-size:16px; font-weight:600; color:var(--text-primary); }
 .item-desc-full { margin:0; font-size:13px; color:var(--text-secondary); }
 .args-section { padding:16px 20px; border-bottom:1px solid var(--border); }

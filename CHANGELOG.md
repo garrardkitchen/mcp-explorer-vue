@@ -2,8 +2,11 @@
 
 ## [Unreleased] - 2026-04-05
 
+### Added
+- Markdown documentation dialog extended to Prompts, Resources, and Resource Templates pages. Each page now has: (1) a 📖 book icon button in the list panel header to open a reference doc for all visible items, and (2) a 📖 book icon button in the detail panel to open docs for the selected item. Generates well-structured markdown with argument/parameter tables, URI info, MIME type, and anchor navigation. `ToolDocsDialog` now accepts `rawMarkdown` and `title` props to support non-tool content. New generators added to `useToolDocs.ts`: `generatePromptMarkdown`, `generatePromptsListMarkdown`, `generateResourceMarkdown`, `generateResourcesListMarkdown`, `generateResourceTemplateMarkdown`, `generateResourceTemplatesListMarkdown`.
+
 ### Fixed
-- Markdown documentation dialog (all-tools mode): scroll now works correctly when the dialog is maximised. Two root causes resolved: (1) the Dialog `:style` binding applied `max-height: 85vh; width: 780px` as inline styles even in maximised mode — inline styles override PrimeVue's class-based maximize CSS, capping the dialog at 85 vh; fixed by making `:style` conditional on `isMaximized`. (2) PrimeVue's own `.p-tabpanel` stylesheet sets `display: block; flex: 0 1 auto` which overrides the scoped `flex: 1; min-height: 0` chain; fixed with higher-specificity global overrides on `.docs-dialog .p-tabpanel` and `.docs-dialog .p-tabpanels`. Dialog now fills the full viewport and the preview area scrolls as expected.
+- Markdown documentation dialog (all-tools mode): scroll now works correctly when the dialog is maximised. Two root causes resolved: (1) the Dialog `:style` binding applied `max-height: 85vh; width: 780px` as inline styles even in maximised mode — inline styles override PrimeVue's class-based maximize CSS, capping the dialog at 85 vh; fixed by making `:style` conditional on `isMaximized`. (2) PrimeVue's own `.p-tabpanel` stylesheet sets `display: block; flex: 0 1 auto` which overrides the scoped `flex: 1; min-height: 0` chain; fixed with higher-specificity global overrides on `.docs-dialog .p-tabpanel-active` and `.docs-dialog .p-tabpanels`.
 
 ## [Unreleased] - 2026-04-04
 

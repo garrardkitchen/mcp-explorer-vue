@@ -17,6 +17,10 @@ const props = defineProps<{
   /** List mode — show combined reference for multiple tools */
   tools?: ActiveTool[]
   visible: boolean
+  /** Override: supply pre-generated markdown directly */
+  rawMarkdown?: string
+  /** Override: dialog header title */
+  title?: string
 }>()
 
 const emit = defineEmits<{
@@ -31,11 +35,13 @@ const isMaximized = ref(false)
 const isListMode = computed(() => Array.isArray(props.tools) && props.tools.length > 0)
 
 const dialogHeader = computed(() => {
+  if (props.title) return props.title
   if (isListMode.value) return `Documentation: ${props.tools!.length} tool${props.tools!.length === 1 ? '' : 's'}`
   return props.tool ? `Documentation: ${props.tool.name}` : 'Documentation'
 })
 
 const markdown = computed(() => {
+  if (props.rawMarkdown) return props.rawMarkdown
   if (isListMode.value) return generateToolsListMarkdown(props.tools!)
   return props.tool ? generateToolMarkdown(props.tool) : ''
 })
