@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
 import DataTable from 'primevue/datatable'
@@ -10,6 +11,7 @@ import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
 import Popover from 'primevue/popover'
+import ConfirmDialog from 'primevue/confirmdialog'
 import JsonViewer from '@/components/common/JsonViewer.vue'
 import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import ElicitationDialog from '@/components/common/ElicitationDialog.vue'
@@ -21,6 +23,7 @@ import { useElicitation } from '@/composables/useElicitation'
 import type { ActiveTool } from '@/api/types'
 
 const toast = useToast()
+const confirm = useConfirm()
 const store = useConnectionsStore()
 
 // ── Connection selection ───────────────────────────────────────────────
@@ -241,6 +244,26 @@ function loadHistoryParams(h: Record<string, unknown>) {
   params.value = JSON.parse(JSON.stringify(h))
 }
 
+function deleteRun(idx: number) {
+  const toolName = selectedTool.value?.name
+  if (!toolName) return
+  const runLabel = `Run ${paramHistory.value.length - idx}`
+  confirm.require({
+    message: `Delete ${runLabel}? This cannot be undone.`,
+    header: 'Delete Run',
+    icon: 'pi pi-trash',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Delete', severity: 'danger' },
+    accept: async () => {
+      const existing = allParamHistory.value[toolName] ?? []
+      const updated = existing.filter((_, i) => i !== idx)
+      allParamHistory.value = { ...allParamHistory.value, [toolName]: updated }
+      await preferencesApi.patch({ parameterHistory: allParamHistory.value })
+      toast.add({ severity: 'success', summary: 'Run deleted', life: 2000 })
+    },
+  })
+}
+
 function getParamValue(key: string) { return params.value[key] !== undefined ? String(params.value[key]) : '' }
 function setParamValue(key: string, val: string) {
   params.value[key] = val
@@ -452,17 +475,30 @@ watch(() => store.initialized, async (ready, wasReady) => {
             <!-- History -->
             <div v-if="paramHistory.length" class="history-section">
               <div class="section-label">Recent Parameters</div>
-              <Button
+              <div
                 v-for="(h, idx) in paramHistory"
                 :key="idx"
-                text
-                size="small"
-                class="history-btn"
-                :label="`Run ${paramHistory.length - idx}`"
-                icon="pi pi-history"
-                @click="loadHistoryParams(h)"
-                v-tooltip.right="JSON.stringify(h).slice(0, 120)"
-              />
+                class="history-run-row"
+              >
+                <Button
+                  text
+                  size="small"
+                  class="history-btn"
+                  :label="`Run ${paramHistory.length - idx}`"
+                  icon="pi pi-history"
+                  @click="loadHistoryParams(h)"
+                  v-tooltip.right="JSON.stringify(h).slice(0, 120)"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  text
+                  size="small"
+                  severity="danger"
+                  class="history-delete-btn"
+                  v-tooltip.right="'Delete this run'"
+                  @click="deleteRun(idx)"
+                />
+              </div>
             </div>
 
             <div class="invoke-bar">
@@ -511,6 +547,7 @@ watch(() => store.initialized, async (ready, wasReady) => {
     :step-number="elicitStep"
     @respond="onElicitRespond"
   />
+  <ConfirmDialog />
 </template>
 
 <style scoped>
@@ -581,5 +618,9 @@ watch(() => store.initialized, async (ready, wasReady) => {
 .error-retry-btn { align-self:flex-start; }
 .result-section { flex:1; padding:12px 20px; min-height:200px; }
 .tool-section-header { padding:4px 14px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); background:var(--bg-raised); border-bottom:1px solid var(--border); }
+.history-run-row { display:flex; align-items:center; gap:2px; margin-bottom:2px; }
+.history-run-row .history-btn { flex:1; justify-content:flex-start; margin-bottom:0; }
+.history-delete-btn { flex-shrink:0; opacity:0.5; }
+.history-run-row:hover .history-delete-btn { opacity:1; }
 .history-btn { display:flex; width:100%; justify-content:flex-start; margin-bottom:4px; }
 </style>
