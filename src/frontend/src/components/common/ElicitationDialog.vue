@@ -3,6 +3,8 @@ import { ref, computed, watch } from 'vue'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
 import Tag from 'primevue/tag'
 import type { ElicitationRequest } from '@/api/types'
 
@@ -199,8 +201,8 @@ function iconForType(type: string, format?: string, isMulti?: boolean, hasOption
             <span class="bool-label-text">{{ content[f.name] ? 'True' : 'False' }}</span>
           </div>
 
-          <!-- Radio buttons — single-select options -->
-          <div v-else-if="f.options && !f.isMulti" class="options-group" role="radiogroup">
+          <!-- Radio buttons — single-select, ≤3 options -->
+          <div v-else-if="f.options && !f.isMulti && f.options.length <= 3" class="options-group" role="radiogroup">
             <label
               v-for="opt in f.options"
               :key="opt.value"
@@ -219,8 +221,19 @@ function iconForType(type: string, format?: string, isMulti?: boolean, hasOption
             </label>
           </div>
 
-          <!-- Checkboxes — multi-select options -->
-          <div v-else-if="f.options && f.isMulti" class="options-group" role="group">
+          <!-- Dropdown — single-select, >3 options -->
+          <Select
+            v-else-if="f.options && !f.isMulti && f.options.length > 3"
+            v-model="(content as any)[f.name]"
+            :options="f.options"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Select an option…"
+            class="field-input w-full"
+          />
+
+          <!-- Checkboxes — multi-select, ≤3 options -->
+          <div v-else-if="f.options && f.isMulti && f.options.length <= 3" class="options-group" role="group">
             <label
               v-for="opt in f.options"
               :key="opt.value"
@@ -237,6 +250,18 @@ function iconForType(type: string, format?: string, isMulti?: boolean, hasOption
               <span class="option-label">{{ opt.label }}</span>
             </label>
           </div>
+
+          <!-- Multi-select dropdown — multi-select, >3 options -->
+          <MultiSelect
+            v-else-if="f.options && f.isMulti && f.options.length > 3"
+            v-model="(content as any)[f.name]"
+            :options="f.options"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Select options…"
+            display="chip"
+            class="field-input w-full"
+          />
 
           <!-- Integer/Number -->
           <InputText
