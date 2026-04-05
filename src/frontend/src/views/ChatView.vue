@@ -20,7 +20,8 @@ import { useConnectionsStore } from '@/stores/connections'
 import { llmModelsApi } from '@/api/llmModels'
 import { connectionsApi } from '@/api/connections'
 import { apiClient } from '@/api/client'
-import type { LlmModelDefinition, ActivePrompt, PromptArgument } from '@/api/types'
+import { preferencesApi } from '@/api/preferences'
+import type { LlmModelDefinition, ActivePrompt, PromptArgument, SensitiveFieldConfiguration } from '@/api/types'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -294,15 +295,77 @@ function toggleAllParams() {
     : new Set(toolCalls.map(m => m.id))
 }
 
-// Sensitive property name patterns (same list as old Blazor ToolParameterProtectionService)
-const SENSITIVE_PATTERNS = /^(key|password|token|secret|auth|credential|api[_\-]?key|access[_\-]?token|client[_\-]?secret|private[_\-]?key|bearer|passphrase|pass|pwd|apikey|clientsecret|accesstoken)$/i
+// ── Sensitive data masking ─────────────────────────────────────────────────
+// Loaded from Data Guard page; merged with built-in patterns at runtime
+const sensitiveConfig = ref<SensitiveFieldConfiguration>({
+  additionalSensitiveFields: [],
+  allowedFields: [],
+  useAiDetection: false,
+  aiStrictness: 'Balanced',
+  showDetectionDebug: false,
+})
+
+// Built-in key name pattern (JSON tool params)
+const BUILTIN_KEY_TERMS = 'key|password|token|secret|auth|credential|api[_\\-]?key|access[_\\-]?token|client[_\\-]?secret|private[_\\-]?key|bearer|passphrase|pass|pwd|apikey|clientsecret|accesstoken'
+
+function buildKeyPattern(): RegExp {
+  const extra = sensitiveConfig.value.additionalSensitiveFields
+    .map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const src = extra ? `^(${BUILTIN_KEY_TERMS}|${extra})$` : `^(${BUILTIN_KEY_TERMS})$`
+  return new RegExp(src, 'i')
+}
+
+// Built-in free-text trigger words
+const BUILTIN_TEXT_TERMS = 'password|secret|token|api[_\\-]?key|credential|auth(?:orization)?|bearer|passphrase|pwd|pass|private[_\\-]?key|access[_\\-]?token|client[_\\-]?secret'
+
+function buildTextPattern(): RegExp {
+  const extra = sensitiveConfig.value.additionalSensitiveFields
+    .map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const src = extra
+    ? `\\b(${BUILTIN_TEXT_TERMS}|${extra})\\b\\s*(?:of\\s+|is\\s+|[:=]\\s*)([^\\s,;]+)`
+    : `\\b(${BUILTIN_TEXT_TERMS})\\b\\s*(?:of\\s+|is\\s+|[:=]\\s*)([^\\s,;]+)`
+  return new RegExp(src, 'gi')
+}
+
+function isAllowed(key: string): boolean {
+  return sensitiveConfig.value.allowedFields
+    .some(f => f.toLowerCase() === key.toLowerCase())
+}
+
+function hasSensitiveContent(text: string | undefined): boolean {
+  if (!text) return false
+  const pattern = buildTextPattern()
+  pattern.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text)) !== null) {
+    if (!isAllowed(match[1])) return true
+  }
+  return false
+}
+
+function getMaskedContent(text: string, msgId: string): string {
+  if (!text) return ''
+  if (revealedParams.value.has(msgId)) return escapeHtml(text).replace(/\n/g, '<br />')
+  const pattern = buildTextPattern()
+  pattern.lastIndex = 0
+  const masked = text.replace(pattern, (_, keyword, _value) => {
+    if (isAllowed(keyword)) return _
+    return `${keyword} <SMASK>`
+  })
+  return escapeHtml(masked)
+    .replace(/&lt;SMASK&gt;/g, '<span class="sensitive-mask" title="Sensitive value hidden">████████</span>')
+    .replace(/\n/g, '<br />')
+}
 
 function hasSensitiveParams(params: string | undefined): boolean {
   if (!params) return false
   try {
     const obj = JSON.parse(params)
-    return typeof obj === 'object' && obj !== null &&
-      Object.keys(obj).some(k => SENSITIVE_PATTERNS.test(k))
+    if (typeof obj !== 'object' || obj === null) return false
+    const pattern = buildKeyPattern()
+    return Object.keys(obj).some(k => !isAllowed(k) && pattern.test(k))
   } catch { return false }
 }
 
@@ -312,10 +375,11 @@ function getMaskedParams(params: string, msgId: string): string {
     const obj = JSON.parse(params)
     const revealed = revealedParams.value.has(msgId)
     if (revealed || typeof obj !== 'object' || obj === null) return JSON.stringify(obj, null, 2)
+    const pattern = buildKeyPattern()
     const masked = Object.fromEntries(
       Object.entries(obj).map(([k, v]) => [
         k,
-        SENSITIVE_PATTERNS.test(k) && typeof v === 'string' ? '████████' : v
+        !isAllowed(k) && pattern.test(k) && typeof v === 'string' ? '████████' : v
       ])
     )
     return JSON.stringify(masked, null, 2)
@@ -545,6 +609,9 @@ onMounted(async () => {
     const sel = await llmModelsApi.getSelected()
     selectedModelName.value = sel.selectedModelName
   } catch { /* ignore */ }
+  try {
+    sensitiveConfig.value = await preferencesApi.getSensitiveFields()
+  } catch { /* ignore — fall back to built-in patterns */ }
   window.addEventListener('slash-command', onExternalSlashCommand)
 })
 
@@ -729,7 +796,13 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
                   <span class="msg-role-name">{{ getName(msg.role) }}</span>
                   <div class="avatar-circle user-avatar-circle">👤</div>
                 </div>
-                <div class="message-content" v-html="escapeHtml(msg.content).replace(/\n/g, '<br />')" />
+                <div class="message-content" v-html="getMaskedContent(msg.content, msg.id)" />
+                <div v-if="hasSensitiveContent(msg.content)" class="sensitive-banner user-sensitive-banner">
+                  <span>🔒 Contains sensitive values</span>
+                  <button class="reveal-btn" @click="toggleReveal(msg.id)">
+                    {{ revealedParams.has(msg.id) ? '🙈 Hide values' : '👁 Reveal values' }}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1192,8 +1265,16 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .tool-params-pre { margin:8px 0 4px; background:var(--code-bg); border:1px solid var(--border); border-radius:4px; padding:8px 10px; font-family:var(--font-family-mono); font-size:11px; color:var(--text-primary); overflow-x:auto; white-space:pre; max-height:240px; overflow-y:auto; }
 .sensitive-banner { display:flex; align-items:center; gap:8px; padding:4px 8px; background:rgba(239,68,68,.07); border:1px solid rgba(239,68,68,.2); border-radius:4px; font-size:11px; color:rgba(239,68,68,.9); margin-top:2px; }
 .sensitive-banner span { flex:1; }
+.user-sensitive-banner { margin-top:6px; }
+.sensitive-mask { background:rgba(239,68,68,.15); color:rgba(239,68,68,.9); border-radius:3px; padding:0 3px; font-family:var(--font-family-mono); letter-spacing:.05em; font-size:.95em; }
 .reveal-btn { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); color:rgba(239,68,68,.9); border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; white-space:nowrap; }
 .reveal-btn:hover { background:rgba(239,68,68,.2); }
+
+/* Overrides for sensitive elements inside the blue user bubble */
+.user-bubble .sensitive-mask { background:rgba(0,0,0,0.3); color:#fff; border-radius:3px; padding:1px 5px; }
+.user-bubble .sensitive-banner { background:rgba(0,0,0,0.2); border-color:rgba(255,255,255,0.3); color:rgba(255,255,255,0.9); }
+.user-bubble .reveal-btn { background:rgba(0,0,0,0.15); border-color:rgba(255,255,255,0.35); color:rgba(255,255,255,0.9); }
+.user-bubble .reveal-btn:hover { background:rgba(0,0,0,0.3); }
 
 /* Avatar circles */
 .avatar-circle { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
