@@ -174,7 +174,7 @@ onMounted(load)
       <div class="form-grid">
         <div class="form-field">
           <label>Name *</label>
-          <InputText v-model="form.name" placeholder="my-gpt4" class="w-full" :disabled="editMode" />
+          <InputText v-model="form.name" placeholder="my-gpt4" class="w-full" />
         </div>
         <div class="form-field">
           <label>Provider</label>

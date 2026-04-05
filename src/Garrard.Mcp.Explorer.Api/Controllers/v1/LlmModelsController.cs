@@ -30,6 +30,14 @@ public sealed class LlmModelsController(IUserPreferencesStore store) : Controlle
     public async Task<IActionResult> Update(string name, [FromBody] LlmModelDefinition model, CancellationToken ct)
     {
         var prefs = await store.LoadAsync(ct);
+        if (!prefs.LlmModels.Any(m => m.Name == name))
+            return NotFound();
+
+        // Collision check when renaming
+        if (!string.Equals(model.Name, name, StringComparison.OrdinalIgnoreCase) &&
+            prefs.LlmModels.Any(m => string.Equals(m.Name, model.Name, StringComparison.OrdinalIgnoreCase)))
+            return Conflict(new { error = $"A model named '{model.Name}' already exists." });
+
         var models = prefs.LlmModels.Where(m => m.Name != name).ToList();
         models.Add(model);
         await store.SaveAsync(prefs with { LlmModels = models }, ct);
