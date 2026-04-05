@@ -67,7 +67,7 @@ public sealed class PreferencesController(IUserPreferencesStore store) : Control
     }
 }
 
-public sealed record UpdateThemeRequest([property: Required, MinLength(1)] string Theme);
+public sealed record UpdateThemeRequest([Required, MinLength(1)] string Theme);
 
 public sealed record PatchPreferencesRequest(
     List<string>? FavoriteTools,

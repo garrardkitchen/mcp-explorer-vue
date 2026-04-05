@@ -136,22 +136,25 @@ public class PreferencesControllerTests
     [Fact]
     public void UpdateThemeRequest_ThemeProperty_HasRequiredAttribute()
     {
-        var prop = typeof(UpdateThemeRequest).GetProperty(nameof(UpdateThemeRequest.Theme));
-        var required = prop?.GetCustomAttributes(
+        // Attributes on primary constructor parameters are on the parameter, not the property.
+        var param = typeof(UpdateThemeRequest).GetConstructors()[0]
+            .GetParameters()
+            .First(p => p.Name == "Theme");
+        var required = param.GetCustomAttributes(
             typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), inherit: false);
 
-        Assert.NotNull(required);
         Assert.NotEmpty(required);
     }
 
     [Fact]
     public void UpdateThemeRequest_ThemeProperty_HasMinLengthAttribute()
     {
-        var prop = typeof(UpdateThemeRequest).GetProperty(nameof(UpdateThemeRequest.Theme));
-        var minLen = prop?.GetCustomAttributes(
+        var param = typeof(UpdateThemeRequest).GetConstructors()[0]
+            .GetParameters()
+            .First(p => p.Name == "Theme");
+        var minLen = param.GetCustomAttributes(
             typeof(System.ComponentModel.DataAnnotations.MinLengthAttribute), inherit: false);
 
-        Assert.NotNull(minLen);
         Assert.NotEmpty(minLen);
     }
 
