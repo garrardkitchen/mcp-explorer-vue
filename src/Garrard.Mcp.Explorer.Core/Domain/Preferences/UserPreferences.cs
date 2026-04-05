@@ -17,6 +17,8 @@ public sealed record UserPreferences
     public bool ShowPromptFavoritesFirst { get; init; }
     public List<string> FavoriteResources { get; init; } = [];
     public bool ShowResourceFavoritesFirst { get; init; }
+    public List<string> FavoriteResourceTemplates { get; init; } = [];
+    public bool ShowResourceTemplateFavoritesFirst { get; init; }
     public List<LlmModelDefinition> LlmModels { get; init; } = [];
     public string? SelectedLlmModelName { get; init; }
     public SensitiveFieldConfiguration SensitiveFieldConfig { get; init; } = new();

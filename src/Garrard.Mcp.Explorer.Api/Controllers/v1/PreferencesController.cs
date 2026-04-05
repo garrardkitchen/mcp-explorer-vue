@@ -54,7 +54,11 @@ public sealed class PreferencesController(IUserPreferencesStore store) : Control
             FavoriteTools = request.FavoriteTools ?? prefs.FavoriteTools,
             FavoriteConnections = request.FavoriteConnections ?? prefs.FavoriteConnections,
             FavoritePrompts = request.FavoritePrompts ?? prefs.FavoritePrompts,
+            ShowPromptFavoritesFirst = request.ShowPromptFavoritesFirst ?? prefs.ShowPromptFavoritesFirst,
             FavoriteResources = request.FavoriteResources ?? prefs.FavoriteResources,
+            ShowResourceFavoritesFirst = request.ShowResourceFavoritesFirst ?? prefs.ShowResourceFavoritesFirst,
+            FavoriteResourceTemplates = request.FavoriteResourceTemplates ?? prefs.FavoriteResourceTemplates,
+            ShowResourceTemplateFavoritesFirst = request.ShowResourceTemplateFavoritesFirst ?? prefs.ShowResourceTemplateFavoritesFirst,
             ShowFavoritesFirst = request.ShowFavoritesFirst ?? prefs.ShowFavoritesFirst,
             ParameterHistory = request.ParameterHistory ?? prefs.ParameterHistory,
         };
@@ -69,7 +73,11 @@ public sealed record PatchPreferencesRequest(
     List<string>? FavoriteTools,
     List<string>? FavoriteConnections,
     List<string>? FavoritePrompts,
+    bool? ShowPromptFavoritesFirst,
     List<string>? FavoriteResources,
+    bool? ShowResourceFavoritesFirst,
+    List<string>? FavoriteResourceTemplates,
+    bool? ShowResourceTemplateFavoritesFirst,
     bool? ShowFavoritesFirst,
     Dictionary<string, List<string>>? ParameterHistory
 );

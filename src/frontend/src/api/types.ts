@@ -176,6 +176,8 @@ export interface UserPreferences {
   showPromptFavoritesFirst: boolean
   favoriteResources: string[]
   showResourceFavoritesFirst: boolean
+  favoriteResourceTemplates: string[]
+  showResourceTemplateFavoritesFirst: boolean
   llmModels: LlmModelDefinition[]
   selectedLlmModelName?: string
   sensitiveFieldConfig: SensitiveFieldConfiguration

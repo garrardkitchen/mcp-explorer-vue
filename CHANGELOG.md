@@ -3,6 +3,7 @@
 ## [Unreleased] - 2026-04-05
 
 ### Added
+- Favourites feature extended to Prompts, Resources, and Resource Templates pages. Each page now supports: per-item ⭐ star button to toggle favourites (persisted via preferences API), a ⭐ star toggle in the panel header to group favourites first with visual separator rows, and a count badge that shows filtered/total when a search is active. Backend: added `FavoriteResourceTemplates` and `ShowResourceTemplateFavoritesFirst` to `UserPreferences` domain model; `PatchPreferencesRequest` now exposes all six `ShowXxxFavoritesFirst` flags for prompts, resources, and templates. Preferences are loaded on mount and persisted on every toggle.
 - Markdown documentation dialog extended to Prompts, Resources, and Resource Templates pages. Each page now has: (1) a 📖 book icon button in the list panel header to open a reference doc for all visible items, and (2) a 📖 book icon button in the detail panel to open docs for the selected item. Generates well-structured markdown with argument/parameter tables, URI info, MIME type, and anchor navigation. `ToolDocsDialog` now accepts `rawMarkdown` and `title` props to support non-tool content. New generators added to `useToolDocs.ts`: `generatePromptMarkdown`, `generatePromptsListMarkdown`, `generateResourceMarkdown`, `generateResourcesListMarkdown`, `generateResourceTemplateMarkdown`, `generateResourceTemplatesListMarkdown`.
 
 ### Fixed

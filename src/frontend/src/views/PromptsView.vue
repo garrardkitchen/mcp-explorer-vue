@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useRouter } from 'vue-router'
 import Splitter from 'primevue/splitter'
@@ -17,6 +17,7 @@ import { connectionsApi } from '@/api/connections'
 import { llmModelsApi } from '@/api/llmModels'
 import { chatApi } from '@/api/chat'
 import { useChatStore } from '@/stores/chat'
+import { preferencesApi } from '@/api/preferences'
 import { generatePromptMarkdown, generatePromptsListMarkdown } from '@/composables/useToolDocs'
 import type { ActivePrompt, LlmModelDefinition } from '@/api/types'
 
@@ -45,13 +46,52 @@ const sendingToLlm = ref(false)
 const docsVisible = ref(false)
 const listDocsVisible = ref(false)
 
+// ── Favourites ────────────────────────────────────────────────────────
+const favorites = ref<Set<string>>(new Set())
+const showFavoritesFirst = ref(false)
+
+async function toggleFav(name: string) {
+  if (favorites.value.has(name)) favorites.value.delete(name)
+  else favorites.value.add(name)
+  favorites.value = new Set(favorites.value)
+  try {
+    await preferencesApi.patch({ favoritePrompts: [...favorites.value] })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save favourite', detail: e.message, life: 3000 })
+  }
+}
+
+async function toggleShowFavoritesFirst() {
+  showFavoritesFirst.value = !showFavoritesFirst.value
+  try {
+    await preferencesApi.patch({ showPromptFavoritesFirst: showFavoritesFirst.value })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save preference', detail: e.message, life: 3000 })
+  }
+}
+
 const connectedConnections = computed(() => store.activeConnections.filter(c => c.isConnected))
 
-const filteredPrompts = computed(() => {
+type PromptListItem = ActivePrompt | { isSeparator: true; label: string }
+
+const filteredPrompts = computed<PromptListItem[]>(() => {
+  let list = prompts.value
   const q = promptSearch.value.toLowerCase()
-  if (!q) return prompts.value
-  return prompts.value.filter(p => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q))
+  if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q))
+
+  if (!showFavoritesFirst.value || favorites.value.size === 0) return list
+
+  const favs = list.filter(p => favorites.value.has(p.name))
+  const rest = list.filter(p => !favorites.value.has(p.name))
+  const items: PromptListItem[] = []
+  if (favs.length) { items.push({ isSeparator: true, label: '⭐ Favourites' }); items.push(...favs) }
+  if (rest.length) { items.push({ isSeparator: true, label: 'All Prompts' }); items.push(...rest) }
+  return items
 })
+
+const filteredPromptsOnly = computed(() =>
+  filteredPrompts.value.filter((p): p is ActivePrompt => !('isSeparator' in p))
+)
 
 watch(selectedConnName, async (name) => {
   selectedPrompt.value = null; prompts.value = []; result.value = null
@@ -107,6 +147,14 @@ async function sendToLlm() {
 // Load active connections when store initialises (covers both: view mounts after init,
 // and view mounts before init completes). immediate:true fires on mount if already ready.
 watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) store.loadActive() }, { immediate: true })
+
+onMounted(async () => {
+  try {
+    const prefs = await preferencesApi.getAll()
+    favorites.value = new Set(prefs.favoritePrompts ?? [])
+    showFavoritesFirst.value = prefs.showPromptFavoritesFirst ?? false
+  } catch { /* non-fatal */ }
+})
 </script>
 
 <template>
@@ -131,12 +179,19 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         <div class="panel">
           <div class="panel-header">
             Prompts
-            <Tag v-if="prompts.length" :value="String(prompts.length)" severity="secondary" />
+            <Tag v-if="prompts.length" :value="filteredPromptsOnly.length < prompts.length ? `${filteredPromptsOnly.length} / ${prompts.length}` : String(prompts.length)" :severity="filteredPromptsOnly.length < prompts.length ? 'warn' : 'secondary'" />
             <button
-              v-if="filteredPrompts.length > 0"
+              v-if="filteredPromptsOnly.length > 0"
+              class="fav-btn"
+              :style="showFavoritesFirst ? 'color:var(--warning)' : ''"
+              @click="toggleShowFavoritesFirst"
+              :title="showFavoritesFirst ? 'Show all prompts' : 'Show favourites first'"
+            ><i :class="showFavoritesFirst ? 'pi pi-star-fill' : 'pi pi-star'" /></button>
+            <button
+              v-if="filteredPromptsOnly.length > 0"
               class="fav-btn"
               @click="listDocsVisible = true"
-              :title="`View docs for ${filteredPrompts.length} visible prompt${filteredPrompts.length === 1 ? '' : 's'}`"
+              :title="`View docs for ${filteredPromptsOnly.length} visible prompt${filteredPromptsOnly.length === 1 ? '' : 's'}`"
             ><i class="pi pi-book" /></button>
           </div>
           <div class="panel-search">
@@ -146,18 +201,24 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           <div v-else-if="!selectedConnName" class="empty-panel"><p>Select a connection</p></div>
           <div v-else-if="filteredPrompts.length === 0" class="empty-panel"><p>No prompts found</p></div>
           <div v-else class="item-list">
-            <div v-for="p in filteredPrompts" :key="p.name" class="list-item prompt-item"
-                 :class="{ active: selectedPrompt?.name === p.name }" @click="selectPrompt(p)">
-              <div class="item-body-icon">
-                <img v-if="p.iconUrl" :src="p.iconUrl" :alt="p.name" class="item-icon-img" />
-                <span v-else class="item-icon-badge">{{ p.name.charAt(0).toUpperCase() }}</span>
+            <template v-for="item in filteredPrompts" :key="'isSeparator' in item ? item.label : item.name">
+              <div v-if="'isSeparator' in item" class="list-separator">{{ item.label }}</div>
+              <div v-else class="list-item prompt-item"
+                   :class="{ active: selectedPrompt?.name === item.name }" @click="selectPrompt(item)">
+                <div class="item-body-icon">
+                  <img v-if="item.iconUrl" :src="item.iconUrl" :alt="item.name" class="item-icon-img" />
+                  <span v-else class="item-icon-badge">{{ item.name.charAt(0).toUpperCase() }}</span>
+                </div>
+                <div class="item-body-text">
+                  <span class="item-name">{{ item.name }}</span>
+                  <span class="item-desc">{{ item.description }}</span>
+                </div>
+                <Tag v-if="item.arguments?.length" :value="`${item.arguments.length} args`" severity="secondary" />
+                <button class="fav-btn" @click.stop="toggleFav(item.name)" :title="favorites.has(item.name) ? 'Unfavourite' : 'Favourite'">
+                  <i :class="favorites.has(item.name) ? 'pi pi-star-fill' : 'pi pi-star'" :style="favorites.has(item.name) ? 'color:var(--warning)' : ''" />
+                </button>
               </div>
-              <div class="item-body-text">
-                <span class="item-name">{{ p.name }}</span>
-                <span class="item-desc">{{ p.description }}</span>
-              </div>
-              <Tag v-if="p.arguments?.length" :value="`${p.arguments.length} args`" severity="secondary" />
-            </div>
+            </template>
           </div>
         </div>
       </SplitterPanel>
@@ -217,8 +278,8 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
     />
     <ToolDocsDialog
       v-model:visible="listDocsVisible"
-      :raw-markdown="generatePromptsListMarkdown(filteredPrompts)"
-      :title="`Documentation: ${filteredPrompts.length} prompt${filteredPrompts.length === 1 ? '' : 's'}`"
+      :raw-markdown="generatePromptsListMarkdown(filteredPromptsOnly)"
+      :title="`Documentation: ${filteredPromptsOnly.length} prompt${filteredPromptsOnly.length === 1 ? '' : 's'}`"
     />
   </div>
 </template>
@@ -243,6 +304,7 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
 .item-body-text { flex:1; min-width:0; }
 .item-name { display:block; font-size:13px; font-weight:500; font-family:var(--font-family-mono); color:var(--text-primary); }
 .item-desc { display:block; font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.list-separator { padding:6px 16px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); background:var(--bg-raised); border-bottom:1px solid var(--border); flex-shrink:0; }
 .dot { font-size:8px; color:var(--success); flex-shrink:0; }
 .detail-header { padding:16px 20px; border-bottom:1px solid var(--border); }
 .detail-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
