@@ -1,6 +1,8 @@
-# MCP Explorer v2
+# MCP Explorer
 
-A modern MCP (Model Context Protocol) server explorer — browse tools, prompts, resources, and chat with LLMs over live MCP connections. Rebuilt from Blazor Server to **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core** backend using clean architecture.
+A modern MCP (Model Context Protocol) server explorer — browse tools, prompts, resources, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core** backend using clean architecture.
+
+📚 **[Documentation →](docs/learn/)** — full user guide and feature reference built with Hugo
 
 ## Features
 
@@ -182,8 +184,11 @@ src/
 
 tests/
 ├── Garrard.Tests.Mcp.Explorer.Core/           # 66 unit tests
-├── Garrard.Tests.Mcp.Explorer.Infrastructure/ # 36 unit tests
-└── Garrard.Tests.Mcp.Explorer.Api/            # 27 unit tests
+├── Garrard.Tests.Mcp.Explorer.Infrastructure/ # 47 unit tests
+└── Garrard.Tests.Mcp.Explorer.Api/            # 34 unit tests
+
+docs/
+└── learn/                                     # Hugo documentation site (serve with: hugo server -s docs/learn)
 ```
 
 ## Getting Started
@@ -262,21 +267,30 @@ Services: `api` on `:5000` (internal), `gateway` on `:8080` (external).
 
 ## Environment Variables
 
-Copy `.env.example` to `.env`. Key variables:
+Copy `.env.example` to `.env` and fill in your values. Key variables:
 
 | Variable | Description | Default |
 |---|---|---|
-| `LLM__Provider` | LLM provider (`OpenAI`, `AzureOpenAI`) | `OpenAI` |
-| `LLM__ApiKey` | OpenAI API key | — |
-| `LLM__AzureEndpoint` | Azure OpenAI endpoint | — |
-| `LLM__AzureDeployment` | Azure model deployment name | — |
-| `LLM__DefaultModel` | Default chat model | `gpt-4o` |
-| `PREFERENCES__StoragePath` | Preferences JSON path | platform default |
-| `SECURITY__KeyPath` | AES key file path | platform default |
-| `API__BaseUrl` | Internal API URL (for Gateway) | `http://localhost:5000` |
-| `CORS__AllowedOrigins` | Allowed CORS origins | `http://localhost:5173` |
+| `ASPNETCORE_ENVIRONMENT` | Runtime env — controls logging/error detail | `Production` |
+| `AppMetadata__Version` | Version string shown in UI footer | `0.5.0` |
+| `MCP_CLIENT_NAME` | Client name sent to MCP servers in handshake and User-Agent | `mcp-explorer` |
+| `MCP_DATA_PATH` | **Host** directory mounted as `/data` — persists connections, workflows, models | _(anonymous volume)_ |
+| `PREFERENCES__StoragePath` | Absolute path to `settings.json` inside the container | `/data/settings.json` |
+| `LlmService__OpenAiBaseUrl` | Base URL for OpenAI-compatible APIs | `https://api.openai.com/v1` |
+| `LlmService__AzureApiVersion` | Azure OpenAI API version query param | `2024-02-15-preview` |
+| `LlmService__MaxRetryAttempts` | Max LLM request retries | `3` |
+| `LlmService__TimeoutSeconds` | LLM response timeout | `30` |
+| `ToolInvoke__TimeoutSeconds` | MCP tool call timeout (0 = no limit) | `300` |
+| `ToolInvoke__MaxRetryAttempts` | Tool call retry attempts | `2` |
+| `Elicitation__TimeoutSeconds` | Elicitation dialog timeout (0 = wait forever) | `0` |
+| `GATEWAY_PORT` | Host port the app is exposed on | `8090` |
+| `ReverseProxy__Clusters__api-cluster__Destinations__api__Address` | API address for YARP (docker-compose only) | `http://api:5000/` |
+| `VITE_API_BASE_URL` | Browser API base URL (empty = same origin via gateway) | _(empty)_ |
+| `VITE_APP_VERSION` | App version baked into the frontend bundle | `0.5.0` |
 
-See `.env.example` for the full list.
+> **Note:** `VITE_*` variables are baked into the static JS bundle at build time and cannot be changed at runtime.
+
+See `.env.example` for the full annotated list.
 
 ## API
 
@@ -296,16 +310,20 @@ All endpoints are versioned at `/api/v1/`. Swagger UI available at `/swagger` in
 
 ## Themes
 
-Six built-in themes, selectable via the top-bar theme switcher or Command Palette:
+Ten built-in themes, selectable via the top-bar theme switcher or Command Palette:
 
-| ID | Name | Style |
+| ID | Name | Mode |
 |---|---|---|
-| `command-dark` | Command Dark | Default dark, blue accent |
-| `command-light` | Command Light | Clean light, blue accent |
-| `nord` | Nord | Arctic, muted blues |
-| `dracula` | Dracula | Purple/pink on dark |
-| `catppuccin` | Catppuccin Mocha | Warm pastel dark |
-| `solarized` | Solarized Light | Classic warm light |
+| `command-dark` | Command Dark | Dark |
+| `command-light` | Command Light | Light |
+| `nord` | Nord | Dark |
+| `dracula` | Dracula | Dark |
+| `catppuccin` | Catppuccin Mocha | Dark |
+| `solarized` | Solarized Light | Light |
+| `material` | Material Dark | Dark |
+| `material-light` | Material Light | Light |
+| `github` | GitHub Dark | Dark |
+| `github-light` | GitHub Light | Light |
 
 Theme is persisted to `POST /api/v1/preferences/theme` and cached in `localStorage`.
 

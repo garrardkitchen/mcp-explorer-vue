@@ -1,5 +1,39 @@
 # Changelog
 
+## [Unreleased] - 2026-04-06 (latest)
+
+### Changed
+- **README**: Rename app from "MCP Explorer v2" to "MCP Explorer". Add link to Hugo docs site. Correct test counts (Core: 66, Infrastructure: 47, Api: 34, total: 147). Update Themes section from 6 to 10 themes with full table. Add `docs/learn/` to project layout. Rewrite Environment Variables table to match actual `.env.example` (removed stale `LLM__*` vars, added all current vars with defaults).
+
+### Added
+- **Workflow documentation** (`docs/learn/content/docs/workflows/building-workflows.md`): Full step-by-step walkthrough with 11 Playwright screenshots covering workflow creation, PromptAtRuntime parameter mapping, FromPreviousStep chaining, runtime parameter dialog, execution results, and history view.
+- **Data Guard documentation** (`docs/learn/content/docs/settings/data-guard.md`): Covers all three detection layers (regex, heuristic entropy, AI-powered), strictness levels, custom patterns, and allowed fields bypass list. Includes 2 screenshots.
+- **Chat documentation** (`docs/learn/content/docs/chat/chat-overview.md`): Full rewrite with 5 screenshots covering connection selection, message send, tool-calling response, slash command palette, and Prompt Picker dialog.
+- **App rename in docs**: All documentation pages updated from "MCP Explorer X" to "MCP Explorer".
+
+---
+
+## [Unreleased] - 2026-04-06
+
+### Added
+- **Hugo documentation site** (`docs/learn/`): Full documentation site built with Hugo and Lotus Docs theme. Covers Getting Started, Connections, Tools, Prompts, Resources, Chat, Workflows, Models, Settings, and Reference sections.
+- **Landing page**: Custom homepage with hero section, 10 killer features grid, quick-start steps, screenshot gallery, and CTA section. Indigo/purple brand palette matching the app theme.
+- **Live screenshots**: App screenshots captured from running app at `http://localhost:8090` using Playwright and embedded in documentation pages.
+- **GitHub Actions workflow** (`.github/workflows/deploy-docs.yml`): Automatically builds and deploys docs to GitHub Pages on push to `main`.
+- **Architecture docs**: Mermaid diagrams in `docs/learn/content/docs/reference/architecture.md` showing single-container and docker-compose deployment modes and data flow sequence diagram.
+
+---
+
+## 2026-04-06
+
+### Added
+- **MCP User-Agent header**: All outbound MCP tool calls now send `User-Agent: mcp-explorer/<version>` (e.g. `mcp-explorer/1.0.0`). Version is read at runtime from the entry assembly's informational version so it stays in sync automatically. Both initial connections and sampling reconnects use a pre-configured `HttpClient` passed to `HttpClientTransport`.
+- **Hostname in User-Agent**: `Dns.GetHostName()` appended as a comment — e.g. `mcp-explorer/1.0.0 (my-hostname)`.
+- **`MCP_CLIENT_NAME` env var**: Override the client name sent during MCP handshake and in User-Agent. Defaults to `mcp-explorer`. Documented in `.env.example` and `docker-compose.yml`.
+- **`ClientVersion` dynamic**: Infrastructure project no longer uses a hardcoded `"0.5.0"` const — version is read from the entry assembly at runtime, keeping `ClientInfo.Version`, `User-Agent`, and `ConnectionContext` in sync.
+- **Tools favourites filter persisted**: `showFavoritesFirst` toggle in the Tools view now calls `preferencesApi.patch()` on change (was previously only toggling local state). Consistent with Prompts, Resources, and Templates views.
+- **`features.md`**: Comprehensive feature reference document listing all capabilities grouped by navigation section.
+
 ## [Unreleased] - 2026-04-05
 
 ### Added

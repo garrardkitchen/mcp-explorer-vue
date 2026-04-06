@@ -1,0 +1,118 @@
+<head>
+    <meta charset="utf-8" />
+    <title>{{- .Site.Title }}</title>
+    {{- if not hugo.IsProduction }}
+    <meta name="robots" content="noindex">
+    {{- end }}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ .Site.Params.description }}{{ end }}" />
+    <meta name="keywords" content="MCP, Model Context Protocol, MCP Explorer, developer tools, AI tools" />
+    <meta name="author" content="MCP Explorer" />
+    <!-- favicon -->
+    {{ block "head/favicon" . }}{{ partialCached "head/favicon.html" . }}{{ end }}
+    <!-- Google Fonts -->
+    {{- partial "google-fonts" . }}
+    <!-- Custom CSS -->
+    {{- $options := dict "enableSourceMap" true }}
+    {{- if hugo.IsProduction}}
+        {{- $options := dict "enableSourceMap" false "outputStyle" "compressed" }}
+    {{- end }}
+    {{- $style := resources.Get "/scss/style.scss" }}
+    {{- $style = $style | resources.ExecuteAsTemplate "/scss/style.scss" . | css.Sass $options }}
+    {{- if hugo.IsProduction }}
+        {{- $style = $style | minify | fingerprint "sha384" }}
+    {{- end -}}
+    <link rel="stylesheet" href="{{ $style.RelPermalink }}" {{ if hugo.IsProduction }}integrity="{{ $style.Data.Integrity }}"{{ end -}}/>
+    <!-- Bootstrap JS -->
+    {{ $js := resources.Get "js/bootstrap.js" }}
+    {{ $params := dict }}
+    {{ $sourceMap := cond hugo.IsProduction "" "inline" }}
+    {{ $opts := dict "sourceMap" $sourceMap "minify" hugo.IsProduction "target" "es2018" "params" $params }}
+    {{ $js = $js | js.Build $opts }}
+    {{ if hugo.IsProduction }}
+        {{ $js = $js | fingerprint "sha384" }}
+    {{ end }}
+        <script src="{{ $js.RelPermalink }}" {{ if hugo.IsProduction }}integrity="{{ $js.Data.Integrity }}"{{ end -}} defer></script>
+    <!-- Image Compare Viewer -->
+    {{ if ($.Scratch.Get "image_compare_enabled") }}
+        {{ $imagecompare := resources.Get "js/image-compare-viewer.min.js" }}
+        {{- if not hugo.IsServer }}
+            {{- $js := (slice $imagecompare) | resources.Concat "/js/image-compare.js" | minify | fingerprint "sha384" }}
+            <script type="text/javascript" src="{{ $js.Permalink }}" integrity="{{ $js.Data.Integrity }}"></script>
+        {{- else }}
+            {{- $js := (slice $imagecompare) | resources.Concat "/js/image-compare.js" }}
+            <script type="text/javascript" src="{{ $js.Permalink }}" {{ if hugo.IsProduction }}integrity="{{ $js.Data.Integrity }}"{{ end }}></script>
+        {{- end }}
+    {{- end }}
+    <!-- Plausible Analytics Config -->
+    {{- if not hugo.IsServer }}
+    {{ if and (.Site.Params.plausible.scriptURL) (.Site.Params.plausible.dataDomain) -}}
+        {{- partialCached "head/plausible" . }}
+    {{- end -}}
+    {{- end -}}
+    <!-- Google Analytics v4 Config -->
+    {{- if not hugo.IsServer }}
+    {{- if .Site.Config.Services.GoogleAnalytics.ID }}
+        {{- template "_internal/google_analytics.html" . -}}
+    {{- end -}}
+    {{- end -}}
+    <!-- Site-wide custom CSS: navbar colours + dark mode cards -->
+    <style>
+      /* Brand-coloured links at top of page (navbar is transparent over white page bg) */
+      #topnav:not(.scroll):not(.nav-sticky) .navigation-menu > li > a {
+        color: #6366f1 !important;
+      }
+      #topnav:not(.scroll):not(.nav-sticky) .navigation-menu > li:hover > a {
+        color: #4f46e5 !important;
+      }
+      /* Brand-coloured links on white scrolled background */
+      #topnav.scroll .navigation-menu > li > a,
+      #topnav.nav-sticky .navigation-menu > li > a {
+        color: #6366f1 !important;
+      }
+      #topnav.scroll .navigation-menu > li:hover > a,
+      #topnav.scroll .navigation-menu > li.active > a,
+      #topnav.nav-sticky .navigation-menu > li:hover > a,
+      #topnav.nav-sticky .navigation-menu > li.active > a {
+        color: #4f46e5 !important;
+      }
+      /* Lightbox cursor hint for all screenshots */
+      body img:not([class*="logo"]):not([class*="icon"]):not([class*="avatar"]) {
+        cursor: zoom-in;
+      }
+    </style>
+    <!-- GLightbox: click-to-expand image lightbox -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        // Auto-wrap ALL images on the page in glightbox links
+        // Exclude: images already in an <a>, tiny icons, nav/header/footer UI elements, theme chrome
+        var skipSelectors = 'header, nav, footer, #topnav, .navbar, .sidebar, .toc, .breadcrumb, [class*="logo"], [class*="icon"], [class*="avatar"]';
+        document.querySelectorAll('body img').forEach(function (img) {
+          if (img.closest('a')) return;                          // already linked
+          if (img.closest(skipSelectors)) return;               // nav/header/footer chrome
+          if (img.classList.contains('no-lightbox')) return;    // opt-out
+          var src = img.getAttribute('src') || '';
+          if (!src || src.startsWith('data:')) return;          // inline data URIs / placeholders
+          // Skip tiny icons by rendered size (checked after layout)
+          if (img.offsetWidth > 0 && img.offsetWidth < 80) return;
+          var a = document.createElement('a');
+          a.href = img.src;
+          a.classList.add('glightbox');
+          if (img.alt) a.setAttribute('data-description', img.alt);
+          img.parentNode.insertBefore(a, img);
+          a.appendChild(img);
+        });
+        GLightbox({
+          touchNavigation: true,
+          loop: false,
+          autoplayVideos: false,
+          closeButton: true,
+          keyboardNavigation: true,
+          closeOnOutsideClick: true,
+          skin: 'clean',
+        });
+      });
+    </script>
+</head>

@@ -1,0 +1,91 @@
+name: Deploy Documentation to GitHub Pages
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+    paths:
+      - 'docs/learn/**'
+      - '.github/workflows/docs-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUGO_VERSION: 0.153.2
+      TARGET_REPO: garrardkitchen/mcp-explorer-x-docs
+      TARGET_BRANCH: main
+      TARGET_BASE_URL: https://mcp-explorer-x-docs.garrardkitchen.com/
+      TARGET_CNAME: mcp-explorer-x-docs.garrardkitchen.com
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: ${{ env.HUGO_VERSION }}
+          extended: true
+
+      - name: Download Hugo modules
+        working-directory: docs/learn
+        run: |
+          if [[ -f go.mod ]]; then
+            hugo mod get
+          else
+            echo "No Hugo modules configured; skipping"
+          fi
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build with Hugo
+        working-directory: docs/learn
+        env:
+          HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
+          HUGO_ENVIRONMENT: production
+        run: |
+          hugo \
+            --gc \
+            --minify \
+            --baseURL "${TARGET_BASE_URL}"
+
+      - name: Deploy to gif-creator-docs repository
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          external_repository: garrardkitchen/mcp-explorer-x-docs
+          publish_branch: main
+          publish_dir: ./docs/learn/public
+          cname: ${{ env.TARGET_CNAME }}
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy documentation from ${{ github.sha }}'
