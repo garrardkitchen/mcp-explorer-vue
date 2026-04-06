@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Reflection;
 using Azure.Core;
 using Azure.Identity;
 using Garrard.Mcp.Explorer.Core.Domain.Connections;
@@ -24,9 +27,10 @@ namespace Garrard.Mcp.Explorer.Infrastructure.Mcp;
 public sealed class ConnectionService : IConnectionService, IAsyncDisposable
 {
     private const string ClientName = "mcp-explorer";
-    private const string ClientVersion = "0.5.0";
     private const string DefaultAzureManagementScope = "https://management.azure.com/.default";
     private static readonly TimeSpan OAuthTimeout = TimeSpan.FromMinutes(5);
+    private static readonly string _version = ResolveVersion();
+    private static readonly string _userAgent = _version;
 
     private readonly ILogger<ConnectionService> _logger;
     private readonly IConfiguration _configuration;
@@ -87,7 +91,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
 
             LogAuthDiagnostics("[MCP Connect]", definition.Name, transportOptions.AdditionalHeaders);
 
-            transport = new HttpClientTransport(transportOptions);
+            transport = new HttpClientTransport(transportOptions, CreateMcpHttpClient(), ownsHttpClient: true);
 
             var clientOptions = BuildClientOptions(definition.Name);
             client = await McpClient.CreateAsync(transport, clientOptions, NullLoggerFactory.Instance, cancellationToken);
@@ -137,7 +141,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 definition.Name,
                 endpointUri.ToString(),
                 ClientName,
-                ClientVersion,
+                _version,
                 definition.AuthenticationMode,
                 definition.AzureCredentials,
                 definition.OAuthOptions,
@@ -418,7 +422,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 McpClient? newClient = null;
                 try
                 {
-                newTransport = new HttpClientTransport(transportOptions);
+                newTransport = new HttpClientTransport(transportOptions, CreateMcpHttpClient(), ownsHttpClient: true);
                 var clientOptions = BuildClientOptions(name, samplingHandler);
                 newClient = await McpClient.CreateAsync(newTransport, clientOptions, NullLoggerFactory.Instance, cancellationToken).ConfigureAwait(false);
 
@@ -512,6 +516,27 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         return connection;
     }
 
+    private static HttpClient CreateMcpHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(ClientName, _userAgent));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"({Dns.GetHostName()})"));
+        return client;
+    }
+
+    private static string ResolveVersion()
+    {
+        var asm = Assembly.GetEntryAssembly();
+        var version = asm?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? asm?.GetName().Version?.ToString()
+            ?? "0.0.0";
+
+        var plusIdx = version.IndexOf('+');
+        if (plusIdx > 0) version = version[..plusIdx];
+
+        return version;
+    }
+
     private McpClientOptions BuildClientOptions(
         string connectionName,
         Func<CreateMessageRequestParams?, IProgress<ProgressNotificationValue>, CancellationToken, ValueTask<CreateMessageResult>>? samplingHandler = null)
@@ -522,7 +547,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             {
                 Name = ClientName,
                 Title = "MCP Explorer",
-                Version = ClientVersion
+                Version = _version
             },
             Capabilities = new ClientCapabilities
             {

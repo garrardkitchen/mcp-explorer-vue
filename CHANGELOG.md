@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased] - 2026-04-06
+
+### Added
+- **MCP User-Agent header**: All outbound MCP tool calls now send `User-Agent: mcp-explorer/<version>` (e.g. `mcp-explorer/1.0.0`). Version is read at runtime from the entry assembly's informational version so it stays in sync automatically. Both initial connections and sampling reconnects use a pre-configured `HttpClient` passed to `HttpClientTransport`.
+
 ## [Unreleased] - 2026-04-05
 
 ### Added
