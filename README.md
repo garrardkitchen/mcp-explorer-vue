@@ -11,21 +11,157 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 - 🤖 **Chat** — SSE-streamed AI chat with automatic MCP tool calling; shows token usage and active tool badges
 - ⚡ **Workflows** — Multi-step tool chain builder with execution history and built-in load testing
 - 🛡️ **Sensitive Data Protection** — Regex + heuristic detection of secrets in tool parameters and chat messages; AES-256 encryption at rest
-- 🎨 **6 Themes** — Command Dark, Command Light, Nord, Dracula, Catppuccin Mocha, Solarized Light — persisted per user
+- 🎨 **10 Themes** — Command Dark/Light, Nord, Dracula, Catppuccin Mocha, Solarized Light, GitHub Dark/Light, Material Dark/Light — persisted per user
 - ⌨️ **Command Palette** — Ctrl+K / ⌘+K for keyboard-first navigation
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Single Container                     │
-│  ┌──────────────────────┐  ┌──────────────────────────┐ │
-│  │  YARP Gateway :8080  │  │    ASP.NET Core API :5000 │ │
-│  │  - Static Vue SPA    │  │    - 9 REST controllers   │ │
-│  │  - /api/** → API     │  │    - SSE streaming        │ │
-│  │  - SPA fallback      │  │    - MCP SDK integration  │ │
-│  └──────────────────────┘  └──────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+%%{ init: { "theme": "base", "themeVariables": {
+  "primaryColor":        "#6366f1",
+  "primaryTextColor":    "#ffffff",
+  "primaryBorderColor":  "#4f46e5",
+  "lineColor":           "#94a3b8",
+  "secondaryColor":      "#0f172a",
+  "tertiaryColor":       "#1e293b",
+  "background":          "#0f172a",
+  "mainBkg":             "#1e293b",
+  "nodeBorder":          "#334155",
+  "clusterBkg":          "#1e293b",
+  "titleColor":          "#f8fafc",
+  "edgeLabelBackground": "#1e293b",
+  "fontFamily":          "ui-monospace, monospace"
+} } }%%
+
+flowchart TB
+
+  %% ── Browser ───────────────────────────────────────────────────────────────
+  subgraph BROWSER["🌐  Browser"]
+    direction TB
+    SPA["⚡ Vue 3 · Vite · PrimeVue 4\nSingle-Page Application"]
+    THEMES["🎨 10 Themes\n(persisted)"]
+    CP["⌨️ Command Palette\nCtrl+K"]
+    SPA --- THEMES
+    SPA --- CP
+  end
+
+  %% ── Deployment modes ─────────────────────────────────────────────────────
+  subgraph DEPLOY["🐳  Deployment"]
+    direction LR
+
+    subgraph SINGLE["Single Container  docker run"]
+      direction TB
+      GW["🔀 YARP Gateway\n:8080\nStatic SPA host\n/api/** → API"]
+      API1["⚙️ ASP.NET Core API\n:5000 (internal)"]
+      GW -->|"reverse proxy"| API1
+    end
+
+    subgraph COMPOSE["Separate Services  docker compose"]
+      direction TB
+      NGINX["🌐 nginx\n:8090 (external)\nStatic SPA host\n/api/** → API"]
+      API2["⚙️ ASP.NET Core API\n:5000 (internal)"]
+      NGINX -->|"proxy_pass"| API2
+    end
+  end
+
+  %% ── Clean Architecture layers ────────────────────────────────────────────
+  subgraph BACKEND["🏗️  Clean Architecture — ASP.NET Core"]
+    direction TB
+
+    subgraph CONTROLLERS["Controllers  /api/v1/"]
+      direction LR
+      C_CONN["🔌 connections"]
+      C_TOOLS["🛠️ tools"]
+      C_PROMPTS["💬 prompts"]
+      C_RESOURCES["📄 resources"]
+      C_CHAT["🤖 chat · SSE"]
+      C_WF["⚡ workflows"]
+      C_ELIC["🙋 elicitations · SSE"]
+      C_LLM["🧠 llmmodels"]
+      C_PREFS["⚙️ preferences"]
+    end
+
+    subgraph CORE["Core (no framework deps)"]
+      direction LR
+      DOMAIN["📦 Domain Models\nConnectionDefinition\nWorkflowDefinition\nLlmModelDefinition"]
+      IFACES["🔗 Interfaces\nIConnectionService\nIUserPreferencesStore\nIConnectionExportService\nIWorkflowEngine"]
+    end
+
+    subgraph INFRA["Infrastructure"]
+      direction LR
+      MCPSDK["🔌 MCP SDK\nActiveConnection\nTool · Prompt\nResource · Elicitation"]
+      LLMPROV["🧠 LLM Providers\nOpenAI · AzureOpenAI\nAzureAIFoundry · Ollama\nCustom"]
+      PERSIST["💾 JSON Persistence\nUserPreferencesStore"]
+      SECURITY["🔐 Security\nAES-256-GCM\nPBKDF2-SHA256\nSensitiveField Detection"]
+      WFENG["⚡ Workflow Engine\nSerial · Parallel\nLoad Test runner"]
+    end
+
+    CONTROLLERS --> CORE
+    CORE --> INFRA
+  end
+
+  %% ── Data file ────────────────────────────────────────────────────────────
+  subgraph DATASTORE["💾  Persistent Storage"]
+    direction LR
+    FILE[("📄 settings.json\n/data/settings.json\n(volume-mounted)")]
+    ENVFILE["📋 .env\nAPI keys · ports\nconfig overrides"]
+  end
+
+  %% ── External world ───────────────────────────────────────────────────────
+  subgraph EXTERNAL["🌍  External"]
+    direction LR
+    MCPSERVERS["🖥️ MCP Servers\nstdio · SSE · HTTP\n(local or remote)"]
+    LLMAPIS["☁️ LLM APIs\nOpenAI · Azure\nOllama · Custom"]
+  end
+
+  %% ── Import / Export flows ────────────────────────────────────────────────
+  subgraph IMPORTEXPORT["📦  Import / Export"]
+    direction LR
+    CONNEXP["🔐 Connections\n.json · AES-256-GCM\npassword-protected"]
+    WFEXP["⚡ Workflows\n.json · plain\nname-collision safe"]
+  end
+
+  %% ── Elicitation flow ─────────────────────────────────────────────────────
+  subgraph ELICIT["🙋  Elicitation Flow"]
+    direction LR
+    EL_SERVER["MCP Server\nrequests input"]
+    EL_SSE["SSE stream\n→ browser"]
+    EL_DIALOG["Dynamic form\n(text · bool · number\nradio · checkbox · dropdown)"]
+    EL_RESPOND["User responds\n→ POST /elicitations/{id}/respond"]
+    EL_SERVER --> EL_SSE --> EL_DIALOG --> EL_RESPOND
+  end
+
+  %% ── Main connections ─────────────────────────────────────────────────────
+  BROWSER  <-->|"HTTP / SSE\n(REST + streaming)"| DEPLOY
+  DEPLOY   <-->|"REST calls"| BACKEND
+  INFRA    <-->|"read / write"| FILE
+  ENVFILE   -->|"env vars injected\nat container start"| DEPLOY
+  INFRA    <-->|"MCP protocol\n(stdio/SSE/HTTP)"| MCPSERVERS
+  INFRA    <-->|"HTTPS + API key"| LLMAPIS
+  BROWSER  <-->|"download / upload"| IMPORTEXPORT
+  IMPORTEXPORT <-->|"POST /connections/export·import\nPOST /workflows/export·import"| BACKEND
+  ELICIT        <-->|"SSE + POST"| BACKEND
+
+  %% ── Node colours ─────────────────────────────────────────────────────────
+  classDef browser   fill:#312e81,stroke:#6366f1,color:#e0e7ff
+  classDef gateway   fill:#164e63,stroke:#22d3ee,color:#cffafe
+  classDef api       fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+  classDef core      fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff
+  classDef infra     fill:#134e4a,stroke:#14b8a6,color:#ccfbf1
+  classDef data      fill:#292524,stroke:#a78bfa,color:#ede9fe
+  classDef external  fill:#1c1917,stroke:#f59e0b,color:#fef3c7
+  classDef impexp    fill:#3b0764,stroke:#c026d3,color:#fae8ff
+  classDef elicit    fill:#0c4a6e,stroke:#38bdf8,color:#e0f2fe
+
+  class SPA,THEMES,CP browser
+  class GW,NGINX gateway
+  class API1,API2,C_CONN,C_TOOLS,C_PROMPTS,C_RESOURCES,C_CHAT,C_WF,C_ELIC,C_LLM,C_PREFS api
+  class DOMAIN,IFACES core
+  class MCPSDK,LLMPROV,PERSIST,SECURITY,WFENG infra
+  class FILE,ENVFILE data
+  class MCPSERVERS,LLMAPIS external
+  class CONNEXP,WFEXP impexp
+  class EL_SERVER,EL_SSE,EL_DIALOG,EL_RESPOND elicit
 ```
 
 ### Project Layout
@@ -176,7 +312,7 @@ Theme is persisted to `POST /api/v1/preferences/theme` and cached in `localStora
 ## Contributing
 
 1. Fork and create a feature branch
-2. Run `dotnet test` — all 129 tests must pass
+2. Run `dotnet test` — all 147 tests must pass
 3. Run `npm run build` in `src/frontend` — must complete with 0 errors
 4. Submit a PR with a clear description
 
