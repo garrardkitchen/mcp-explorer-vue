@@ -184,7 +184,7 @@ Type: SSE</code></pre>
 
 <style>
 /* ── Reset & base ── */
-.mcp-home { width: 100%; font-family: 'Inter', sans-serif; }
+.mcp-home { width: 100%; font-family: 'Inter', sans-serif; padding: 0 40px; box-sizing: border-box; }
 
 /* ── Hero ── */
 .hero-section {
@@ -487,13 +487,15 @@ Type: SSE</code></pre>
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
+  .mcp-home { padding: 0 24px; }
   .hero-section { flex-direction: column; padding: 40px 0 48px; }
   .hero-visual { display: none; }
-  .quickstart-section { padding: 48px 24px; }
-  .cta-section { padding: 48px 24px; }
+  .quickstart-section { padding: 48px 0; }
+  .cta-section { padding: 48px 0; }
   .gallery-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
+  .mcp-home { padding: 0 16px; }
   .features-grid { grid-template-columns: 1fr; }
   .steps-grid { grid-template-columns: 1fr; }
   .hero-cta { flex-direction: column; }
