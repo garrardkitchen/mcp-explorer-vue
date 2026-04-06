@@ -85,7 +85,7 @@ Some tools request additional input mid-execution (the MCP *elicitation* feature
 
 ## Sensitive Data Masking
 
-If a tool parameter is detected as sensitive (API keys, passwords, tokens), MCP Explorer X:
+If a tool parameter is detected as sensitive (API keys, passwords, tokens), MCP Explorer:
 - Masks the value in the UI with `●●●●●●●●`
 - Shows a **reveal** toggle to view it temporarily
 - Never logs or persists the raw value
@@ -94,4 +94,4 @@ If a tool parameter is detected as sensitive (API keys, passwords, tokens), MCP 
 
 ## Retry & Reconnect
 
-If a tool call fails due to a dropped connection, a **Retry** button appears. MCP Explorer X will attempt to reconnect and re-invoke the tool automatically.
+If a tool call fails due to a dropped connection, a **Retry** button appears. MCP Explorer will attempt to reconnect and re-invoke the tool automatically.

@@ -1,12 +1,12 @@
 ---
 title: "Architecture"
-description: "MCP Explorer X architecture and deployment modes."
+description: "MCP Explorer architecture and deployment modes."
 weight: 2
 ---
 
 ## Architecture Overview
 
-MCP Explorer X follows a clean architecture pattern with a Vue 3 SPA frontend and an ASP.NET Core backend.
+MCP Explorer follows a clean architecture pattern with a Vue 3 SPA frontend and an ASP.NET Core backend.
 
 ```mermaid
 flowchart TB

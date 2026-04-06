@@ -8,7 +8,7 @@ weight: 1
 
 Some MCP tools need additional user input mid-execution — for example, asking which of several options to proceed with, or requesting a confirmation before a destructive operation. This is the MCP *elicitation* feature.
 
-MCP Explorer X surfaces these requests as **inline dialogs** that pause the tool execution and wait for your response.
+MCP Explorer surfaces these requests as **inline dialogs** that pause the tool execution and wait for your response.
 
 ---
 
@@ -17,7 +17,7 @@ MCP Explorer X surfaces these requests as **inline dialogs** that pause the tool
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant App as MCP Explorer X
+    participant App as MCP Explorer
     participant T as MCP Tool
 
     U->>App: Invoke tool

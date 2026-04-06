@@ -6,7 +6,7 @@ weight: 1
 
 ## Overview
 
-The Settings page provides global configuration for MCP Explorer X — themes, sensitive data protection rules, and data import/export.
+The Settings page provides global configuration for MCP Explorer — themes, sensitive data protection rules, and data import/export.
 
 ![Settings page showing theme switcher and security configuration panels](/images/screenshots/settings-view.png)
 *The Settings page groups configuration into cards: Theme, Security, and Data Management.*
@@ -15,7 +15,7 @@ The Settings page provides global configuration for MCP Explorer X — themes, s
 
 ## Themes
 
-MCP Explorer X ships with **10 built-in themes**. Select any theme — your choice is persisted automatically.
+MCP Explorer ships with **10 built-in themes**. Select any theme — your choice is persisted automatically.
 
 | Theme | Style |
 |-------|-------|
@@ -34,7 +34,7 @@ MCP Explorer X ships with **10 built-in themes**. Select any theme — your choi
 
 ## Sensitive Data Protection
 
-MCP Explorer X detects and masks sensitive values using a combination of heuristics and configurable regex patterns.
+MCP Explorer detects and masks sensitive values using a combination of heuristics and configurable regex patterns.
 
 ### Built-in Detection
 
@@ -60,7 +60,7 @@ Add your own regex rules to mask additional sensitive data specific to your envi
 
 ### Export All Data
 
-Export your entire MCP Explorer X dataset (connections, models, workflows, settings) to a single encrypted JSON file:
+Export your entire MCP Explorer dataset (connections, models, workflows, settings) to a single encrypted JSON file:
 
 1. Click **Export All Data**
 2. Enter an encryption passphrase

@@ -6,7 +6,7 @@ weight: 1
 
 ## Overview
 
-The Chat view gives you a streaming conversation interface backed by any LLM you've configured. What makes it powerful is **automatic MCP tool calling** — the LLM can invoke any tool from your active connections mid-conversation, and MCP Explorer X handles the round-trip transparently.
+The Chat view gives you a streaming conversation interface backed by any LLM you've configured. What makes it powerful is **automatic MCP tool calling** — the LLM can invoke any tool from your active connections mid-conversation, and MCP Explorer handles the round-trip transparently.
 
 ---
 
@@ -62,7 +62,7 @@ Type `/` in the message input to open the command palette. All available command
 
 ## Tool Calling
 
-When the LLM decides to use a tool, MCP Explorer X:
+When the LLM decides to use a tool, MCP Explorer:
 1. Shows an **active tool badge** indicating which tool is running
 2. Sends the tool call to the appropriate MCP server
 3. Returns the result to the LLM to continue its response
@@ -90,7 +90,7 @@ Each LLM response shows a token usage summary:
 
 ## Sensitive Data in Chat
 
-MCP Explorer X detects and masks sensitive data (API keys, passwords, secrets) in:
+MCP Explorer detects and masks sensitive data (API keys, passwords, secrets) in:
 - Your messages before they're sent
 - Tool response content before display
 

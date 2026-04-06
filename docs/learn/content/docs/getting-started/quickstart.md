@@ -1,6 +1,6 @@
 ---
 title: "Quick Start"
-description: "Run MCP Explorer X with Docker in under 2 minutes."
+description: "Run MCP Explorer with Docker in under 2 minutes."
 weight: 1
 ---
 
@@ -62,7 +62,7 @@ Open **http://localhost:8090** in your browser.
 
 ## Verify It's Running
 
-You should see the Connections page — MCP Explorer X's home screen.
+You should see the Connections page — MCP Explorer's home screen.
 
 ![Connections page — the landing screen after startup](/images/screenshots/home-connections.png)
 *The Connections page is shown on startup. It lists all your saved MCP server connections.*

@@ -1,4 +1,4 @@
-# MCP Explorer X — Documentation Site
+# MCP Explorer — Documentation Site
 
 Hugo-based documentation site built with the [Lotus Docs](https://github.com/colinwilson/lotusdocs) theme.
 

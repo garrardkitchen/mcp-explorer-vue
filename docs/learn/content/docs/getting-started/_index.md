@@ -1,7 +1,7 @@
 ---
 title: "Getting Started"
-description: "Install and run MCP Explorer X in minutes."
+description: "Install and run MCP Explorer in minutes."
 weight: 1
 ---
 
-Get up and running with MCP Explorer X using Docker — no build tools required.
+Get up and running with MCP Explorer using Docker — no build tools required.

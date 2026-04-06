@@ -6,7 +6,7 @@ weight: 1
 
 ## Overview
 
-The Models page is where you configure the LLMs that power the Chat view. MCP Explorer X supports any OpenAI-compatible API endpoint.
+The Models page is where you configure the LLMs that power the Chat view. MCP Explorer supports any OpenAI-compatible API endpoint.
 
 <img src="/images/screenshots/03-models-list.png" alt="AI Models page showing GPT-5 and GPT-4o configured with provider badges, endpoints, and masked API keys" style="max-width:700px;border-radius:8px;border:1px solid #e2e8f0;" />
 

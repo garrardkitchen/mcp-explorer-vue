@@ -6,7 +6,7 @@ weight: 2
 
 ## Environment Variables
 
-MCP Explorer X is configured via environment variables. When using Docker Compose, place these in a `.env` file alongside `docker-compose.yml`.
+MCP Explorer is configured via environment variables. When using Docker Compose, place these in a `.env` file alongside `docker-compose.yml`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -24,7 +24,7 @@ MCP_CLIENT_NAME=acme-mcp-explorer
 
 ## Persistent Data
 
-MCP Explorer X stores all state — connections, models, workflows, chat history, and settings — in a single JSON file at `/app/data/data.json` inside the container.
+MCP Explorer stores all state — connections, models, workflows, chat history, and settings — in a single JSON file at `/app/data/data.json` inside the container.
 
 **Always mount a volume** to avoid losing data on container restart:
 
@@ -41,7 +41,7 @@ volumes:
 
 ## User-Agent Header
 
-When MCP Explorer X connects to an MCP server over HTTP/SSE, it sends:
+When MCP Explorer connects to an MCP server over HTTP/SSE, it sends:
 
 ```
 User-Agent: <MCP_CLIENT_NAME>/<version> (<hostname>)
@@ -52,7 +52,7 @@ For example:
 User-Agent: mcp-explorer/1.0.0 (my-laptop.local)
 ```
 
-This helps MCP server operators identify requests from MCP Explorer X in their logs.
+This helps MCP server operators identify requests from MCP Explorer in their logs.
 
 ---
 

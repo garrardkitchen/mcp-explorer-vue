@@ -1,5 +1,5 @@
 baseURL: "/"
-title: "MCP Explorer X"
+title: "MCP Explorer"
 languageCode: "en-us"
 enableEmoji: true
 enableGitInfo: false
@@ -14,7 +14,7 @@ module:
 
 params:
   description: "Explore, test and interact with MCP servers — tools, prompts, resources, chat and workflows in one powerful UI."
-  author: "MCP Explorer X"
+  author: "MCP Explorer"
 
   google_fonts:
     - ["Inter", "300,400,500,600,700"]
@@ -35,7 +35,7 @@ params:
     github: "your-username/mcp-explorer-x"
 
   footer:
-    copyright: "© :YEAR: MCP Explorer X"
+    copyright: "© :YEAR: MCP Explorer"
     version: true
 
 menu:
