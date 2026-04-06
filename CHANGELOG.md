@@ -2,6 +2,19 @@
 
 ## [Unreleased] - 2026-04-06 (latest)
 
+### Changed
+- **README**: Rename app from "MCP Explorer v2" to "MCP Explorer". Add link to Hugo docs site. Correct test counts (Core: 66, Infrastructure: 47, Api: 34, total: 147). Update Themes section from 6 to 10 themes with full table. Add `docs/learn/` to project layout. Rewrite Environment Variables table to match actual `.env.example` (removed stale `LLM__*` vars, added all current vars with defaults).
+
+### Added
+- **Workflow documentation** (`docs/learn/content/docs/workflows/building-workflows.md`): Full step-by-step walkthrough with 11 Playwright screenshots covering workflow creation, PromptAtRuntime parameter mapping, FromPreviousStep chaining, runtime parameter dialog, execution results, and history view.
+- **Data Guard documentation** (`docs/learn/content/docs/settings/data-guard.md`): Covers all three detection layers (regex, heuristic entropy, AI-powered), strictness levels, custom patterns, and allowed fields bypass list. Includes 2 screenshots.
+- **Chat documentation** (`docs/learn/content/docs/chat/chat-overview.md`): Full rewrite with 5 screenshots covering connection selection, message send, tool-calling response, slash command palette, and Prompt Picker dialog.
+- **App rename in docs**: All documentation pages updated from "MCP Explorer X" to "MCP Explorer".
+
+---
+
+## [Unreleased] - 2026-04-06
+
 ### Added
 - **Hugo documentation site** (`docs/learn/`): Full documentation site built with Hugo and Lotus Docs theme. Covers Getting Started, Connections, Tools, Prompts, Resources, Chat, Workflows, Models, Settings, and Reference sections.
 - **Landing page**: Custom homepage with hero section, 10 killer features grid, quick-start steps, screenshot gallery, and CTA section. Indigo/purple brand palette matching the app theme.
