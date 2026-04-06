@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import DataTable from 'primevue/datatable'
@@ -18,11 +18,13 @@ import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import ProgressBar from 'primevue/progressbar'
+import Chart from 'primevue/chart'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import WorkflowExecutionViewer from '@/components/workflows/WorkflowExecutionViewer.vue'
 import { workflowsApi } from '@/api/workflows'
 import { connectionsApi } from '@/api/connections'
 import { useConnectionsStore } from '@/stores/connections'
-import type { WorkflowDefinition, WorkflowStep, WorkflowExecution, LoadTestResult, ParameterMapping } from '@/api/types'
+import type { WorkflowDefinition, WorkflowStep, WorkflowExecution, LoadTestResult, LoadTestProgress, ParameterMapping, MappingSourceType, ArrayIterationMode, ActiveTool } from '@/api/types'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -47,6 +49,10 @@ const execConnName = ref('')
 const execResult = ref<WorkflowExecution | null>(null)
 const execError = ref<string | null>(null)
 
+// Runtime parameter prompt dialog
+const showRuntimeParamsDialog = ref(false)
+const runtimeParamPrompts = ref<{ key: string; label: string; value: string }[]>([])
+
 // History
 const history = ref<WorkflowExecution[]>([])
 const historyLoading = ref(false)
@@ -59,16 +65,183 @@ const loadTestDuration = ref(10)
 const loadTestParallel = ref(5)
 const loadTestRunning = ref(false)
 const loadTestResult = ref<LoadTestResult | null>(null)
+const loadTestHistory = ref<LoadTestResult[]>([])
+const loadTestHistoryLoading = ref(false)
+const selectedLoadTestRun = ref<LoadTestResult | null>(null)
 
+// Load test progress dialog
+const showLoadTestProgress = ref(false)
+const loadTestProgress = ref<LoadTestProgress | null>(null)
+let progressPollTimer: ReturnType<typeof setInterval> | null = null
+
+// Load test chart dialog
+const showLoadTestChart = ref(false)
+const chartRun = ref<LoadTestResult | null>(null)
 // Import/Export
 const fileInputRef = ref<HTMLInputElement>()
+
+// Property path browser
+const showPathBrowser = ref(false)
+const pathBrowserPaths = ref<string[]>([])
+const pathBrowserLoading = ref(false)
+const activeMappingForPath = ref<ParameterMapping | null>(null)
+
+function flattenJsonPaths(obj: unknown, prefix = ''): string[] {
+  if (obj === null || obj === undefined) return []
+  const paths: string[] = []
+  if (Array.isArray(obj)) {
+    if (obj.length > 0) {
+      paths.push(`${prefix}[]`)
+      const elementPaths = flattenJsonPaths(obj[0], `${prefix}[]`)
+      paths.push(...elementPaths)
+    }
+  } else if (typeof obj === 'object') {
+    for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+      paths.push(fullKey)
+      if (typeof val === 'object' && val !== null) {
+        paths.push(...flattenJsonPaths(val, fullKey))
+      }
+    }
+  }
+  return paths
+}
+
+async function openPathBrowser(mapping: ParameterMapping, step: WorkflowStep) {
+  activeMappingForPath.value = mapping
+  pathBrowserPaths.value = []
+  pathBrowserLoading.value = true
+  showPathBrowser.value = true
+  try {
+    // step.stepNumber is 1-based; previous step is at 0-based index (stepNumber - 2)
+    const prevStepIdx = mapping.sourceStepIndex === null || mapping.sourceStepIndex === undefined
+      ? step.stepNumber - 2
+      : Number(mapping.sourceStepIndex)
+    if (prevStepIdx < 0) {
+      pathBrowserLoading.value = false
+      return
+    }
+
+    let prevOutputJson: string | undefined
+
+    // 1. Try from live execResult first
+    if (execResult.value?.stepResults?.[prevStepIdx]) {
+      prevOutputJson = execResult.value.stepResults[prevStepIdx].outputJson
+    }
+    // 2. Fall back to most recent history entry
+    if (!prevOutputJson && history.value.length > 0) {
+      prevOutputJson = history.value[0].stepResults?.[prevStepIdx]?.outputJson
+    }
+    // 3. Fall back to a live sample invocation of the previous step's tool
+    if (!prevOutputJson) {
+      const prevStep = form.value.steps?.[prevStepIdx]
+      const connName = execConnName.value || form.value.defaultConnectionName
+      if (prevStep?.toolName && connName) {
+        // Build params from ManualValue mappings only (safe — no side-effectful upstream steps needed)
+        const params: Record<string, unknown> = {}
+        for (const m of prevStep.parameterMappings ?? []) {
+          if (m.sourceType === 'ManualValue' && m.targetParameter && m.manualValue != null) {
+            params[m.targetParameter] = m.manualValue
+          }
+        }
+        const toolResp = await connectionsApi.invokeTool(connName, prevStep.toolName, params)
+        prevOutputJson = toolResp.result
+      }
+    }
+
+    if (prevOutputJson) {
+      const parsed = JSON.parse(prevOutputJson)
+      pathBrowserPaths.value = flattenJsonPaths(parsed)
+    }
+  } catch {
+    // silently ignore — show empty state with helpful message
+  } finally {
+    pathBrowserLoading.value = false
+  }
+}
+
+function selectPath(path: string) {
+  if (activeMappingForPath.value) {
+    activeMappingForPath.value.sourcePropertyPath = path
+  }
+  showPathBrowser.value = false
+}
 
 const errorModeOptions = [
   { label: 'Stop on Error', value: 'StopOnError' },
   { label: 'Continue on Error', value: 'ContinueOnError' },
 ]
 
+const sourceModeOptions = [
+  { label: 'Manual Value', value: 'ManualValue' },
+  { label: 'From Previous Step', value: 'FromPreviousStep' },
+  { label: 'Prompt at Runtime', value: 'PromptAtRuntime' },
+]
+
+const iterationModeOptions = [
+  { label: 'None (as-is)', value: 'None' },
+  { label: 'Each – iterate all elements', value: 'Each' },
+  { label: 'First element only', value: 'First' },
+  { label: 'Last element only', value: 'Last' },
+]
+
+function addMapping(step: WorkflowStep) {
+  step.parameterMappings.push({
+    targetParameter: '',
+    sourceType: 'ManualValue',
+    sourceStepIndex: null,
+    sourcePropertyPath: null,
+    manualValue: null,
+    iterationMode: 'None'
+  })
+}
+
+function removeMapping(step: WorkflowStep, idx: number) {
+  step.parameterMappings.splice(idx, 1)
+}
+
+function pathContainsArray(path?: string | null) {
+  return !!path && /\[/.test(path)
+}
+
 const connectedConnections = computed(() => connStore.activeConnections.filter(c => c.isConnected))
+
+// Tool objects per connection name — stores full ActiveTool so we can extract parameter names
+const connectionToolsMap = ref<Record<string, ActiveTool[]>>({})
+const toolsLoading = ref(false)
+
+async function fetchConnectionTools(connectionName: string) {
+  if (!connectionName) return
+  // Only skip if we already have a non-empty cached list — errors are NOT cached
+  if (connectionToolsMap.value[connectionName]?.length) return
+  toolsLoading.value = true
+  try {
+    const tools = await connectionsApi.getTools(connectionName)
+    connectionToolsMap.value[connectionName] = tools.sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    // Don't cache failures — the connection may not be connected yet; allow re-fetch next time
+  } finally {
+    toolsLoading.value = false
+  }
+}
+
+const currentConnectionToolNames = computed(() => {
+  const name = form.value.defaultConnectionName
+  return name ? (connectionToolsMap.value[name]?.map(t => t.name) ?? []) : []
+})
+
+function getToolParamNames(connectionName: string | undefined, toolName: string): string[] {
+  if (!connectionName || !toolName) return []
+  const tool = connectionToolsMap.value[connectionName]?.find(t => t.name === toolName)
+  if (!tool?.inputSchema) return []
+  const props = (tool.inputSchema as any)?.properties
+  return props ? Object.keys(props).sort() : []
+}
+
+// When the default connection changes in the edit dialog, load its tools
+watch(() => form.value.defaultConnectionName, (name) => {
+  if (name && showEditDialog.value) fetchConnectionTools(name)
+})
 
 async function load() {
   loading.value = true
@@ -89,7 +262,10 @@ function openCreate() {
 function openEdit(wf: WorkflowDefinition) {
   editMode.value = true
   form.value = JSON.parse(JSON.stringify(wf))
+  // Normalise stepNumbers to 1-based for the UI (stored as 0-based in settings.json)
+  form.value.steps?.forEach((s, i) => { s.stepNumber = i + 1 })
   showEditDialog.value = true
+  if (form.value.defaultConnectionName) fetchConnectionTools(form.value.defaultConnectionName)
 }
 
 async function save() {
@@ -129,7 +305,7 @@ async function selectWorkflow(wf: WorkflowDefinition) {
   execConnName.value = wf.defaultConnectionName ?? ''
   execResult.value = null; execError.value = null
   activeTab.value = '0'
-  await loadHistory(wf.id)
+  await Promise.all([loadHistory(wf.id), loadLoadTestHistory(wf.id)])
 }
 
 async function loadHistory(id: string) {
@@ -139,11 +315,42 @@ async function loadHistory(id: string) {
   finally { historyLoading.value = false }
 }
 
+async function loadLoadTestHistory(id: string) {
+  loadTestHistoryLoading.value = true
+  try { loadTestHistory.value = await workflowsApi.getLoadTestHistory(id) }
+  catch { loadTestHistory.value = [] }
+  finally { loadTestHistoryLoading.value = false }
+}
+
 async function execute() {
+  if (!selectedWorkflow.value) return
+
+  // Collect all PromptAtRuntime mappings across all steps
+  const prompts: { key: string; label: string; value: string }[] = []
+  const seen = new Set<string>()
+  for (const step of selectedWorkflow.value.steps ?? []) {
+    for (const m of step.parameterMappings ?? []) {
+      if (m.sourceType === 'PromptAtRuntime' && m.targetParameter && !seen.has(m.targetParameter)) {
+        seen.add(m.targetParameter)
+        prompts.push({ key: m.targetParameter, label: m.targetParameter, value: '' })
+      }
+    }
+  }
+
+  if (prompts.length > 0) {
+    runtimeParamPrompts.value = prompts
+    showRuntimeParamsDialog.value = true
+    return
+  }
+
+  await executeWithRuntimeParams({})
+}
+
+async function executeWithRuntimeParams(runtimeParameters: Record<string, string>) {
   if (!selectedWorkflow.value) return
   executing.value = true; execResult.value = null; execError.value = null
   try {
-    const r = await workflowsApi.execute(selectedWorkflow.value.id, execConnName.value)
+    const r = await workflowsApi.execute(selectedWorkflow.value.id, execConnName.value, runtimeParameters)
     execResult.value = r
     await loadHistory(selectedWorkflow.value.id)
     toast.add({ severity: r.status === 'Completed' ? 'success' : 'warn', summary: `Execution ${r.status}`, life: 3000 })
@@ -153,15 +360,111 @@ async function execute() {
   } finally { executing.value = false }
 }
 
+async function confirmRuntimeParams() {
+  showRuntimeParamsDialog.value = false
+  const rp: Record<string, string> = {}
+  for (const p of runtimeParamPrompts.value) rp[p.key] = p.value
+  await executeWithRuntimeParams(rp)
+}
+
 async function runLoadTest() {
   if (!selectedWorkflow.value) return
   loadTestRunning.value = true; loadTestResult.value = null
+  loadTestProgress.value = null
+
   try {
-    loadTestResult.value = await workflowsApi.runLoadTest(selectedWorkflow.value.id, loadTestConnName.value, loadTestDuration.value, loadTestParallel.value)
-    toast.add({ severity: 'success', summary: 'Load test complete', life: 2000 })
+    const { runId } = await workflowsApi.startLoadTest(
+      selectedWorkflow.value.id, loadTestConnName.value,
+      loadTestDuration.value, loadTestParallel.value
+    )
+
+    // Show progress dialog and start polling
+    showLoadTestProgress.value = true
+    loadTestProgress.value = { runId, isComplete: false, percentComplete: 0, totalExecutions: 0, successfulExecutions: 0, failedExecutions: 0, activeExecutions: 0 }
+
+    const wfId = selectedWorkflow.value.id
+    progressPollTimer = setInterval(async () => {
+      try {
+        const prog = await workflowsApi.getLoadTestProgress(runId)
+        loadTestProgress.value = prog
+        if (prog.isComplete) {
+          clearInterval(progressPollTimer!)
+          progressPollTimer = null
+          loadTestRunning.value = false
+          showLoadTestProgress.value = false
+          if (prog.result) {
+            loadTestResult.value = prog.result
+            selectedLoadTestRun.value = prog.result
+          }
+          await loadLoadTestHistory(wfId)
+          toast.add({ severity: 'success', summary: 'Load test complete', life: 2000 })
+        }
+      } catch {
+        clearInterval(progressPollTimer!)
+        progressPollTimer = null
+        loadTestRunning.value = false
+        showLoadTestProgress.value = false
+      }
+    }, 1000)
   } catch (e: any) {
+    loadTestRunning.value = false
     toast.add({ severity: 'error', summary: 'Load test failed', detail: e.message, life: 5000 })
-  } finally { loadTestRunning.value = false }
+  }
+}
+
+function openChart(run: LoadTestResult) {
+  chartRun.value = run
+  showLoadTestChart.value = true
+}
+
+function buildChartData(run: LoadTestResult) {
+  const labels = run.snapshots.map(s => `${(s.elapsedMs / 1000).toFixed(1)}s`)
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Cumulative Successes',
+        data: run.snapshots.map(s => s.cumulativeSuccesses),
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34,197,94,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+      },
+      {
+        label: 'Cumulative Failures',
+        data: run.snapshots.map(s => s.cumulativeFailures),
+        borderColor: '#ef4444',
+        backgroundColor: 'rgba(239,68,68,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+      },
+      {
+        label: 'Active Executions',
+        data: run.snapshots.map(s => s.activeExecutions),
+        borderColor: '#a855f7',
+        borderDash: [5, 5],
+        fill: false,
+        tension: 0.3,
+        pointRadius: 2,
+      },
+    ]
+  }
+}
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index', intersect: false },
+  plugins: {
+    legend: { position: 'top' },
+    tooltip: { mode: 'index' }
+  },
+  scales: {
+    x: { title: { display: true, text: 'Elapsed Time' } },
+    y: { title: { display: true, text: 'Count' }, beginAtZero: true }
+  }
 }
 
 // Steps builder
@@ -190,11 +493,32 @@ async function exportWorkflow(wf: WorkflowDefinition) {
 }
 
 function triggerImport() { fileInputRef.value?.click() }
+
+function resolveUniqueName(baseName: string): string {
+  const existing = new Set(workflows.value.map(w => w.name))
+  if (!existing.has(baseName)) return baseName
+  // Strip any existing "(vN)" suffix so we don't pile up "(v2) (v3)"
+  const stripped = baseName.replace(/\s*\(v\d+\)$/, '')
+  let n = 2
+  while (existing.has(`${stripped} (v${n})`)) n++
+  return `${stripped} (v${n})`
+}
+
 async function onImportFile(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return
   try {
     const text = await file.text()
-    await workflowsApi.importFromJson(text)
+    let parsed: any
+    try { parsed = JSON.parse(text) } catch { throw new Error('File is not valid JSON') }
+    // Export uses PascalCase ("Name"); camelCase ("name") is also accepted for interop
+    const nameKey = 'name' in parsed ? 'name' : 'Name'
+    const originalName: string = parsed[nameKey] ?? 'Imported Workflow'
+    const resolvedName = resolveUniqueName(originalName)
+    if (resolvedName !== originalName) {
+      parsed[nameKey] = resolvedName
+      toast.add({ severity: 'info', summary: 'Name conflict', detail: `Imported as "${resolvedName}"`, life: 4000 })
+    }
+    await workflowsApi.importFromJson(parsed)
     await load(); toast.add({ severity: 'success', summary: 'Imported', life: 2000 })
   } catch (e: any) { toast.add({ severity: 'error', summary: 'Import failed', detail: e.message, life: 5000 }) }
   finally { if (fileInputRef.value) fileInputRef.value.value = '' }
@@ -291,22 +615,7 @@ onMounted(load)
                   <div v-if="execError" class="error-box"><i class="pi pi-times-circle" /> {{ execError }}</div>
 
                   <div v-if="execResult" class="exec-result">
-                    <div class="result-header">
-                      <Tag :value="execResult.status" :severity="statusSeverity(execResult.status)" />
-                      <span class="muted">{{ formatDuration(execResult.duration) }}</span>
-                    </div>
-                    <div v-for="sr in execResult.stepResults" :key="sr.stepNumber" class="step-result"
-                         :class="{ success: sr.success, error: !sr.success }">
-                      <div class="sr-header">
-                        <span class="step-num">{{ sr.stepNumber }}</span>
-                        <span class="sr-tool">{{ sr.toolName }}</span>
-                        <Tag :value="sr.success ? 'OK' : 'FAIL'" :severity="sr.success ? 'success' : 'danger'" />
-                      </div>
-                      <div v-if="sr.errorMessage" class="sr-error">{{ sr.errorMessage }}</div>
-                      <div v-if="sr.result !== undefined" class="sr-result-wrap">
-                        <JsonViewer :data="sr.result" title="Result" />
-                      </div>
-                    </div>
+                    <WorkflowExecutionViewer :execution="execResult" />
                   </div>
                 </div>
               </TabPanel>
@@ -325,7 +634,7 @@ onMounted(load)
                       <span class="muted">{{ formatDuration(exec.duration) }}</span>
                     </div>
                     <div v-if="selectedExecution" class="exec-detail">
-                      <JsonViewer :data="selectedExecution" title="Execution Detail" :initially-expanded="true" />
+                      <WorkflowExecutionViewer :execution="selectedExecution" />
                     </div>
                   </div>
                 </div>
@@ -333,34 +642,95 @@ onMounted(load)
 
               <!-- Load Test -->
               <TabPanel value="2">
-                <div class="tab-content">
+                <div class="tab-content load-test-tab">
+                  <!-- Compact run controls — single row -->
                   <div class="load-test-form">
-                    <div class="form-field">
+                    <div class="form-field load-test-conn-field">
                       <label>Connection</label>
                       <Select v-model="loadTestConnName" :options="connectedConnections" optionLabel="name" optionValue="name" placeholder="Select connection" style="width:100%" />
                     </div>
-                    <div class="form-field">
-                      <label>Duration (seconds)</label>
-                      <input v-model.number="loadTestDuration" type="number" min="1" max="300" class="native-num-input" />
+                    <div class="load-test-num-fields">
+                      <div class="form-field">
+                        <label>Duration (s)</label>
+                        <input v-model.number="loadTestDuration" type="number" min="1" max="300" class="native-num-input" />
+                      </div>
+                      <div class="form-field">
+                        <label>Max Parallel</label>
+                        <input v-model.number="loadTestParallel" type="number" min="1" max="50" class="native-num-input" />
+                      </div>
                     </div>
-                    <div class="form-field">
-                      <label>Max Parallel</label>
-                      <input v-model.number="loadTestParallel" type="number" min="1" max="50" class="native-num-input" />
+                    <div class="form-field load-test-run-btn">
+                      <label>&nbsp;</label>
+                      <Button label="Run Load Test" icon="pi pi-chart-bar" :loading="loadTestRunning" :disabled="!loadTestConnName" @click="runLoadTest" />
                     </div>
-                    <Button label="Run Load Test" icon="pi pi-chart-bar" :loading="loadTestRunning" :disabled="!loadTestConnName" @click="runLoadTest" />
                   </div>
-                  <div v-if="loadTestResult" class="load-test-results">
-                    <div class="section-label">Results</div>
-                    <div class="stats-grid">
-                      <div class="stat-card"><div class="stat-value">{{ loadTestResult.totalRequests }}</div><div class="stat-label">Total</div></div>
-                      <div class="stat-card success"><div class="stat-value">{{ loadTestResult.successfulRequests }}</div><div class="stat-label">Success</div></div>
-                      <div class="stat-card danger"><div class="stat-value">{{ loadTestResult.failedRequests }}</div><div class="stat-label">Failed</div></div>
-                      <div class="stat-card"><div class="stat-value">{{ loadTestResult.requestsPerSecond.toFixed(1) }}</div><div class="stat-label">req/s</div></div>
-                      <div class="stat-card"><div class="stat-value">{{ loadTestResult.averageResponseMs.toFixed(0) }}ms</div><div class="stat-label">Avg</div></div>
-                      <div class="stat-card"><div class="stat-value">{{ loadTestResult.p99ResponseMs.toFixed(0) }}ms</div><div class="stat-label">P99</div></div>
+
+                  <!-- History -->
+                  <div class="load-test-history-panel">
+                    <div class="section-label" style="margin-bottom:8px">
+                      History
+                      <Tag v-if="loadTestHistory.length" :value="loadTestHistory.length" severity="secondary" style="margin-left:6px;font-size:0.7rem" />
                     </div>
-                    <div class="error-rate">
-                      Error rate: <strong :style="loadTestResult.errorRate > 0.05 ? 'color:var(--danger)' : 'color:var(--success)'">{{ (loadTestResult.errorRate * 100).toFixed(1) }}%</strong>
+                    <div v-if="loadTestHistoryLoading" class="muted-sm">Loading…</div>
+                    <div v-else-if="!loadTestHistory.length" class="muted-sm">No load tests run yet.</div>
+                    <div v-else class="load-test-history-list">
+                      <div
+                        v-for="run in loadTestHistory"
+                        :key="run.startedUtc"
+                        class="load-test-history-item"
+                        :class="{ active: selectedLoadTestRun === run }"
+                        @click="selectedLoadTestRun = run"
+                      >
+                        <div class="lt-hist-header">
+                          <span class="lt-hist-date">{{ new Date(run.startedUtc).toLocaleString() }}</span>
+                          <div style="display:flex;align-items:center;gap:6px">
+                            <Tag
+                              :value="`${(run.errorRate * 100).toFixed(0)}% err`"
+                              :severity="run.errorRate > 0.05 ? 'danger' : 'success'"
+                              style="font-size:0.65rem"
+                            />
+                            <button
+                              class="chart-btn"
+                              v-tooltip="'View chart'"
+                              @click.stop="openChart(run)"
+                              :disabled="!run.snapshots?.length"
+                            >📊</button>
+                          </div>
+                        </div>
+                        <div class="lt-hist-stats">
+                          <div class="lt-hist-config">
+                            <span>⏱ {{ run.durationSeconds }}s</span>
+                            <span class="lt-config-sep">·</span>
+                            <span>⚡ {{ run.maxParallelExecutions }}×</span>
+                          </div>
+                          <div class="lt-hist-counts">
+                            <span>{{ run.totalRequests }} total</span>
+                            <span class="success-text">✓ {{ run.successfulRequests }}</span>
+                            <span class="danger-text">✗ {{ run.failedRequests }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Selected run detail -->
+                    <div v-if="selectedLoadTestRun" class="load-test-results" style="margin-top:16px">
+                      <div class="section-label" style="margin-bottom:8px">
+                        {{ new Date(selectedLoadTestRun.startedUtc).toLocaleString() }}
+                      </div>
+                      <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-value">{{ selectedLoadTestRun.totalRequests }}</div><div class="stat-label">Total</div></div>
+                        <div class="stat-card success"><div class="stat-value">{{ selectedLoadTestRun.successfulRequests }}</div><div class="stat-label">Success</div></div>
+                        <div class="stat-card danger"><div class="stat-value">{{ selectedLoadTestRun.failedRequests }}</div><div class="stat-label">Failed</div></div>
+                        <div class="stat-card"><div class="stat-value">{{ selectedLoadTestRun.requestsPerSecond.toFixed(1) }}</div><div class="stat-label">req/s</div></div>
+                        <div class="stat-card"><div class="stat-value">{{ selectedLoadTestRun.averageResponseMs.toFixed(0) }}ms</div><div class="stat-label">Avg</div></div>
+                        <div class="stat-card"><div class="stat-value">{{ selectedLoadTestRun.p50ResponseMs.toFixed(0) }}ms</div><div class="stat-label">P50</div></div>
+                        <div class="stat-card"><div class="stat-value">{{ selectedLoadTestRun.p90ResponseMs.toFixed(0) }}ms</div><div class="stat-label">P90</div></div>
+                        <div class="stat-card"><div class="stat-value">{{ selectedLoadTestRun.p99ResponseMs.toFixed(0) }}ms</div><div class="stat-label">P99</div></div>
+                      </div>
+                      <div class="error-rate" style="margin-top:10px">
+                        Error rate: <strong :style="selectedLoadTestRun.errorRate > 0.05 ? 'color:var(--danger)' : 'color:var(--success)'">{{ (selectedLoadTestRun.errorRate * 100).toFixed(1) }}%</strong>
+                        &nbsp;·&nbsp; Connection: <strong>{{ selectedLoadTestRun.connectionName }}</strong>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -407,7 +777,14 @@ onMounted(load)
             <div class="step-editor-body">
               <div class="form-field">
                 <label>Tool Name</label>
-                <InputText v-model="step.toolName" placeholder="e.g. get_weather" class="w-full" />
+                <Select v-if="currentConnectionToolNames.length > 0"
+                        v-model="step.toolName"
+                        :options="currentConnectionToolNames"
+                        editable
+                        placeholder="Select or type tool name"
+                        class="w-full"
+                        :loading="toolsLoading" />
+                <InputText v-else v-model="step.toolName" placeholder="e.g. get_weather (connect first to browse)" class="w-full" />
               </div>
               <div class="form-field">
                 <label>Error Handling</label>
@@ -416,6 +793,71 @@ onMounted(load)
               <div v-if="step.notes !== undefined" class="form-field full-width">
                 <label>Notes</label>
                 <InputText v-model="step.notes" class="w-full" />
+              </div>
+            </div>
+
+            <!-- Parameter Mappings -->
+            <div class="param-mappings-section">
+              <div class="param-mappings-header">
+                <span class="section-label">Parameter Mappings</span>
+                <Button label="Add Mapping" icon="pi pi-plus" text size="small" @click="addMapping(step)" />
+              </div>
+              <div v-if="step.parameterMappings.length === 0" class="no-mappings-hint">
+                No mappings — add mappings to pass data between steps or set fixed values.
+              </div>
+              <div v-for="(mapping, mIdx) in step.parameterMappings" :key="mIdx" class="mapping-row">
+                <div class="mapping-fields">
+                  <!-- Target parameter -->
+                  <div class="form-field mapping-field">
+                    <label>Parameter</label>
+                    <Select v-if="getToolParamNames(form.defaultConnectionName, step.toolName).length > 0"
+                            v-model="mapping.targetParameter"
+                            :options="getToolParamNames(form.defaultConnectionName, step.toolName)"
+                            editable
+                            placeholder="Select parameter"
+                            class="w-full" size="small" />
+                    <InputText v-else v-model="mapping.targetParameter" placeholder="e.g. userId" class="w-full" size="small" />
+                  </div>
+                  <!-- Source type -->
+                  <div class="form-field mapping-field">
+                    <label>Source</label>
+                    <Select v-model="mapping.sourceType" :options="sourceModeOptions" optionLabel="label" optionValue="value" class="w-full" size="small" />
+                  </div>
+                  <!-- Manual value -->
+                  <div v-if="mapping.sourceType === 'ManualValue'" class="form-field mapping-field full-mapping-width">
+                    <label>Value</label>
+                    <InputText v-model="mapping.manualValue" placeholder="Enter value" class="w-full" size="small" />
+                  </div>
+                   <!-- From previous step -->
+                  <template v-if="mapping.sourceType === 'FromPreviousStep'">
+                    <div class="form-field mapping-field">
+                      <label>Step</label>
+                      <Select
+                        :model-value="mapping.sourceStepIndex === null || mapping.sourceStepIndex === undefined ? '__auto__' : String(mapping.sourceStepIndex)"
+                        @update:model-value="v => mapping.sourceStepIndex = v === '__auto__' ? null : Number(v)"
+                        :options="[{ label: 'Previous step (auto)', value: '__auto__' }, ...Array.from({length: step.stepNumber - 1}, (_, i) => ({ label: `Step ${i + 1}`, value: String(i) }))]"
+                        optionLabel="label" optionValue="value" class="w-full" size="small" />
+                    </div>
+                    <div class="form-field mapping-field full-mapping-width">
+                      <label>Property Path</label>
+                      <div class="path-input-row">
+                        <InputText v-model="mapping.sourcePropertyPath" placeholder="e.g. data[0].id or data[].id" class="w-full" size="small" />
+                        <Button icon="pi pi-sitemap" text size="small" v-tooltip="'Browse output fields from previous step'" @click="openPathBrowser(mapping, step)" />
+                      </div>
+                    </div>
+                    <div v-if="pathContainsArray(mapping.sourcePropertyPath)" class="form-field mapping-field full-mapping-width">
+                      <label>Array Iteration</label>
+                      <Select v-model="mapping.iterationMode" :options="iterationModeOptions" optionLabel="label" optionValue="value" class="w-full" size="small" />
+                    </div>
+                  </template>
+                  <!-- Prompt at runtime hint -->
+                  <div v-if="mapping.sourceType === 'PromptAtRuntime'" class="form-field mapping-field full-mapping-width">
+                    <label>Runtime Key</label>
+                    <InputText :model-value="mapping.targetParameter" disabled placeholder="Uses parameter name as key" class="w-full" size="small" />
+                    <small class="muted-sm">Value will be prompted when executing the workflow.</small>
+                  </div>
+                </div>
+                <Button icon="pi pi-times" text severity="danger" size="small" @click="removeMapping(step, mIdx)" />
               </div>
             </div>
           </div>
@@ -428,6 +870,94 @@ onMounted(load)
     </Dialog>
 
     <ConfirmDialog />
+
+    <!-- Load test progress dialog -->
+    <Dialog v-model:visible="showLoadTestProgress" header="⚡ Load Test Running…" modal :closable="false" :style="{ width: '440px' }">
+      <div v-if="loadTestProgress" class="lt-progress-dialog">
+        <ProgressBar :value="Math.round(loadTestProgress.percentComplete)" style="margin-bottom:20px;height:12px" />
+        <div class="lt-progress-pct">{{ Math.round(loadTestProgress.percentComplete) }}% complete</div>
+        <div class="lt-progress-stats">
+          <div class="lt-prog-stat">
+            <div class="lt-prog-val">{{ loadTestProgress.totalExecutions }}</div>
+            <div class="lt-prog-lbl">Executions</div>
+          </div>
+          <div class="lt-prog-stat success">
+            <div class="lt-prog-val">{{ loadTestProgress.successfulExecutions }}</div>
+            <div class="lt-prog-lbl">Successful</div>
+          </div>
+          <div class="lt-prog-stat danger">
+            <div class="lt-prog-val">{{ loadTestProgress.failedExecutions }}</div>
+            <div class="lt-prog-lbl">Failed</div>
+          </div>
+          <div class="lt-prog-stat">
+            <div class="lt-prog-val">{{ loadTestProgress.activeExecutions }}</div>
+            <div class="lt-prog-lbl">Active</div>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- Load test chart dialog -->
+    <Dialog v-model:visible="showLoadTestChart" header="📊 Load Test Chart" modal :style="{ width: '740px' }">
+      <div v-if="chartRun" class="lt-chart-dialog">
+        <div class="lt-chart-meta muted-sm" style="margin-bottom:12px">
+          {{ new Date(chartRun.startedUtc).toLocaleString() }} · {{ chartRun.durationSeconds }}s ·
+          {{ chartRun.maxParallelExecutions }} parallel · {{ chartRun.connectionName }}
+        </div>
+        <div v-if="chartRun.snapshots?.length" style="height:320px">
+          <Chart type="line" :data="buildChartData(chartRun)" :options="chartOptions" style="height:100%" />
+        </div>
+        <div v-else class="muted-sm" style="padding:40px;text-align:center">
+          No snapshot data available for this run.<br>
+          <small>Runs recorded before chart support was added won't have time-series data.</small>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="showLoadTestChart = false" />
+      </template>
+    </Dialog>
+
+    <!-- Runtime parameter prompts dialog -->
+    <Dialog v-model:visible="showRuntimeParamsDialog" header="🔑 Runtime Parameters" modal :style="{ width: '440px' }" :closable="!executing">
+      <div class="runtime-params-dialog">
+        <p class="muted-sm" style="margin-bottom: 16px">
+          This workflow requires values for the following parameters before it can run.
+        </p>
+        <div v-for="prompt in runtimeParamPrompts" :key="prompt.key" class="form-field" style="margin-bottom: 14px">
+          <label>{{ prompt.label }}</label>
+          <InputText v-model="prompt.value" :placeholder="`Enter value for ${prompt.label}`" class="w-full" autofocus />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="showRuntimeParamsDialog = false" />
+        <Button label="Run Workflow" icon="pi pi-play" @click="confirmRuntimeParams" :loading="executing" />
+      </template>
+    </Dialog>
+
+    <!-- Property path browser dialog -->
+    <Dialog v-model:visible="showPathBrowser" header="Browse Output Fields" modal :style="{ width: '480px' }">
+      <div class="path-browser">
+        <p class="muted-sm" style="margin-bottom:12px">
+          Select a property path from the previous step's output. Use <code>[]</code> paths with <strong>Each</strong> iteration to loop over arrays.
+        </p>
+        <div v-if="pathBrowserLoading" class="path-browser-empty">Loading fields from tool…</div>
+        <div v-else-if="pathBrowserPaths.length === 0" class="path-browser-empty">
+          No output available. Ensure the connection is active and the previous step's tool name is set.
+        </div>
+        <div v-else class="path-list">
+          <button
+            v-for="path in pathBrowserPaths"
+            :key="path"
+            class="path-item"
+            :class="{ 'is-array': path.includes('[]') }"
+            @click="selectPath(path)"
+          >
+            <i :class="path.includes('[]') ? 'pi pi-list' : 'pi pi-key'" />
+            <code>{{ path }}</code>
+          </button>
+        </div>
+      </div>
+    </Dialog>
   </div>
 </template>
 
@@ -480,9 +1010,43 @@ onMounted(load)
 .hist-time { color:var(--text-secondary); flex:1; }
 .hist-conn { font-family:var(--font-family-mono); color:var(--text-muted); }
 .exec-detail { margin-top:12px; }
-.load-test-form { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:end; margin-bottom:16px; }
+.load-test-tab { display:flex; flex-direction:column; gap:16px; }
+.load-test-history-panel { flex:1; }
+.load-test-history-list { display:flex; flex-direction:column; gap:6px; max-height:340px; overflow-y:auto; }
+.load-test-history-item { padding:10px 12px; border:1px solid var(--border); border-radius:var(--border-radius-sm); cursor:pointer; transition:background 0.15s; }
+.load-test-history-item:hover { background:var(--bg-hover); }
+.load-test-history-item.active { border-color:var(--primary); background:color-mix(in srgb, var(--primary) 8%, transparent); }
+.lt-hist-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:3px; }
+.lt-hist-date { font-size:12px; font-weight:600; color:var(--text-primary); }
+.lt-hist-meta { font-size:11px; color:var(--text-muted); }
+.lt-hist-stats { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--text-muted); margin-top:5px; }
+.lt-hist-config { display:flex; align-items:center; gap:4px; font-weight:500; }
+.lt-config-sep { color:var(--text-muted); opacity:0.5; }
+.lt-hist-counts { display:flex; align-items:center; gap:8px; }
+.lt-hist-counts .success-text { color:var(--success); font-weight:600; }
+.lt-hist-counts .danger-text { color:var(--danger); font-weight:600; }
+.chart-btn { background:none; border:none; cursor:pointer; font-size:14px; padding:2px 4px; border-radius:4px; transition:background 0.15s; }
+.chart-btn:hover:not(:disabled) { background:var(--bg-hover); }
+.chart-btn:disabled { opacity:0.3; cursor:default; }
+/* Progress dialog */
+.lt-progress-dialog { padding:8px 0; }
+.lt-progress-pct { text-align:center; font-size:18px; font-weight:700; color:var(--text-primary); margin-bottom:20px; }
+.lt-progress-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.lt-prog-stat { background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--border-radius-sm); padding:12px; text-align:center; }
+.lt-prog-stat.success { border-color:var(--success); }
+.lt-prog-stat.danger { border-color:var(--danger); }
+.lt-prog-val { font-size:22px; font-weight:700; color:var(--text-primary); }
+.lt-prog-lbl { font-size:11px; color:var(--text-muted); margin-top:2px; }
+/* Chart dialog */
+.lt-chart-dialog { }
+.lt-chart-meta { }
+.load-test-form { display:flex; gap:12px; align-items:end; margin-bottom:12px; }
+.load-test-conn-field { flex:1; min-width:0; }
+.load-test-num-fields { display:flex; gap:8px; flex-shrink:0; }
+.load-test-num-fields .form-field { width:100px; }
+.load-test-run-btn { flex-shrink:0; }
 .load-test-results { }
-.stats-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px; }
+.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
 .stat-card { background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--border-radius-sm); padding:12px; text-align:center; }
 .stat-card.success { border-color:var(--success); }
 .stat-card.danger { border-color:var(--danger); }
@@ -499,6 +1063,25 @@ onMounted(load)
 .step-editor-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .step-order-btns { display:flex; }
 .step-editor-body { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.param-mappings-section { margin-top:10px; border-top:1px solid var(--border); padding-top:10px; }
+.param-mappings-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.no-mappings-hint { font-size:12px; color:var(--text-muted); padding:4px 0 8px; }
+.mapping-row { display:flex; align-items:flex-start; gap:8px; padding:8px; background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--border-radius-sm); margin-bottom:6px; }
+.mapping-fields { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.mapping-field { }
+.full-mapping-width { grid-column:1 / -1; }
 .native-num-input { width:100%; background:var(--bg-raised); border:1px solid var(--border); color:var(--text-primary); padding:8px 10px; border-radius:var(--border-radius-sm); font-size:14px; }
 .native-num-input:focus { outline:none; border-color:var(--accent); }
+.path-input-row { display:flex; align-items:center; gap:4px; }
+.path-input-row .p-inputtext { flex:1; }
+/* Property path browser */
+.path-browser { }
+.path-browser-empty { color:var(--text-muted); font-size:13px; padding:12px 0; text-align:center; }
+.path-list { display:flex; flex-direction:column; gap:4px; max-height:380px; overflow-y:auto; }
+.path-item { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--border-radius-sm); cursor:pointer; text-align:left; font-size:13px; transition:var(--transition-fast); }
+.path-item:hover { background:var(--nav-item-hover); border-color:var(--accent); }
+.path-item.is-array { border-left:2px solid var(--accent); }
+.path-item i { color:var(--text-muted); font-size:11px; flex-shrink:0; }
+.path-item.is-array i { color:var(--accent); }
+.path-item code { font-family:var(--font-family-mono); font-size:12px; color:var(--text-primary); word-break:break-all; }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
+import { useConfirm } from 'primevue/useconfirm'
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
 import DataTable from 'primevue/datatable'
@@ -9,15 +10,20 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
-import OverlayPanel from 'primevue/overlaypanel'
+import Popover from 'primevue/popover'
+import ConfirmDialog from 'primevue/confirmdialog'
 import JsonViewer from '@/components/common/JsonViewer.vue'
 import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
+import ElicitationDialog from '@/components/common/ElicitationDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { preferencesApi } from '@/api/preferences'
+import { extractApiError } from '@/api/client'
+import { useElicitation } from '@/composables/useElicitation'
 import type { ActiveTool } from '@/api/types'
 
 const toast = useToast()
+const confirm = useConfirm()
 const store = useConnectionsStore()
 
 // ── Connection selection ───────────────────────────────────────────────
@@ -26,16 +32,32 @@ const tools = ref<ActiveTool[]>([])
 const toolsLoading = ref(false)
 const toolSearch = ref('')
 
+// ── Elicitation — live dialog for server-initiated input requests ──────
+const { current: elicitRequest, visible: elicitVisible, stepNumber: elicitStep, respond: elicitRespond } =
+  useElicitation(selectedConnName)
+
+async function onElicitRespond(action: string, content?: Record<string, unknown>) {
+  try {
+    await elicitRespond(action, content)
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Elicitation submit failed', detail: e.message, life: 5000 })
+  }
+}
+
 // ── Tool selection + execution ─────────────────────────────────────────
 const selectedTool = ref<ActiveTool | null>(null)
 const params = ref<Record<string, unknown>>({})
 const invoking = ref(false)
+const invokingLabel = ref('Execute')
+const retryExhausted = ref(false)
 const result = ref<unknown>(null)
 const resultError = ref<string | null>(null)
 const paramErrors = ref(new Set<string>())
 
+const MAX_INVOKE_RETRIES = 3
+
 // ── Per-field history ──────────────────────────────────────────────────
-const fieldHistoryPanel = ref<InstanceType<typeof OverlayPanel> | null>(null)
+const fieldHistoryPanel = ref<InstanceType<typeof Popover> | null>(null)
 const fieldHistoryField = ref('')
 const fieldHistoryValues = ref<string[]>([])
 
@@ -81,6 +103,23 @@ const paramHistory = computed<Record<string, unknown>[]>(() =>
 // ── Computed ───────────────────────────────────────────────────────────
 const connectedConnections = computed(() => store.activeConnections.filter(c => c.isConnected))
 
+// ── Reconnect unhealthy connection ─────────────────────────────────────
+const reconnecting = ref<Record<string, boolean>>({})
+
+async function reconnect(name: string) {
+  reconnecting.value = { ...reconnecting.value, [name]: true }
+  try {
+    await store.connect(name)
+    toast.add({ severity: 'success', summary: 'Reconnected', detail: `${name} is healthy again`, life: 3000 })
+    if (selectedConnName.value === name) await loadTools(name)
+  } catch {
+    toast.add({ severity: 'error', summary: 'Reconnect failed', detail: `Could not reconnect to ${name}`, life: 5000 })
+  } finally {
+    const { [name]: _, ...rest } = reconnecting.value
+    reconnecting.value = rest
+  }
+}
+
 type ToolListItem = ActiveTool | { isSeparator: true; label: string }
 
 const filteredTools = computed<ToolListItem[]>(() => {
@@ -116,17 +155,23 @@ const inputProps = computed(() => {
 })
 
 // ── Watchers ───────────────────────────────────────────────────────────
-watch(selectedConnName, async (name) => {
+async function loadTools(name: string) {
   selectedTool.value = null; tools.value = []; result.value = null
-  if (!name) return
   toolsLoading.value = true
   try { tools.value = await store.getTools(name) }
   catch (e: any) { toast.add({ severity: 'error', summary: 'Failed to load tools', detail: e.message, life: 5000 }) }
   finally { toolsLoading.value = false }
+}
+
+watch(selectedConnName, async (name) => {
+  retryExhausted.value = false
+  if (!name) { tools.value = []; return }
+  await loadTools(name)
 })
 
-watch(selectedTool, (t) => {
-  params.value = {}; result.value = null; resultError.value = null; paramErrors.value = new Set()
+watch(selectedTool, () => {
+  params.value = {}; result.value = null; resultError.value = null
+  paramErrors.value = new Set(); retryExhausted.value = false
 })
 
 // ── Methods ────────────────────────────────────────────────────────────
@@ -149,28 +194,74 @@ async function invoke() {
   }
   paramErrors.value = new Set()
 
-  invoking.value = true; result.value = null; resultError.value = null
-  try {
-    const r = await connectionsApi.invokeTool(selectedConnName.value, selectedTool.value.name, params.value)
-    result.value = r
+  invoking.value = true; result.value = null; resultError.value = null; retryExhausted.value = false
 
-    // Save history to backend
-    const toolName = selectedTool.value.name
-    const histJson = JSON.stringify(params.value)
-    const existing = allParamHistory.value[toolName] ?? []
-    const updated = [histJson, ...existing.filter(h => h !== histJson)].slice(0, 5)
-    allParamHistory.value = { ...allParamHistory.value, [toolName]: updated }
-    await preferencesApi.patch({ parameterHistory: allParamHistory.value })
+  for (let attempt = 1; attempt <= MAX_INVOKE_RETRIES; attempt++) {
+    invokingLabel.value = attempt === 1 ? 'Execute' : `Retrying (${attempt - 1}/${MAX_INVOKE_RETRIES - 1})…`
+    try {
+      const r = await connectionsApi.invokeTool(selectedConnName.value, selectedTool.value.name, params.value)
+      result.value = r
 
-    toast.add({ severity: 'success', summary: 'Tool executed', life: 2000 })
-  } catch (e: any) {
-    resultError.value = e.message
-    toast.add({ severity: 'error', summary: 'Invocation failed', detail: e.message, life: 5000 })
-  } finally { invoking.value = false }
+      // Save history to backend
+      const toolName = selectedTool.value.name
+      const histJson = JSON.stringify(params.value)
+      const existing = allParamHistory.value[toolName] ?? []
+      const updated = [histJson, ...existing.filter(h => h !== histJson)].slice(0, 5)
+      allParamHistory.value = { ...allParamHistory.value, [toolName]: updated }
+      await preferencesApi.patch({ parameterHistory: allParamHistory.value })
+
+      toast.add({ severity: 'success', summary: 'Tool executed', life: 2000 })
+      invoking.value = false
+      return
+    } catch (e: unknown) {
+      const msg = extractApiError(e)
+      resultError.value = msg
+
+      if (attempt < MAX_INVOKE_RETRIES) {
+        // Attempt a reconnect before the next try
+        const connName = selectedConnName.value
+        if (connName) {
+          try {
+            invokingLabel.value = `Reconnecting (${attempt}/${MAX_INVOKE_RETRIES - 1})…`
+            await store.connect(connName)
+          } catch {
+            // Reconnect failed — continue to next attempt anyway; the invoke will surface the real error
+          }
+        }
+      } else {
+        // All attempts exhausted
+        retryExhausted.value = true
+        toast.add({ severity: 'error', summary: 'Invocation failed', detail: msg, life: 8000 })
+        await store.loadActive()
+      }
+    }
+  }
+  invoking.value = false
+  invokingLabel.value = 'Execute'
 }
 
 function loadHistoryParams(h: Record<string, unknown>) {
   params.value = JSON.parse(JSON.stringify(h))
+}
+
+function deleteRun(idx: number) {
+  const toolName = selectedTool.value?.name
+  if (!toolName) return
+  const runLabel = `Run ${paramHistory.value.length - idx}`
+  confirm.require({
+    message: `Delete ${runLabel}? This cannot be undone.`,
+    header: 'Delete Run',
+    icon: 'pi pi-trash',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Delete', severity: 'danger' },
+    accept: async () => {
+      const existing = allParamHistory.value[toolName] ?? []
+      const updated = existing.filter((_, i) => i !== idx)
+      allParamHistory.value = { ...allParamHistory.value, [toolName]: updated }
+      await preferencesApi.patch({ parameterHistory: allParamHistory.value })
+      toast.add({ severity: 'success', summary: 'Run deleted', life: 2000 })
+    },
+  })
 }
 
 function getParamValue(key: string) { return params.value[key] !== undefined ? String(params.value[key]) : '' }
@@ -241,11 +332,23 @@ watch(() => store.initialized, async (ready, wasReady) => {
               v-for="c in connectedConnections"
               :key="c.name"
               class="conn-item"
-              :class="{ active: selectedConnName === c.name }"
+              :class="{ active: selectedConnName === c.name, unhealthy: !c.isHealthy }"
               @click="selectedConnName = c.name"
             >
-              <i class="pi pi-circle-fill dot" />
-              <span>{{ c.name }}</span>
+              <i class="pi pi-circle-fill dot" :class="{ 'dot-degraded': !c.isHealthy }" />
+              <span class="conn-name">{{ c.name }}</span>
+              <Button
+                v-if="!c.isHealthy"
+                v-tooltip.right="'Retry connection'"
+                class="reconnect-btn"
+                text
+                rounded
+                size="small"
+                :loading="!!reconnecting[c.name]"
+                @click.stop="reconnect(c.name)"
+              >
+                <template #icon><span class="reconnect-emoji">🔄</span></template>
+              </Button>
             </div>
           </div>
         </div>
@@ -372,34 +475,58 @@ watch(() => store.initialized, async (ready, wasReady) => {
             <!-- History -->
             <div v-if="paramHistory.length" class="history-section">
               <div class="section-label">Recent Parameters</div>
-              <Button
+              <div
                 v-for="(h, idx) in paramHistory"
                 :key="idx"
-                text
-                size="small"
-                class="history-btn"
-                :label="`Run ${paramHistory.length - idx}`"
-                icon="pi pi-history"
-                @click="loadHistoryParams(h)"
-                v-tooltip.right="JSON.stringify(h).slice(0, 120)"
-              />
+                class="history-run-row"
+              >
+                <Button
+                  text
+                  size="small"
+                  class="history-btn"
+                  :label="`Run ${paramHistory.length - idx}`"
+                  icon="pi pi-history"
+                  @click="loadHistoryParams(h)"
+                  v-tooltip.right="JSON.stringify(h).slice(0, 120)"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  text
+                  size="small"
+                  severity="danger"
+                  class="history-delete-btn"
+                  v-tooltip.right="'Delete this run'"
+                  @click="deleteRun(idx)"
+                />
+              </div>
             </div>
 
             <div class="invoke-bar">
-              <Button label="Execute" icon="pi pi-play" :loading="invoking" @click="invoke" />
+              <Button :label="invokingLabel" icon="pi pi-play" :loading="invoking" @click="invoke" />
             </div>
 
-            <OverlayPanel ref="fieldHistoryPanel">
+            <Popover ref="fieldHistoryPanel">
               <div class="field-history-popup">
                 <div class="field-history-header">Previous values for <strong>{{ fieldHistoryField }}</strong></div>
                 <div v-for="val in fieldHistoryValues" :key="val" class="field-history-item" @click="selectFieldHistoryValue(val)">
                   {{ val }}
                 </div>
               </div>
-            </OverlayPanel>
+            </Popover>
 
             <div v-if="resultError" class="error-box">
-              <i class="pi pi-times-circle" /> {{ resultError }}
+              <div class="error-box-message">
+                <i class="pi pi-times-circle" /> {{ resultError }}
+              </div>
+              <Button
+                v-if="retryExhausted"
+                label="Reconnect & Retry"
+                icon="pi pi-refresh"
+                severity="warning"
+                size="small"
+                class="error-retry-btn"
+                @click="retryExhausted = false; invoke()"
+              />
             </div>
 
             <div v-if="result !== null" class="result-section">
@@ -413,6 +540,14 @@ watch(() => store.initialized, async (ready, wasReady) => {
 
   <ToolDocsDialog v-model:visible="docsVisible" :tool="docsTool" />
   <ToolDocsDialog v-model:visible="listDocsVisible" :tools="filteredToolsOnly" />
+
+  <!-- Elicitation dialog: appears automatically when the MCP server requests user input -->
+  <ElicitationDialog
+    :request="elicitRequest"
+    :step-number="elicitStep"
+    @respond="onElicitRespond"
+  />
+  <ConfirmDialog />
 </template>
 
 <style scoped>
@@ -429,7 +564,12 @@ watch(() => store.initialized, async (ready, wasReady) => {
 .conn-item { display:flex; align-items:center; gap:8px; padding:10px 16px; cursor:pointer; font-size:13px; color:var(--text-secondary); transition:var(--transition-fast); border-left:2px solid transparent; }
 .conn-item:hover { background:var(--nav-item-hover); color:var(--text-primary); }
 .conn-item.active { background:var(--nav-item-active); color:var(--accent); border-left-color:var(--accent); }
+.conn-item.unhealthy { border-left-color: var(--warning, #f59e0b); }
+.conn-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dot { font-size:8px; color:var(--success); }
+.dot.dot-degraded { color: var(--warning, #f59e0b); }
+.reconnect-btn { padding:0 !important; width:22px !important; height:22px !important; flex-shrink:0; }
+.reconnect-emoji { font-size:13px; line-height:1; }
 .tool-list { overflow-y:auto; flex:1; }
 .tool-item { display:flex; align-items:center; gap:8px; padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border); border-left:2px solid transparent; transition:var(--transition-fast); }
 .tool-item:hover { background:var(--nav-item-hover); }
@@ -473,8 +613,14 @@ watch(() => store.initialized, async (ready, wasReady) => {
 .history-item:hover { background:var(--bg-raised); border-color:var(--accent); }
 .history-preview { font-family:var(--font-family-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .invoke-bar { padding:12px 20px; border-bottom:1px solid var(--border); }
-.error-box { margin:12px 20px; padding:10px 14px; background:rgba(239,68,68,.1); border:1px solid var(--danger); border-radius:var(--border-radius-sm); color:var(--danger); font-size:13px; display:flex; gap:8px; }
+.error-box { margin:12px 20px; padding:10px 14px; background:rgba(239,68,68,.1); border:1px solid var(--danger); border-radius:var(--border-radius-sm); color:var(--danger); font-size:13px; display:flex; flex-direction:column; gap:10px; }
+.error-box-message { display:flex; align-items:flex-start; gap:8px; }
+.error-retry-btn { align-self:flex-start; }
 .result-section { flex:1; padding:12px 20px; min-height:200px; }
 .tool-section-header { padding:4px 14px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); background:var(--bg-raised); border-bottom:1px solid var(--border); }
+.history-run-row { display:flex; align-items:center; gap:2px; margin-bottom:2px; }
+.history-run-row .history-btn { flex:1; justify-content:flex-start; margin-bottom:0; }
+.history-delete-btn { flex-shrink:0; opacity:0.5; }
+.history-run-row:hover .history-delete-btn { opacity:1; }
 .history-btn { display:flex; width:100%; justify-content:flex-start; margin-bottom:4px; }
 </style>

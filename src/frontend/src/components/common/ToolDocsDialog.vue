@@ -17,6 +17,10 @@ const props = defineProps<{
   /** List mode — show combined reference for multiple tools */
   tools?: ActiveTool[]
   visible: boolean
+  /** Override: supply pre-generated markdown directly */
+  rawMarkdown?: string
+  /** Override: dialog header title */
+  title?: string
 }>()
 
 const emit = defineEmits<{
@@ -26,15 +30,18 @@ const emit = defineEmits<{
 const toast = useToast()
 const activeTab = ref('preview')
 const previewRef = ref<HTMLElement | null>(null)
+const isMaximized = ref(false)
 
 const isListMode = computed(() => Array.isArray(props.tools) && props.tools.length > 0)
 
 const dialogHeader = computed(() => {
+  if (props.title) return props.title
   if (isListMode.value) return `Documentation: ${props.tools!.length} tool${props.tools!.length === 1 ? '' : 's'}`
   return props.tool ? `Documentation: ${props.tool.name}` : 'Documentation'
 })
 
 const markdown = computed(() => {
+  if (props.rawMarkdown) return props.rawMarkdown
   if (isListMode.value) return generateToolsListMarkdown(props.tools!)
   return props.tool ? generateToolMarkdown(props.tool) : ''
 })
@@ -52,37 +59,15 @@ async function copyMarkdown() {
 
 /** Intercept in-page anchor clicks and scroll within the preview container. */
 function onPreviewClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  const anchor = target.closest('a') as HTMLAnchorElement | null
+  const anchor = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null
   if (!anchor) return
-
   const href = anchor.getAttribute('href')
   if (!href?.startsWith('#')) return
 
   e.preventDefault()
   const id = href.slice(1)
-  if (!previewRef.value) return
-
-  // Try matching by id attribute first, then by generated slug from heading text
-  let el = previewRef.value.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
-
-  if (!el) {
-    // Fallback: match headings whose text slugifies to the id
-    const headings = previewRef.value.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6')
-    for (const h of headings) {
-      if (slugify(h.textContent ?? '') === id) { el = h; break }
-    }
-  }
-
+  const el = previewRef.value?.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
 }
 </script>
 
@@ -91,9 +76,16 @@ function slugify(text: string): string {
     :visible="visible"
     @update:visible="emit('update:visible', $event)"
     modal
+    maximizable
+    @maximize="isMaximized = true"
+    @unmaximize="isMaximized = false"
     :header="dialogHeader"
-    :style="{ width: '780px', maxHeight: '85vh' }"
-    :pt="{ content: { style: 'padding: 0; overflow: hidden;' } }"
+    :style="isMaximized ? {} : { width: '780px', maxHeight: '85vh' }"
+    :pt="{
+      root:    { style: 'display: flex; flex-direction: column;' },
+      content: { style: 'padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0;' }
+    }"
+    class="docs-dialog"
   >
     <Tabs v-model:value="activeTab" class="docs-tabs">
       <TabList>
@@ -106,15 +98,24 @@ function slugify(text: string): string {
           Raw Markdown
         </Tab>
       </TabList>
-      <TabPanels>
-        <TabPanel value="preview">
-          <div class="docs-preview" ref="previewRef" v-html="renderedHtml" @click="onPreviewClick" />
+      <TabPanels class="docs-tabpanels">
+        <TabPanel value="preview" class="docs-tabpanel">
+          <div
+            class="docs-preview"
+            :class="{ 'docs-preview--expanded': isMaximized }"
+            ref="previewRef"
+            v-html="renderedHtml"
+            @click="onPreviewClick"
+          />
         </TabPanel>
-        <TabPanel value="raw">
+        <TabPanel value="raw" class="docs-tabpanel">
           <div class="docs-raw-bar">
             <Button icon="pi pi-copy" text size="small" label="Copy Markdown" @click="copyMarkdown" />
           </div>
-          <pre class="docs-raw">{{ markdown }}</pre>
+          <pre
+            class="docs-raw"
+            :class="{ 'docs-raw--expanded': isMaximized }"
+          >{{ markdown }}</pre>
         </TabPanel>
       </TabPanels>
     </Tabs>
@@ -122,7 +123,30 @@ function slugify(text: string): string {
 </template>
 
 <style scoped>
-.docs-tabs { height: 100%; display: flex; flex-direction: column; }
+.docs-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.docs-tabpanels {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-tabpanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 !important;
+}
+
 .docs-preview {
   padding: 20px 24px;
   overflow-y: auto;
@@ -130,13 +154,23 @@ function slugify(text: string): string {
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.7;
+  flex: 1;
+  min-height: 0;
 }
+
+/* Maximized: drop the viewport cap — flex chain constrains height */
+.docs-preview--expanded {
+  max-height: none;
+}
+
 .docs-raw-bar {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
+
 .docs-raw {
   padding: 16px 20px;
   margin: 0;
@@ -149,6 +183,12 @@ function slugify(text: string): string {
   overflow-y: auto;
   max-height: 55vh;
   background: var(--code-bg);
+  flex: 1;
+  min-height: 0;
+}
+
+.docs-raw--expanded {
+  max-height: none;
 }
 </style>
 
@@ -166,4 +206,46 @@ function slugify(text: string): string {
 .docs-preview td { padding: 7px 12px; border: 1px solid var(--border); color: var(--text-primary); vertical-align: top; }
 .docs-preview tr:nth-child(even) td { background: var(--bg-raised); }
 .docs-preview em { font-style: italic; color: var(--text-muted); }
+
+/*
+  Maximized: clear any inline width/maxHeight that would cap the dialog.
+  PrimeVue sets its own inset-0 / width:100% / height:100% via class styles,
+  but inline :style always wins — so we override here with !important.
+*/
+.docs-dialog.p-dialog-maximized {
+  max-height: 100dvh !important;
+  height: 100dvh !important;
+  width: 100vw !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.docs-dialog.p-dialog-maximized .p-dialog-content {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/*
+  PrimeVue renders .p-tabpanel with display:block and flex:0 1 auto which
+  breaks the flex scroll chain. Target ONLY the active panel so PrimeVue's
+  display:none on inactive panels is not overridden.
+*/
+.docs-dialog .p-tabpanels {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.docs-dialog .p-tabpanel.p-tabpanel-active {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
 </style>
+

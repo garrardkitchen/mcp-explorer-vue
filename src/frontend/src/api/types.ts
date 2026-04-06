@@ -50,13 +50,24 @@ export interface ActiveConnection {
   name: string
   endpoint: string
   isConnected: boolean
+  isHealthy: boolean
   toolCount: number
+}
+
+export interface ToolAnnotations {
+  title?: string | null
+  readOnlyHint?: boolean | null
+  destructiveHint?: boolean | null
+  idempotentHint?: boolean | null
+  openWorldHint?: boolean | null
 }
 
 export interface ActiveTool {
   name: string
   description: string
   inputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown> | null
+  annotations?: ToolAnnotations | null
   iconUrl?: string
 }
 
@@ -105,6 +116,9 @@ export interface ChatMessage {
   modelName?: string
   tokenUsage?: ChatTokenUsage
   thinkingMilliseconds?: number
+  // Prompt invocation — persisted on the user message when a prompt picker ran it
+  promptName?: string | null
+  promptInvocationParams?: string | null  // JSON string e.g. {"topic":"ml"}
 }
 
 export interface ChatSession {
@@ -162,6 +176,8 @@ export interface UserPreferences {
   showPromptFavoritesFirst: boolean
   favoriteResources: string[]
   showResourceFavoritesFirst: boolean
+  favoriteResourceTemplates: string[]
+  showResourceTemplateFavoritesFirst: boolean
   llmModels: LlmModelDefinition[]
   selectedLlmModelName?: string
   sensitiveFieldConfig: SensitiveFieldConfiguration
@@ -173,11 +189,16 @@ export interface UserPreferences {
 
 export type ErrorHandlingMode = 'StopOnError' | 'ContinueOnError'
 
+export type MappingSourceType = 'FromPreviousStep' | 'PromptAtRuntime' | 'ManualValue'
+export type ArrayIterationMode = 'None' | 'Each' | 'First' | 'Last'
+
 export interface ParameterMapping {
-  parameterName: string
-  value?: string
-  sourceStepNumber?: number
-  sourcePropertyName?: string
+  targetParameter: string
+  sourceType: MappingSourceType
+  sourceStepIndex?: number | null
+  sourcePropertyPath?: string | null
+  manualValue?: string | null
+  iterationMode: ArrayIterationMode
 }
 
 export interface WorkflowStep {
@@ -201,14 +222,21 @@ export interface WorkflowDefinition {
 
 export type WorkflowExecutionStatus = 'Running' | 'Completed' | 'Failed' | 'PartiallyCompleted'
 
+export type StepExecutionStatus = 'Pending' | 'Running' | 'Completed' | 'Failed' | 'Skipped'
+
 export interface WorkflowStepResult {
   stepNumber: number
   toolName: string
-  startedUtc: string
+  status: StepExecutionStatus
+  startedUtc?: string
   completedUtc?: string
-  success: boolean
-  result?: unknown
+  duration?: string
+  inputJson?: string
+  outputJson?: string
   errorMessage?: string
+  // legacy fields (still returned by old history entries)
+  success?: boolean
+  result?: unknown
 }
 
 export interface WorkflowExecution {
@@ -224,8 +252,19 @@ export interface WorkflowExecution {
   duration: string
 }
 
+export interface LoadTestSnapshot {
+  elapsedMs: number
+  cumulativeSuccesses: number
+  cumulativeFailures: number
+  activeExecutions: number
+}
+
 export interface LoadTestResult {
   workflowId: string
+  workflowName: string
+  connectionName: string
+  durationSeconds: number
+  maxParallelExecutions: number
   startedUtc: string
   completedUtc: string
   totalRequests: number
@@ -237,6 +276,18 @@ export interface LoadTestResult {
   p90ResponseMs: number
   p99ResponseMs: number
   errorRate: number
+  snapshots: LoadTestSnapshot[]
+}
+
+export interface LoadTestProgress {
+  runId: string
+  isComplete: boolean
+  percentComplete: number
+  totalExecutions: number
+  successfulExecutions: number
+  failedExecutions: number
+  activeExecutions: number
+  result?: LoadTestResult
 }
 
 export interface ElicitationRequest {

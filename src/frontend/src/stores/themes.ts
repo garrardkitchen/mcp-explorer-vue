@@ -10,6 +10,10 @@ export type ThemeId =
   | 'dracula'
   | 'catppuccin'
   | 'solarized'
+  | 'material'
+  | 'material-light'
+  | 'github'
+  | 'github-light'
 
 export interface ThemeMeta {
   id: ThemeId
@@ -25,6 +29,10 @@ export const THEMES: ThemeMeta[] = [
   { id: 'dracula',       label: 'Dracula',         mode: 'dark',  preview: '#282a36' },
   { id: 'catppuccin',    label: 'Catppuccin Mocha',mode: 'dark',  preview: '#1e1e2e' },
   { id: 'solarized',     label: 'Solarized Light', mode: 'light', preview: '#fdf6e3' },
+  { id: 'material',       label: 'Material Dark',   mode: 'dark',  preview: '#1c1b1f' },
+  { id: 'material-light', label: 'Material Light',  mode: 'light', preview: '#fffbfe' },
+  { id: 'github',         label: 'GitHub Dark',     mode: 'dark',  preview: '#0d1117' },
+  { id: 'github-light',   label: 'GitHub Light',    mode: 'light', preview: '#ffffff' },
 ]
 
 const STORAGE_KEY = 'mcp-explorer-theme'

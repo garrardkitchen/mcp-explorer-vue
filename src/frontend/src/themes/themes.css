@@ -51,6 +51,11 @@
   --nav-item-active: rgba(59,130,246,.2);
   --nav-item-active-border: #3b82f6;
 
+  --nav-accent-blue:   #3b82f6;
+  --nav-accent-amber:  #f59e0b;
+  --nav-accent-teal:   #14b8a6;
+  --nav-accent-violet: #a855f7;
+
   --code-bg:  #0c1525;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
   --shadow-md: 0 4px 12px rgba(0,0,0,.5);
@@ -88,6 +93,11 @@
   --nav-item-hover: rgba(37,99,235,.07);
   --nav-item-active: rgba(37,99,235,.12);
   --nav-item-active-border: #2563eb;
+
+  --nav-accent-blue:   #2563eb;
+  --nav-accent-amber:  #d97706;
+  --nav-accent-teal:   #0d9488;
+  --nav-accent-violet: #9333ea;
 
   --code-bg:  #f1f5f9;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
@@ -127,6 +137,11 @@
   --nav-item-active: rgba(136,192,208,.18);
   --nav-item-active-border: #88c0d0;
 
+  --nav-accent-blue:   #88c0d0;
+  --nav-accent-amber:  #ebcb8b;
+  --nav-accent-teal:   #8fbcbb;
+  --nav-accent-violet: #b48ead;
+
   --code-bg:  #272e3a;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
   --shadow-md: 0 4px 12px rgba(0,0,0,.5);
@@ -164,6 +179,11 @@
   --nav-item-hover: rgba(189,147,249,.1);
   --nav-item-active: rgba(189,147,249,.18);
   --nav-item-active-border: #bd93f9;
+
+  --nav-accent-blue:   #8be9fd;
+  --nav-accent-amber:  #ffb86c;
+  --nav-accent-teal:   #50fa7b;
+  --nav-accent-violet: #bd93f9;
 
   --code-bg:  #21222c;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
@@ -203,6 +223,11 @@
   --nav-item-active: rgba(203,166,247,.18);
   --nav-item-active-border: #cba6f7;
 
+  --nav-accent-blue:   #89b4fa;
+  --nav-accent-amber:  #fab387;
+  --nav-accent-teal:   #94e2d5;
+  --nav-accent-violet: #cba6f7;
+
   --code-bg:  #11111b;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
   --shadow-md: 0 4px 12px rgba(0,0,0,.5);
@@ -241,10 +266,195 @@
   --nav-item-active: rgba(38,139,210,.13);
   --nav-item-active-border: #268bd2;
 
+  --nav-accent-blue:   #268bd2;
+  --nav-accent-amber:  #b58900;
+  --nav-accent-teal:   #2aa198;
+  --nav-accent-violet: #6c71c4;
+
   --code-bg:  #e8e1cb;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
   --shadow-md: 0 4px 12px rgba(0,0,0,.08);
   --shadow-lg: 0 8px 30px rgba(0,0,0,.1);
+
+  color-scheme: light;
+}
+
+/* ----------------------------------------------------------
+   Theme: Material Design 3 Dark
+   Palette sourced from Material Design 3 baseline dark scheme.
+   Primary: Tonal Violet  |  Surfaces: true M3 tonal layers
+   ---------------------------------------------------------- */
+:root.theme-material {
+  --bg-base:      #1c1b1f;
+  --bg-surface:   #2b2930;
+  --bg-raised:    #36343b;
+  --bg-overlay:   #1c1b1f;
+  --border:       #49454f;
+  --border-focus: #d0bcff;
+
+  --text-primary:   #e6e1e5;
+  --text-secondary: #cac4d0;
+  --text-muted:     #938f99;
+  --text-inverse:   #1c1b1f;
+
+  --accent:         #d0bcff;
+  --accent-hover:   #b69df8;
+  --accent-muted:   rgba(208,188,255,.14);
+
+  --success:  #6dd58c;
+  --warning:  #f8bd75;
+  --danger:   #f2b8b5;
+  --info:     #a8c7fa;
+
+  --nav-bg:       #15141a;
+  --nav-item-hover: rgba(208,188,255,.08);
+  --nav-item-active: rgba(208,188,255,.16);
+  --nav-item-active-border: #d0bcff;
+
+  --nav-accent-blue:   #a8c7fa;
+  --nav-accent-amber:  #f8bd75;
+  --nav-accent-teal:   #78d9e3;
+  --nav-accent-violet: #d0bcff;
+
+  --code-bg:  #15141a;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.45);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.55);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.65);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------
+   Theme: GitHub Dark
+   Exact values from github.com's primer dark theme.
+   Accent: GitHub blue  |  Surfaces: GitHub canvas layers
+   ---------------------------------------------------------- */
+:root.theme-github {
+  --bg-base:      #0d1117;
+  --bg-surface:   #161b22;
+  --bg-raised:    #21262d;
+  --bg-overlay:   #161b22;
+  --border:       #30363d;
+  --border-focus: #58a6ff;
+
+  --text-primary:   #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted:     #6e7681;
+  --text-inverse:   #0d1117;
+
+  --accent:         #58a6ff;
+  --accent-hover:   #388bfd;
+  --accent-muted:   rgba(88,166,255,.12);
+
+  --success:  #3fb950;
+  --warning:  #d29922;
+  --danger:   #f85149;
+  --info:     #39c5cf;
+
+  --nav-bg:       #010409;
+  --nav-item-hover: rgba(88,166,255,.08);
+  --nav-item-active: rgba(88,166,255,.16);
+  --nav-item-active-border: #58a6ff;
+
+  --nav-accent-blue:   #58a6ff;
+  --nav-accent-amber:  #e3b341;
+  --nav-accent-teal:   #39c5cf;
+  --nav-accent-violet: #bc8cff;
+
+  --code-bg:  #010409;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.5);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.6);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------
+   Theme: Material Design 3 Light
+   Palette from Material Design 3 baseline light scheme.
+   Primary: Deep Violet  |  Surfaces: M3 tonal container layers
+   ---------------------------------------------------------- */
+:root.theme-material-light {
+  --bg-base:      #fffbfe;
+  --bg-surface:   #fffbfe;
+  --bg-raised:    #f4eff4;
+  --bg-overlay:   #ece6f0;
+  --border:       #cac4d0;
+  --border-focus: #6750a4;
+
+  --text-primary:   #1c1b1f;
+  --text-secondary: #49454f;
+  --text-muted:     #938f99;
+  --text-inverse:   #fffbfe;
+
+  --accent:         #6750a4;
+  --accent-hover:   #5840a0;
+  --accent-muted:   rgba(103,80,164,.1);
+
+  --success:  #386a20;
+  --warning:  #7c5800;
+  --danger:   #b3261e;
+  --info:     #006781;
+
+  --nav-bg:       #f4eff4;
+  --nav-item-hover: rgba(103,80,164,.07);
+  --nav-item-active: rgba(103,80,164,.13);
+  --nav-item-active-border: #6750a4;
+
+  --nav-accent-blue:   #006781;
+  --nav-accent-amber:  #7c5800;
+  --nav-accent-teal:   #006a6a;
+  --nav-accent-violet: #6750a4;
+
+  --code-bg:  #ece6f0;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.07);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.1);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.13);
+
+  color-scheme: light;
+}
+
+/* ----------------------------------------------------------
+   Theme: GitHub Light
+   Exact values from GitHub's Primer light theme (github.com).
+   Accent: GitHub Blue  |  Canvas: Primer white/mist layers
+   ---------------------------------------------------------- */
+:root.theme-github-light {
+  --bg-base:      #ffffff;
+  --bg-surface:   #f6f8fa;
+  --bg-raised:    #eaeef2;
+  --bg-overlay:   #f0f3f6;
+  --border:       #d0d7de;
+  --border-focus: #0969da;
+
+  --text-primary:   #1f2328;
+  --text-secondary: #636c76;
+  --text-muted:     #9198a1;
+  --text-inverse:   #ffffff;
+
+  --accent:         #0969da;
+  --accent-hover:   #0860ca;
+  --accent-muted:   rgba(9,105,218,.1);
+
+  --success:  #1a7f37;
+  --warning:  #9a6700;
+  --danger:   #d1242f;
+  --info:     #0969da;
+
+  --nav-bg:       #f6f8fa;
+  --nav-item-hover: rgba(9,105,218,.06);
+  --nav-item-active: rgba(9,105,218,.12);
+  --nav-item-active-border: #0969da;
+
+  --nav-accent-blue:   #0969da;
+  --nav-accent-amber:  #9a6700;
+  --nav-accent-teal:   #1b7c83;
+  --nav-accent-violet: #8250df;
+
+  --code-bg:  #f6f8fa;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.09);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,.12);
 
   color-scheme: light;
 }

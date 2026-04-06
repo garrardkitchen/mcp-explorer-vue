@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
@@ -8,8 +8,11 @@ import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
+import { preferencesApi } from '@/api/preferences'
+import { generateResourceTemplateMarkdown, generateResourceTemplatesListMarkdown } from '@/composables/useToolDocs'
 import type { ActiveResourceTemplate } from '@/api/types'
 
 const toast = useToast()
@@ -26,10 +29,53 @@ const content = ref<unknown>(null)
 const readError = ref<string | null>(null)
 
 const connectedConnections = computed(() => store.activeConnections.filter(c => c.isConnected))
-const filteredTemplates = computed(() => {
+type TemplateListItem = ActiveResourceTemplate | { isSeparator: true; label: string }
+
+const filteredTemplates = computed<TemplateListItem[]>(() => {
+  let list = templates.value
   const q = templateSearch.value.toLowerCase()
-  return q ? templates.value.filter(t => t.name.toLowerCase().includes(q) || t.uriTemplate?.toLowerCase().includes(q)) : templates.value
+  if (q) list = list.filter(t => t.name.toLowerCase().includes(q) || t.uriTemplate?.toLowerCase().includes(q))
+
+  if (!showFavoritesFirst.value || favorites.value.size === 0) return list
+
+  const favs = list.filter(t => favorites.value.has(t.uriTemplate))
+  const rest = list.filter(t => !favorites.value.has(t.uriTemplate))
+  const items: TemplateListItem[] = []
+  if (favs.length) { items.push({ isSeparator: true, label: '⭐ Favourites' }); items.push(...favs) }
+  if (rest.length) { items.push({ isSeparator: true, label: 'All Templates' }); items.push(...rest) }
+  return items
 })
+
+const filteredTemplatesOnly = computed(() =>
+  filteredTemplates.value.filter((t): t is ActiveResourceTemplate => !('isSeparator' in t))
+)
+
+const docsVisible = ref(false)
+const listDocsVisible = ref(false)
+
+// ── Favourites ────────────────────────────────────────────────────────
+const favorites = ref<Set<string>>(new Set())
+const showFavoritesFirst = ref(false)
+
+async function toggleFav(uriTemplate: string) {
+  if (favorites.value.has(uriTemplate)) favorites.value.delete(uriTemplate)
+  else favorites.value.add(uriTemplate)
+  favorites.value = new Set(favorites.value)
+  try {
+    await preferencesApi.patch({ favoriteResourceTemplates: [...favorites.value] })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save favourite', detail: e.message, life: 3000 })
+  }
+}
+
+async function toggleShowFavoritesFirst() {
+  showFavoritesFirst.value = !showFavoritesFirst.value
+  try {
+    await preferencesApi.patch({ showResourceTemplateFavoritesFirst: showFavoritesFirst.value })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save preference', detail: e.message, life: 3000 })
+  }
+}
 
 // Extract {param} placeholders from URI template
 const templateVars = computed(() => {
@@ -75,6 +121,14 @@ async function readTemplate() {
 }
 
 watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) store.loadActive() }, { immediate: true })
+
+onMounted(async () => {
+  try {
+    const prefs = await preferencesApi.getAll()
+    favorites.value = new Set(prefs.favoriteResourceTemplates ?? [])
+    showFavoritesFirst.value = prefs.showResourceTemplateFavoritesFirst ?? false
+  } catch { /* non-fatal */ }
+})
 </script>
 
 <template>
@@ -99,7 +153,20 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         <div class="panel">
           <div class="panel-header">
             Templates
-            <Tag v-if="templates.length" :value="String(templates.length)" severity="secondary" />
+            <Tag v-if="templates.length" :value="filteredTemplatesOnly.length < templates.length ? `${filteredTemplatesOnly.length} / ${templates.length}` : String(templates.length)" :severity="filteredTemplatesOnly.length < templates.length ? 'warn' : 'secondary'" />
+            <button
+              v-if="filteredTemplatesOnly.length > 0"
+              class="fav-btn"
+              :style="showFavoritesFirst ? 'color:var(--warning)' : ''"
+              @click="toggleShowFavoritesFirst"
+              :title="showFavoritesFirst ? 'Show all templates' : 'Show favourites first'"
+            ><i :class="showFavoritesFirst ? 'pi pi-star-fill' : 'pi pi-star'" /></button>
+            <button
+              v-if="filteredTemplatesOnly.length > 0"
+              class="fav-btn"
+              @click="listDocsVisible = true"
+              :title="`View docs for ${filteredTemplatesOnly.length} visible template${filteredTemplatesOnly.length === 1 ? '' : 's'}`"
+            ><i class="pi pi-book" /></button>
           </div>
           <div class="panel-search">
             <InputText v-model="templateSearch" placeholder="Filter templates…" style="width:100%" />
@@ -108,18 +175,24 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           <div v-else-if="!selectedConnName" class="empty-panel"><p>Select a connection</p></div>
           <div v-else-if="filteredTemplates.length === 0" class="empty-panel"><p>No templates found</p></div>
           <div v-else class="item-list">
-            <div v-for="t in filteredTemplates" :key="t.uriTemplate" class="list-item template-item"
-                 :class="{ active: selectedTemplate?.uriTemplate === t.uriTemplate }" @click="selectTemplate(t)">
-              <div class="item-body-icon">
-                <img v-if="t.iconUrl" :src="t.iconUrl" :alt="t.name" class="item-icon-img" />
-                <span v-else class="item-icon-badge">{{ t.name.charAt(0).toUpperCase() }}</span>
+            <template v-for="item in filteredTemplates" :key="'isSeparator' in item ? item.label : item.uriTemplate">
+              <div v-if="'isSeparator' in item" class="list-separator">{{ item.label }}</div>
+              <div v-else class="list-item template-item"
+                   :class="{ active: selectedTemplate?.uriTemplate === item.uriTemplate }" @click="selectTemplate(item)">
+                <div class="item-body-icon">
+                  <img v-if="item.iconUrl" :src="item.iconUrl" :alt="item.name" class="item-icon-img" />
+                  <span v-else class="item-icon-badge">{{ item.name.charAt(0).toUpperCase() }}</span>
+                </div>
+                <div class="item-meta">
+                  <span class="item-name">{{ item.name }}</span>
+                  <span class="item-uri">{{ item.uriTemplate }}</span>
+                  <span v-if="item.description" class="item-desc">{{ item.description }}</span>
+                </div>
+                <button class="fav-btn" @click.stop="toggleFav(item.uriTemplate)" :title="favorites.has(item.uriTemplate) ? 'Unfavourite' : 'Favourite'">
+                  <i :class="favorites.has(item.uriTemplate) ? 'pi pi-star-fill' : 'pi pi-star'" :style="favorites.has(item.uriTemplate) ? 'color:var(--warning)' : ''" />
+                </button>
               </div>
-              <div>
-                <span class="item-name">{{ t.name }}</span>
-                <span class="item-uri">{{ t.uriTemplate }}</span>
-                <span v-if="t.description" class="item-desc">{{ t.description }}</span>
-              </div>
-            </div>
+            </template>
           </div>
         </div>
       </SplitterPanel>
@@ -131,9 +204,14 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           </div>
           <template v-else>
             <div class="detail-header">
-              <h3 class="item-title">{{ selectedTemplate.name }}</h3>
-              <p class="item-template">{{ selectedTemplate.uriTemplate }}</p>
-              <p v-if="selectedTemplate.description" class="item-desc-full">{{ selectedTemplate.description }}</p>
+              <div class="detail-header-row">
+                <div>
+                  <h3 class="item-title">{{ selectedTemplate.name }}</h3>
+                  <p class="item-template">{{ selectedTemplate.uriTemplate }}</p>
+                  <p v-if="selectedTemplate.description" class="item-desc-full">{{ selectedTemplate.description }}</p>
+                </div>
+                <button class="fav-btn" @click="docsVisible = true" title="View documentation"><i class="pi pi-book" /></button>
+              </div>
             </div>
 
             <div class="params-section">
@@ -160,6 +238,17 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         </div>
       </SplitterPanel>
     </Splitter>
+
+    <ToolDocsDialog
+      v-model:visible="docsVisible"
+      :raw-markdown="selectedTemplate ? generateResourceTemplateMarkdown(selectedTemplate) : ''"
+      :title="selectedTemplate ? `Documentation: ${selectedTemplate.name}` : 'Documentation'"
+    />
+    <ToolDocsDialog
+      v-model:visible="listDocsVisible"
+      :raw-markdown="generateResourceTemplatesListMarkdown(filteredTemplatesOnly)"
+      :title="`Documentation: ${filteredTemplatesOnly.length} template${filteredTemplatesOnly.length === 1 ? '' : 's'}`"
+    />
   </div>
 </template>
 
@@ -181,9 +270,15 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
 .item-icon-badge { width:26px; height:26px; border-radius:6px; background:var(--accent); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 .item-name { display:block; font-size:13px; font-weight:500; color:var(--text-primary); }
 .item-uri { display:block; font-size:11px; font-family:var(--font-family-mono); color:var(--text-muted); }
-.item-desc { display:block; font-size:11px; color:var(--text-muted); }
+.item-desc { display:block; font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.list-separator { padding:6px 16px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); background:var(--bg-raised); border-bottom:1px solid var(--border); flex-shrink:0; }
+.template-item { align-items:center; justify-content:space-between; }
+.item-meta { flex:1; min-width:0; }
 .dot { font-size:8px; color:var(--success); flex-shrink:0; margin-top:4px; }
 .detail-header { padding:16px 20px; border-bottom:1px solid var(--border); }
+.detail-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.fav-btn { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px 6px; border-radius:var(--border-radius-sm); transition:var(--transition-fast); flex-shrink:0; }
+.fav-btn:hover { color:var(--accent); background:var(--nav-item-hover); }
 .item-title { margin:0 0 4px; font-size:16px; font-weight:600; color:var(--text-primary); }
 .item-template { margin:0 0 4px; font-family:var(--font-family-mono); font-size:12px; color:var(--accent); }
 .item-desc-full { margin:0; font-size:13px; color:var(--text-secondary); }

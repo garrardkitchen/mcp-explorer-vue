@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useToast } from 'primevue/usetoast'
@@ -13,11 +13,15 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import Dialog from 'primevue/dialog'
 import Tooltip from 'primevue/tooltip'
 import ChatReportDialog from '@/components/chat/ChatReportDialog.vue'
+import SlashCommandMenu from '@/components/chat/SlashCommandMenu.vue'
+import type { SlashCommand } from '@/components/chat/SlashCommandMenu.vue'
 import { useChatStore } from '@/stores/chat'
 import { useConnectionsStore } from '@/stores/connections'
 import { llmModelsApi } from '@/api/llmModels'
+import { connectionsApi } from '@/api/connections'
 import { apiClient } from '@/api/client'
-import type { LlmModelDefinition } from '@/api/types'
+import { preferencesApi } from '@/api/preferences'
+import type { LlmModelDefinition, ActivePrompt, PromptArgument, SensitiveFieldConfiguration } from '@/api/types'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -44,6 +48,238 @@ const savingSystemPrompt = ref(false)
 const expandedParams = ref(new Set<string>())
 const revealedParams = ref(new Set<string>())
 
+// ── Slash command state ─────────────────────────────────────────────
+const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
+const slashVisible = ref(false)
+const slashQuery = ref('')
+
+// Prompt picker state
+const promptPickerVisible = ref(false)
+const promptPickerSearch = ref('')
+const promptPickerLoading = ref(false)
+const promptsByConnection = ref<Array<{ connectionName: string; prompts: ActivePrompt[] }>>([])
+const selectedPromptConnection = ref('')
+const selectedPromptName = ref('')
+const promptParams = ref<PromptArgument[]>([])
+const promptParamValues = ref<Record<string, string>>({})
+const promptPickerError = ref('')
+const promptPickerConfirming = ref(false)
+
+// Stats overlay state
+const statsVisible = ref(false)
+
+const sessionTokenStats = computed(() => {
+  const msgs = chatStore.messages.filter(m => m.tokenUsage)
+  const input = msgs.reduce((s, m) => s + (m.tokenUsage?.inputTokens ?? 0), 0)
+  const output = msgs.reduce((s, m) => s + (m.tokenUsage?.outputTokens ?? 0), 0)
+  return { input, output, total: input + output, turns: msgs.length }
+})
+
+const sessionToolCalls = computed(() => {
+  const calls = chatStore.messages.filter(m => m.role === 'system' && m.toolCallName)
+  // Aggregate by tool name + connection
+  const map = new Map<string, { toolName: string; connectionName?: string; count: number }>()
+  for (const m of calls) {
+    const key = `${m.connectionName ?? ''}::${m.toolCallName ?? ''}`
+    if (map.has(key)) {
+      map.get(key)!.count++
+    } else {
+      map.set(key, { toolName: m.toolCallName!, connectionName: m.connectionName, count: 1 })
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count)
+})
+
+// Model picker state (for /model)
+const modelPickerVisible = ref(false)
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  {
+    id: 'prompt', name: '/prompt', label: 'Prompt Picker',
+    description: 'Browse & inject an MCP prompt template from connected servers',
+    icon: '📋', group: 'MCP Prompts', groupIcon: '🔌',
+  },
+  {
+    id: 'stats', name: '/stats', label: 'Token Stats',
+    description: 'Show token usage: input / output / total for this session',
+    icon: '📈', group: 'Chat Controls', groupIcon: '📊',
+  },
+  {
+    id: 'report', name: '/report', label: 'Export Report',
+    description: 'Copy entire conversation as formatted Markdown to clipboard',
+    icon: '📄', group: 'Chat Controls', groupIcon: '📊',
+  },
+  {
+    id: 'system', name: '/system', label: 'System Prompt',
+    description: 'Open the system prompt editor for the active model',
+    icon: '⚙️', group: 'Chat Controls', groupIcon: '📊',
+  },
+  {
+    id: 'model', name: '/model', label: 'Switch Model',
+    description: 'Quick-switch the active AI model',
+    icon: '🤖', group: 'Chat Controls', groupIcon: '📊',
+  },
+  {
+    id: 'clear', name: '/clear', label: 'Clear Chat',
+    description: 'Clear all messages in the current session',
+    icon: '🗑️', group: 'Chat Controls', groupIcon: '📊',
+    isNew: true,
+  },
+]
+
+const slashCommands = computed<SlashCommand[]>(() => {
+  const cmds: SlashCommand[] = [...SLASH_COMMANDS]
+  // Inject last 3 user messages as /recent entries
+  const userMsgs = [...chatStore.messages]
+    .filter(m => m.role === 'user')
+    .reverse()
+    .slice(0, 3)
+  userMsgs.forEach((m, i) => {
+    const preview = m.content.length > 55 ? m.content.slice(0, 55) + '…' : m.content
+    cmds.unshift({
+      id: `recent${i + 1}`,
+      name: `/recent${i + 1}`,
+      label: `Recent ${i + 1}`,
+      description: preview,
+      icon: ['1️⃣', '2️⃣', '3️⃣'][i],
+      group: 'Recent Messages',
+      groupIcon: '🕐',
+    })
+  })
+  return cmds
+})
+
+watch(messageText, (val) => {
+  if (val.startsWith('/')) {
+    slashQuery.value = val.slice(1)
+    slashVisible.value = true
+  } else {
+    slashVisible.value = false
+    slashQuery.value = ''
+  }
+})
+
+async function executeSlashCommand(cmd: SlashCommand) {
+  slashVisible.value = false
+  messageText.value = ''
+  if (cmd.id === 'prompt') {
+    await openPromptPicker()
+  } else if (cmd.id.startsWith('recent')) {
+    const idx = parseInt(cmd.id.replace('recent', '')) - 1
+    const userMsgs = [...chatStore.messages].filter(m => m.role === 'user').reverse()
+    if (userMsgs[idx]) messageText.value = userMsgs[idx].content
+  } else if (cmd.id === 'stats') {
+    statsVisible.value = true
+  } else if (cmd.id === 'report') {
+    reportVisible.value = true
+  } else if (cmd.id === 'system') {
+    openSystemPrompt()
+  } else if (cmd.id === 'model') {
+    modelPickerVisible.value = true
+  } else if (cmd.id === 'clear') {
+    confirmClearChat()
+  }
+}
+
+function confirmClearChat() {
+  confirm.require({
+    message: 'Clear all messages in this session?',
+    header: 'Clear Chat',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Clear', severity: 'danger' },
+    accept: () => chatStore.clearMessages?.(),
+  })
+}
+
+// ── Prompt Picker ───────────────────────────────────────────────────
+async function openPromptPicker() {
+  promptPickerVisible.value = true
+  promptPickerSearch.value = ''
+  promptPickerError.value = ''
+  selectedPromptConnection.value = ''
+  selectedPromptName.value = ''
+  promptParams.value = []
+  promptParamValues.value = {}
+  promptPickerLoading.value = true
+  try {
+    const connected = connStore.activeConnections.filter(c => c.isConnected)
+    const results = await Promise.allSettled(
+      connected.map(async (c: { name: string }) => ({
+        connectionName: c.name,
+        prompts: await connectionsApi.getPrompts(c.name),
+      }))
+    )
+    promptsByConnection.value = results
+      .filter((r): r is PromiseFulfilledResult<{ connectionName: string; prompts: ActivePrompt[] }> => r.status === 'fulfilled')
+      .map((r: PromiseFulfilledResult<{ connectionName: string; prompts: ActivePrompt[] }>) => r.value)
+      .filter((r: { connectionName: string; prompts: ActivePrompt[] }) => r.prompts.length > 0)
+  } catch (e: any) {
+    promptPickerError.value = e.message
+  } finally {
+    promptPickerLoading.value = false
+  }
+}
+
+const filteredPromptGroups = computed(() => {
+  const q = promptPickerSearch.value.toLowerCase()
+  return promptsByConnection.value.map(g => ({
+    ...g,
+    prompts: g.prompts.filter(p =>
+      !q || p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
+    ),
+  })).filter(g => g.prompts.length > 0)
+})
+
+function selectPrompt(connectionName: string, promptName: string) {
+  selectedPromptConnection.value = connectionName
+  selectedPromptName.value = promptName
+  promptPickerError.value = ''
+  const group = promptsByConnection.value.find(g => g.connectionName === connectionName)
+  const prompt = group?.prompts.find(p => p.name === promptName)
+  promptParams.value = prompt?.arguments ?? []
+  promptParamValues.value = {}
+}
+
+const canConfirmPrompt = computed(() =>
+  !!selectedPromptConnection.value && !!selectedPromptName.value &&
+  promptParams.value.filter(p => p.required).every(p => !!promptParamValues.value[p.name])
+)
+
+async function confirmPrompt() {
+  if (!canConfirmPrompt.value) return
+  promptPickerConfirming.value = true
+  promptPickerError.value = ''
+  try {
+    const args: Record<string, string> = {}
+    for (const p of promptParams.value) {
+      if (promptParamValues.value[p.name]) args[p.name] = promptParamValues.value[p.name]
+    }
+    const result = await connectionsApi.executePrompt(
+      selectedPromptConnection.value, selectedPromptName.value, args
+    )
+    promptPickerVisible.value = false
+
+    // Ensure session exists
+    if (!chatStore.activeSessionId) await createSession()
+
+    // Send to AI — pass prompt metadata so user message is persisted with promptName/params
+    await chatStore.sendMessage(
+      result.result,
+      selectedModelName.value ?? undefined,
+      selectedConnectionNames.value,
+      selectedPromptName.value,
+      Object.keys(args).length ? args : undefined,
+    )
+    await nextTick()
+    scrollToBottom()
+  } catch (e: any) {
+    promptPickerError.value = `Failed to load prompt: ${e.message}`
+  } finally {
+    promptPickerConfirming.value = false
+  }
+}
+
 const allParamsExpanded = computed(() => {
   const toolCalls = chatStore.messages.filter(m => m.role.toLowerCase() === 'system' && m.toolCallParameters)
   return toolCalls.length > 0 && toolCalls.every(m => expandedParams.value.has(m.id))
@@ -59,15 +295,77 @@ function toggleAllParams() {
     : new Set(toolCalls.map(m => m.id))
 }
 
-// Sensitive property name patterns (same list as old Blazor ToolParameterProtectionService)
-const SENSITIVE_PATTERNS = /^(key|password|token|secret|auth|credential|api[_\-]?key|access[_\-]?token|client[_\-]?secret|private[_\-]?key|bearer|passphrase|pass|pwd|apikey|clientsecret|accesstoken)$/i
+// ── Sensitive data masking ─────────────────────────────────────────────────
+// Loaded from Data Guard page; merged with built-in patterns at runtime
+const sensitiveConfig = ref<SensitiveFieldConfiguration>({
+  additionalSensitiveFields: [],
+  allowedFields: [],
+  useAiDetection: false,
+  aiStrictness: 'Balanced',
+  showDetectionDebug: false,
+})
+
+// Built-in key name pattern (JSON tool params)
+const BUILTIN_KEY_TERMS = 'key|password|token|secret|auth|credential|api[_\\-]?key|access[_\\-]?token|client[_\\-]?secret|private[_\\-]?key|bearer|passphrase|pass|pwd|apikey|clientsecret|accesstoken'
+
+function buildKeyPattern(): RegExp {
+  const extra = sensitiveConfig.value.additionalSensitiveFields
+    .map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const src = extra ? `^(${BUILTIN_KEY_TERMS}|${extra})$` : `^(${BUILTIN_KEY_TERMS})$`
+  return new RegExp(src, 'i')
+}
+
+// Built-in free-text trigger words
+const BUILTIN_TEXT_TERMS = 'password|secret|token|api[_\\-]?key|credential|auth(?:orization)?|bearer|passphrase|pwd|pass|private[_\\-]?key|access[_\\-]?token|client[_\\-]?secret'
+
+function buildTextPattern(): RegExp {
+  const extra = sensitiveConfig.value.additionalSensitiveFields
+    .map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const src = extra
+    ? `\\b(${BUILTIN_TEXT_TERMS}|${extra})\\b\\s*(?:of\\s+|is\\s+|[:=]\\s*)([^\\s,;]+)`
+    : `\\b(${BUILTIN_TEXT_TERMS})\\b\\s*(?:of\\s+|is\\s+|[:=]\\s*)([^\\s,;]+)`
+  return new RegExp(src, 'gi')
+}
+
+function isAllowed(key: string): boolean {
+  return sensitiveConfig.value.allowedFields
+    .some(f => f.toLowerCase() === key.toLowerCase())
+}
+
+function hasSensitiveContent(text: string | undefined): boolean {
+  if (!text) return false
+  const pattern = buildTextPattern()
+  pattern.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(text)) !== null) {
+    if (!isAllowed(match[1])) return true
+  }
+  return false
+}
+
+function getMaskedContent(text: string, msgId: string): string {
+  if (!text) return ''
+  if (revealedParams.value.has(msgId)) return escapeHtml(text).replace(/\n/g, '<br />')
+  const pattern = buildTextPattern()
+  pattern.lastIndex = 0
+  const masked = text.replace(pattern, (_, keyword, _value) => {
+    if (isAllowed(keyword)) return _
+    return `${keyword} <SMASK>`
+  })
+  return escapeHtml(masked)
+    .replace(/&lt;SMASK&gt;/g, '<span class="sensitive-mask" title="Sensitive value hidden">████████</span>')
+    .replace(/\n/g, '<br />')
+}
 
 function hasSensitiveParams(params: string | undefined): boolean {
   if (!params) return false
   try {
     const obj = JSON.parse(params)
-    return typeof obj === 'object' && obj !== null &&
-      Object.keys(obj).some(k => SENSITIVE_PATTERNS.test(k))
+    if (typeof obj !== 'object' || obj === null) return false
+    const pattern = buildKeyPattern()
+    return Object.keys(obj).some(k => !isAllowed(k) && pattern.test(k))
   } catch { return false }
 }
 
@@ -77,10 +375,11 @@ function getMaskedParams(params: string, msgId: string): string {
     const obj = JSON.parse(params)
     const revealed = revealedParams.value.has(msgId)
     if (revealed || typeof obj !== 'object' || obj === null) return JSON.stringify(obj, null, 2)
+    const pattern = buildKeyPattern()
     const masked = Object.fromEntries(
       Object.entries(obj).map(([k, v]) => [
         k,
-        SENSITIVE_PATTERNS.test(k) && typeof v === 'string' ? '████████' : v
+        !isAllowed(k) && pattern.test(k) && typeof v === 'string' ? '████████' : v
       ])
     )
     return JSON.stringify(masked, null, 2)
@@ -116,6 +415,24 @@ function escapeHtml(t: string): string {
 // ── Message helpers ────────────────────────────────────────────────────
 function isToolCall(msg: { role: string; toolCallName?: string }) {
   return msg.role.toLowerCase() === 'system' && !!msg.toolCallName
+}
+
+function isPromptInvocation(msg: { role: string; promptName?: string | null }) {
+  return msg.role.toLowerCase() === 'user' && !!msg.promptName
+}
+
+// Parse the JSON-string prompt params into a key/value object for rendering
+function parsePromptParams(params: string | null | undefined): Record<string, string> {
+  if (!params) return {}
+  try { return JSON.parse(params) ?? {} } catch { return {} }
+}
+
+// Track which prompt invocation blocks have their content expanded
+const expandedPromptContent = ref<Set<string>>(new Set())
+function togglePromptContent(msgId: string) {
+  const s = new Set(expandedPromptContent.value)
+  if (s.has(msgId)) s.delete(msgId); else s.add(msgId)
+  expandedPromptContent.value = s
 }
 
 function getAvatar(role: string): string {
@@ -192,6 +509,13 @@ async function sendMessage() {
 }
 
 function onInputKeyDown(e: KeyboardEvent) {
+  if (slashVisible.value) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); slashMenuRef.value?.navigate(1) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); slashMenuRef.value?.navigate(-1) }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); slashMenuRef.value?.confirm() }
+    else if (e.key === 'Escape') { e.preventDefault(); slashVisible.value = false; messageText.value = '' }
+    return
+  }
   if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendMessage() }
 }
 
@@ -285,7 +609,21 @@ onMounted(async () => {
     const sel = await llmModelsApi.getSelected()
     selectedModelName.value = sel.selectedModelName
   } catch { /* ignore */ }
+  try {
+    sensitiveConfig.value = await preferencesApi.getSensitiveFields()
+  } catch { /* ignore — fall back to built-in patterns */ }
+  window.addEventListener('slash-command', onExternalSlashCommand)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('slash-command', onExternalSlashCommand)
+})
+
+function onExternalSlashCommand(e: Event) {
+  const cmd = (e as CustomEvent<string>).detail
+  messageText.value = cmd
+  // Slash watcher fires synchronously and sets slashVisible/slashQuery
+}
 
 watch(() => connStore.initialized, async (ready, wasReady) => {
   if (ready && !wasReady) {
@@ -387,12 +725,44 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 
           <template v-for="msg in chatStore.messages" :key="msg.id">
 
+            <!-- Prompt invocation block (Design A) -->
+            <div v-if="isPromptInvocation(msg)" class="prompt-block">
+              <div class="prompt-block-header">
+                <div class="prompt-avatar">📋</div>
+                <span class="prompt-label">Prompt:&nbsp;<strong>{{ msg.promptName }}</strong></span>
+                <span v-if="msg.connectionName" class="prompt-conn-badge">🔌 {{ msg.connectionName }}</span>
+                <span v-if="msg.modelName" class="model-badge prompt-model-badge">{{ msg.modelName }}</span>
+                <span class="prompt-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
+                <button
+                  class="params-toggle prompt-content-toggle"
+                  :title="expandedPromptContent.has(msg.id) ? 'Hide prompt content' : 'Show prompt content'"
+                  @click="togglePromptContent(msg.id)"
+                >
+                  <i :class="expandedPromptContent.has(msg.id) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" />
+                </button>
+              </div>
+              <div class="prompt-block-body">
+                <template v-if="Object.keys(parsePromptParams(msg.promptInvocationParams)).length">
+                  <div v-for="(val, key) in parsePromptParams(msg.promptInvocationParams)" :key="key" class="prompt-param">
+                    <span class="prompt-param-key">{{ key }}</span>
+                    <span class="prompt-param-val">{{ val }}</span>
+                  </div>
+                </template>
+                <span v-else class="prompt-no-params-hint">no parameters</span>
+                <span class="prompt-sent-hint">↳ sent to AI</span>
+              </div>
+              <div v-if="expandedPromptContent.has(msg.id)" class="prompt-content-expanded">
+                <pre class="prompt-content-pre">{{ msg.content }}</pre>
+              </div>
+            </div>
+
             <!-- Tool call message -->
-            <div v-if="isToolCall(msg)" class="tool-call-block">
+            <div v-else-if="isToolCall(msg)" class="tool-call-block">
               <div class="tool-call-header">
-                <span class="tool-icon">🔧</span>
+                <div class="avatar-circle tool-avatar-circle">🔧</div>
                 <span class="tool-label">Calling tool:&nbsp;<strong>{{ msg.toolCallName }}</strong></span>
                 <span v-if="msg.connectionName" class="conn-badge">🔌 {{ msg.connectionName }}</span>
+                <span v-if="msg.modelName" class="model-badge tool-model-badge">{{ msg.modelName }}</span>
                 <span class="tool-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                 <button
                   v-if="msg.toolCallParameters"
@@ -421,26 +791,33 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
                   <button class="copy-btn" @click="copyMessage(msg.content)" title="Copy message">
                     <i class="pi pi-copy" />
                   </button>
+                  <span v-if="msg.modelName" class="model-badge user-model-badge">{{ msg.modelName }}</span>
                   <span class="msg-time user-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                   <span class="msg-role-name">{{ getName(msg.role) }}</span>
-                  <span class="msg-avatar">{{ getAvatar(msg.role) }}</span>
+                  <div class="avatar-circle user-avatar-circle">👤</div>
                 </div>
-                <div class="message-content" v-html="escapeHtml(msg.content).replace(/\n/g, '<br />')" />
+                <div class="message-content" v-html="getMaskedContent(msg.content, msg.id)" />
+                <div v-if="hasSensitiveContent(msg.content)" class="sensitive-banner user-sensitive-banner">
+                  <span>🔒 Contains sensitive values</span>
+                  <button class="reveal-btn" @click="toggleReveal(msg.id)">
+                    {{ revealedParams.has(msg.id) ? '🙈 Hide values' : '👁 Reveal values' }}
+                  </button>
+                </div>
               </div>
             </div>
 
             <!-- Assistant message -->
             <div v-else-if="msg.role.toLowerCase() === 'assistant'" class="message-row assistant">
-              <span class="msg-avatar-left">🤖</span>
               <div class="message-bubble assistant-bubble">
                 <div class="message-header assistant-header">
+                  <div class="avatar-circle asst-avatar-circle">🤖</div>
                   <span class="msg-role-name">Assistant</span>
                   <span class="msg-time asst-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                   <span v-if="msg.thinkingMilliseconds != null" class="thinking-badge" title="Time to first token">
                     🤔 {{ formatThinking(msg.thinkingMilliseconds) }}
                   </span>
                   <span v-if="msg.tokenUsage" class="token-badge" title="Token usage">
-                    💰 in {{ msg.tokenUsage.inputTokens }} · out {{ msg.tokenUsage.outputTokens }}
+                    💰 {{ msg.tokenUsage.inputTokens }}↑ {{ msg.tokenUsage.outputTokens }}↓ {{ msg.tokenUsage.totalTokens }}
                   </span>
                   <span v-if="msg.modelName" class="model-badge">{{ msg.modelName }}</span>
                   <button class="copy-btn asst-copy" @click="copyMessage(msg.content)" title="Copy message">
@@ -455,9 +832,9 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 
           <!-- Streaming placeholder -->
           <div v-if="chatStore.streaming" class="message-row assistant">
-            <span class="msg-avatar-left">🤖</span>
             <div class="message-bubble assistant-bubble streaming">
               <div class="message-header assistant-header">
+                <div class="avatar-circle asst-avatar-circle">🤖</div>
                 <span class="msg-role-name">Assistant</span>
                 <span v-if="!chatStore.streamingContent" class="thinking-live">
                   🤔 {{ formatMs(chatStore.thinkingMs) }}
@@ -493,30 +870,40 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
             class="model-select"
           />
         </div>
-        <div class="input-row">
-          <Textarea
-            v-model="messageText"
-            placeholder="Type a message… (Ctrl+Enter to send)"
-            rows="3"
-            autoResize
-            class="message-input"
-            @keydown="onInputKeyDown"
+        <div class="input-row-wrap">
+          <SlashCommandMenu
+            ref="slashMenuRef"
+            :visible="slashVisible"
+            :query="slashQuery"
+            :commands="slashCommands"
+            @select="executeSlashCommand"
+            @dismiss="slashVisible = false; messageText = ''"
           />
-          <div class="input-btns">
-            <Button
-              v-if="chatStore.streaming"
-              icon="pi pi-stop-circle"
-              severity="danger"
-              v-tooltip="'Cancel'"
-              @click="chatStore.cancelStream()"
+          <div class="input-row">
+            <Textarea
+              v-model="messageText"
+              placeholder="Type a message or / for commands… (Ctrl+Enter to send)"
+              rows="3"
+              autoResize
+              class="message-input"
+              @keydown="onInputKeyDown"
             />
-            <Button
-              v-else
-              icon="pi pi-send"
-              :disabled="!messageText.trim() || !chatStore.activeSessionId"
-              @click="sendMessage"
-              v-tooltip="'Send (Ctrl+Enter)'"
-            />
+            <div class="input-btns">
+              <Button
+                v-if="chatStore.streaming"
+                icon="pi pi-stop-circle"
+                severity="danger"
+                v-tooltip="'Cancel'"
+                @click="chatStore.cancelStream()"
+              />
+              <Button
+                v-else
+                icon="pi pi-send"
+                :disabled="!messageText.trim() || !chatStore.activeSessionId"
+                @click="sendMessage"
+                v-tooltip="'Send (Ctrl+Enter)'"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -562,6 +949,177 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
       </template>
     </Dialog>
 
+    <!-- Token Stats Dialog -->
+    <Dialog v-model:visible="statsVisible" header="Session Analytics" modal :style="{ width: '480px' }" :pt="{ header: { class: 'stats-dialog-header' } }">
+      <!-- Hero banner -->
+      <div class="stats-hero">
+        <div class="stats-hero-glow" />
+        <div class="stats-hero-total">
+          <span class="stats-hero-number">{{ sessionTokenStats.total.toLocaleString() }}</span>
+          <span class="stats-hero-label">total tokens</span>
+        </div>
+        <div class="stats-hero-bar">
+          <div
+            class="stats-bar-input"
+            :style="{ width: sessionTokenStats.total ? (sessionTokenStats.input / sessionTokenStats.total * 100) + '%' : '50%' }"
+            v-tooltip.top="'Input: ' + sessionTokenStats.input.toLocaleString()"
+          />
+          <div
+            class="stats-bar-output"
+            :style="{ width: sessionTokenStats.total ? (sessionTokenStats.output / sessionTokenStats.total * 100) + '%' : '50%' }"
+            v-tooltip.top="'Output: ' + sessionTokenStats.output.toLocaleString()"
+          />
+        </div>
+        <div class="stats-hero-legend">
+          <span class="stats-legend-in">● Input</span>
+          <span class="stats-legend-out">● Output</span>
+        </div>
+      </div>
+
+      <!-- Metric cards -->
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="stat-icon">📥</div>
+          <div class="stat-value">{{ sessionTokenStats.input.toLocaleString() }}</div>
+          <div class="stat-label">Input tokens</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📤</div>
+          <div class="stat-value">{{ sessionTokenStats.output.toLocaleString() }}</div>
+          <div class="stat-label">Output tokens</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💬</div>
+          <div class="stat-value">{{ sessionTokenStats.turns }}</div>
+          <div class="stat-label">AI turns</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🔧</div>
+          <div class="stat-value">{{ sessionToolCalls.length }}</div>
+          <div class="stat-label">Unique tools</div>
+        </div>
+      </div>
+
+      <!-- Tool call breakdown -->
+      <template v-if="sessionToolCalls.length">
+        <div class="stats-section-title">🔧 Tools Called This Session</div>
+        <div class="stats-tools-list">
+          <div v-for="tc in sessionToolCalls" :key="tc.toolName + tc.connectionName" class="stats-tool-row">
+            <div class="stats-tool-icon">⚡</div>
+            <div class="stats-tool-info">
+              <span class="stats-tool-name">{{ tc.toolName }}</span>
+              <span v-if="tc.connectionName" class="stats-tool-conn">{{ tc.connectionName }}</span>
+            </div>
+            <div class="stats-tool-count">
+              <span class="stats-tool-badge">×{{ tc.count }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+      <div v-else class="stats-tools-empty">No tools called yet in this session</div>
+
+      <template #footer>
+        <Button label="Close" severity="secondary" @click="statsVisible = false" />
+      </template>
+    </Dialog>
+
+    <!-- Model Picker Dialog -->
+    <Dialog v-model:visible="modelPickerVisible" header="🤖 Switch Model" modal :style="{ width: '380px' }">
+      <div class="model-picker-list">
+        <div
+          v-for="m in llmModels"
+          :key="m.name"
+          class="model-picker-item"
+          :class="{ active: m.name === selectedModelName }"
+          @click="selectedModelName = m.name; modelPickerVisible = false"
+        >
+          <span class="model-picker-name">{{ m.name }}</span>
+          <span v-if="m.name === selectedModelName" class="model-active-badge">active</span>
+        </div>
+        <div v-if="!llmModels.length" class="model-picker-empty">No models configured</div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" @click="modelPickerVisible = false" />
+      </template>
+    </Dialog>
+
+    <!-- Prompt Picker Dialog -->
+    <Dialog
+      v-model:visible="promptPickerVisible"
+      header="📋 Prompt Picker"
+      modal
+      :style="{ width: '640px', maxHeight: '80vh' }"
+      :breakpoints="{ '768px': '95vw' }"
+    >
+      <div class="prompt-picker">
+        <div v-if="promptPickerLoading" class="prompt-picker-loading">
+          <i class="pi pi-spin pi-spinner" style="font-size:24px" />
+          <span>Loading prompts…</span>
+        </div>
+        <template v-else>
+          <div v-if="promptPickerError" class="prompt-picker-error">{{ promptPickerError }}</div>
+          <InputText
+            v-model="promptPickerSearch"
+            placeholder="Search prompts…"
+            class="w-full prompt-picker-search"
+          />
+          <div v-if="!filteredPromptGroups.length" class="prompt-picker-empty">
+            <i class="pi pi-inbox" />
+            <span>No prompts found. Make sure servers are connected and have prompts.</span>
+          </div>
+          <div v-else class="prompt-picker-cols">
+            <!-- Left: prompt browser -->
+            <div class="prompt-browser">
+              <div v-for="group in filteredPromptGroups" :key="group.connectionName" class="prompt-group">
+                <div class="prompt-group-header">🔌 {{ group.connectionName }}</div>
+                <div
+                  v-for="p in group.prompts"
+                  :key="p.name"
+                  class="prompt-item"
+                  :class="{ active: selectedPromptConnection === group.connectionName && selectedPromptName === p.name }"
+                  @click="selectPrompt(group.connectionName, p.name)"
+                >
+                  <div class="prompt-item-name">{{ p.name }}</div>
+                  <div v-if="p.description" class="prompt-item-desc">{{ p.description }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: parameter form -->
+            <div class="prompt-params-panel">
+              <template v-if="selectedPromptName">
+                <div class="params-title">Parameters for <strong>{{ selectedPromptName }}</strong></div>
+                <div v-if="!promptParams.length" class="params-none">No parameters required</div>
+                <div v-for="param in promptParams" :key="param.name" class="param-field">
+                  <label class="param-label">
+                    {{ param.name }}
+                    <span v-if="param.required" class="param-required">*</span>
+                  </label>
+                  <div v-if="param.description" class="param-hint">{{ param.description }}</div>
+                  <InputText
+                    v-model="promptParamValues[param.name]"
+                    :placeholder="param.required ? 'Required' : 'Optional'"
+                    class="w-full"
+                  />
+                </div>
+              </template>
+              <div v-else class="params-empty-hint">← Select a prompt</div>
+            </div>
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" outlined @click="promptPickerVisible = false" />
+        <Button
+          label="Run in Chat"
+          icon="pi pi-send"
+          :disabled="!canConfirmPrompt"
+          :loading="promptPickerConfirming"
+          @click="confirmPrompt"
+        />
+      </template>
+    </Dialog>
+
   </div>
 </template>
 
@@ -603,13 +1161,99 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .empty-chat h3 { margin:0; color:var(--text-primary); }
 .empty-chat p { margin:0; font-size:14px; }
 
+/* Prompt invocation block (Design A — violet) */
+.prompt-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(139,92,246,.4);
+  background: rgba(139,92,246,.05);
+  font-size: 12px;
+  transition: border-color .15s;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.prompt-block:hover { border-color: rgba(139,92,246,.6); }
+.prompt-block-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, rgba(139,92,246,.2), rgba(139,92,246,.08));
+  border-bottom: 1px solid rgba(139,92,246,.25);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  min-height: 38px;
+}
+.prompt-avatar {
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  background: rgba(139,92,246,.25); border: 1px solid rgba(139,92,246,.5);
+  display: flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.prompt-label { color: #a78bfa; font-weight: 600; flex: 1; min-width: 0; }
+.prompt-label strong { font-weight: 700; }
+.prompt-conn-badge {
+  background: rgba(139,92,246,.14); color: #c4b5fd;
+  border: 1px solid rgba(139,92,246,.4); padding: 1px 8px;
+  border-radius: 10px; font-size: 11px; font-weight: 500; white-space: nowrap;
+}
+.prompt-model-badge {
+  background: rgba(139,92,246,.12); color: #a78bfa;
+  border: 1px solid rgba(139,92,246,.35) !important;
+}
+.prompt-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.prompt-block-body {
+  padding: 8px 12px;
+  background: rgba(139,92,246,.04);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  flex-shrink: 0;
+  min-height: 32px;
+}
+.prompt-param {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(139,92,246,.1); border: 1px solid rgba(139,92,246,.25);
+  border-radius: 6px; padding: 3px 8px;
+}
+.prompt-param-key {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  color: #c4b5fd; font-weight: 600;
+}
+.prompt-param-val {
+  font-size: 12px; color: var(--text-primary);
+  font-family: var(--font-family-mono);
+  max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.prompt-no-params { padding: 6px 12px; }
+.prompt-no-params-hint {
+  font-size: 11px; color: rgba(167,139,250,.45); font-style: italic;
+}
+.prompt-sent-hint {
+  font-size: 11px; color: rgba(167,139,250,.6); margin-left: auto; white-space: nowrap;
+}
+.prompt-content-toggle {
+  background: rgba(139,92,246,.12);
+  border: 1px solid rgba(139,92,246,.3);
+  color: #a78bfa;
+}
+.prompt-content-toggle:hover { background: rgba(139,92,246,.22); }
+.prompt-content-expanded {
+  border-top: 1px solid rgba(139,92,246,.2);
+  background: rgba(139,92,246,.03);
+  padding: 10px 12px;
+}
+.prompt-content-pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-family-mono); font-size: 11.5px;
+  color: var(--text-secondary); line-height: 1.6;
+}
+
 /* Tool call block */
 .tool-call-block { background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); border-left:3px solid #f59e0b; border-radius:6px; padding:8px 12px; font-size:12px; align-self:stretch; }
-.tool-call-header { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.tool-icon { font-size:14px; flex-shrink:0; }
+.tool-call-header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .tool-label { color:#f59e0b; flex:1; min-width:0; }
 .tool-label strong { font-weight:700; }
 .conn-badge { background:rgba(20,184,166,.15); color:#14b8a6; border:1px solid rgba(20,184,166,.4); padding:1px 8px; border-radius:10px; font-size:11px; white-space:nowrap; font-weight:500; }
+.tool-model-badge { background:rgba(251,191,36,.12); color:#f59e0b; border-color:rgba(251,191,36,.35) !important; }
 .tool-time { color:var(--text-muted); font-size:11px; margin-left:auto; white-space:nowrap; }
 .params-toggle { background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3); color:var(--accent); cursor:pointer; border-radius:3px; padding:2px 5px; font-size:10px; flex-shrink:0; }
 .params-toggle:hover { background:rgba(56,189,248,.2); }
@@ -621,14 +1265,27 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .tool-params-pre { margin:8px 0 4px; background:var(--code-bg); border:1px solid var(--border); border-radius:4px; padding:8px 10px; font-family:var(--font-family-mono); font-size:11px; color:var(--text-primary); overflow-x:auto; white-space:pre; max-height:240px; overflow-y:auto; }
 .sensitive-banner { display:flex; align-items:center; gap:8px; padding:4px 8px; background:rgba(239,68,68,.07); border:1px solid rgba(239,68,68,.2); border-radius:4px; font-size:11px; color:rgba(239,68,68,.9); margin-top:2px; }
 .sensitive-banner span { flex:1; }
+.user-sensitive-banner { margin-top:6px; }
+.sensitive-mask { background:rgba(239,68,68,.15); color:rgba(239,68,68,.9); border-radius:3px; padding:0 3px; font-family:var(--font-family-mono); letter-spacing:.05em; font-size:.95em; }
 .reveal-btn { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); color:rgba(239,68,68,.9); border-radius:3px; padding:2px 8px; cursor:pointer; font-size:11px; white-space:nowrap; }
 .reveal-btn:hover { background:rgba(239,68,68,.2); }
+
+/* Overrides for sensitive elements inside the blue user bubble */
+.user-bubble .sensitive-mask { background:rgba(0,0,0,0.3); color:#fff; border-radius:3px; padding:1px 5px; }
+.user-bubble .sensitive-banner { background:rgba(0,0,0,0.2); border-color:rgba(255,255,255,0.3); color:rgba(255,255,255,0.9); }
+.user-bubble .reveal-btn { background:rgba(0,0,0,0.15); border-color:rgba(255,255,255,0.35); color:rgba(255,255,255,0.9); }
+.user-bubble .reveal-btn:hover { background:rgba(0,0,0,0.3); }
+
+/* Avatar circles */
+.avatar-circle { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+.user-avatar-circle { background:rgba(255,255,255,.18); }
+.asst-avatar-circle { background:var(--bg-raised); border:1px solid var(--border); }
+.tool-avatar-circle { background:rgba(251,191,36,.18); border:1px solid rgba(251,191,36,.35); font-size:13px; width:26px; height:26px; }
 
 /* Message rows */
 .message-row { display:flex; gap:8px; align-items:flex-start; }
 .message-row.user { justify-content:flex-end; }
 .message-row.assistant { justify-content:flex-start; }
-.msg-avatar-left { font-size:20px; flex-shrink:0; margin-top:6px; }
 .message-bubble { max-width:76%; min-width:80px; border-radius:10px; padding:10px 14px; }
 .user-bubble { background:var(--accent); color:#fff; border-radius:10px 10px 4px 10px; }
 .assistant-bubble { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px 10px 10px 4px; color:var(--text-primary); }
@@ -642,12 +1299,12 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .msg-role-name { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
 .user-bubble .msg-role-name { color:rgba(255,255,255,.7); }
 .assistant-bubble .msg-role-name { color:var(--accent); }
-.msg-avatar { font-size:16px; }
 .user-time { color:rgba(255,255,255,.55); font-size:11px; }
 .asst-time { color:var(--text-muted); font-size:11px; }
 .thinking-badge { font-size:11px; color:gold; background:rgba(255,215,0,.1); padding:1px 6px; border-radius:3px; white-space:nowrap; }
-.token-badge { font-size:11px; color:gold; background:rgba(255,215,0,.1); padding:1px 6px; border-radius:3px; font-family:var(--font-family-mono); white-space:nowrap; }
-.model-badge { font-size:11px; background:var(--bg-raised); color:var(--text-muted); padding:1px 5px; border-radius:3px; white-space:nowrap; }
+.token-badge { font-size:11px; color:#a3e635; background:rgba(163,230,53,.1); border:1px solid rgba(163,230,53,.25); padding:1px 7px; border-radius:3px; font-family:var(--font-family-mono); white-space:nowrap; letter-spacing:-.01em; }
+.model-badge { font-size:11px; background:var(--bg-raised); color:var(--text-muted); border:1px solid var(--border); padding:1px 6px; border-radius:3px; white-space:nowrap; }
+.user-model-badge { background:rgba(255,255,255,.12); color:rgba(255,255,255,.65); border-color:rgba(255,255,255,.2); }
 .thinking-live { font-size:11px; color:gold; margin-left:auto; }
 .copy-btn { background:none; border:none; cursor:pointer; padding:2px 4px; border-radius:3px; font-size:11px; opacity:.45; transition:opacity .15s; color:rgba(255,255,255,.8); }
 .asst-copy { color:var(--text-muted); margin-left:auto; }
@@ -666,10 +1323,73 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .input-controls { display:flex; gap:8px; }
 .conn-select { flex:1; }
 .model-select { width:200px; }
+.input-row-wrap { position:relative; }
 .input-row { display:flex; gap:8px; align-items:flex-end; }
 .message-input { flex:1; resize:none; }
 .input-btns { display:flex; flex-direction:column; gap:4px; }
 .w-full { width:100%; }
+
+/* Stats dialog — hero + cards */
+.stats-hero { position:relative; background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--bg-raised)), var(--bg-raised)); border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius:12px; padding:20px; margin-bottom:16px; text-align:center; overflow:hidden; }
+.stats-hero-glow { position:absolute; top:-40px; left:50%; transform:translateX(-50%); width:200px; height:200px; background:radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent), transparent 70%); pointer-events:none; }
+.stats-hero-number { display:block; font-size:42px; font-weight:800; font-family:var(--font-family-mono); color:var(--text-primary); line-height:1.1; letter-spacing:-.02em; }
+.stats-hero-label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-muted); margin-top:2px; }
+.stats-hero-total { position:relative; }
+.stats-hero-bar { display:flex; height:6px; border-radius:3px; overflow:hidden; background:var(--bg-overlay); margin:14px 0 6px; }
+.stats-bar-input { background:var(--accent); transition:width .6s cubic-bezier(.4,0,.2,1); }
+.stats-bar-output { background:color-mix(in srgb, var(--accent) 50%, #a3e635); transition:width .6s cubic-bezier(.4,0,.2,1); }
+.stats-hero-legend { display:flex; justify-content:center; gap:16px; font-size:11px; }
+.stats-legend-in { color:var(--accent); }
+.stats-legend-out { color:color-mix(in srgb, var(--accent) 50%, #a3e635); }
+.stats-cards { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-bottom:16px; }
+.stat-card { background:var(--bg-raised); border:1px solid var(--border); border-radius:10px; padding:12px 8px; text-align:center; transition:border-color .15s; }
+.stat-card:hover { border-color:var(--accent); }
+.stat-icon { font-size:18px; margin-bottom:4px; }
+.stat-value { font-size:20px; font-weight:700; color:var(--text-primary); font-family:var(--font-family-mono); }
+.stat-label { font-size:11px; color:var(--text-muted); margin-top:2px; white-space:nowrap; }
+.stats-section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:8px; }
+.stats-tools-list { display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; }
+.stats-tool-row { display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--bg-raised); border:1px solid var(--border); border-radius:7px; transition:border-color .15s; }
+.stats-tool-row:hover { border-color:rgba(251,191,36,.4); }
+.stats-tool-icon { font-size:14px; flex-shrink:0; }
+.stats-tool-info { flex:1; min-width:0; }
+.stats-tool-name { font-size:13px; font-weight:600; color:var(--text-primary); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stats-tool-conn { font-size:11px; color:var(--text-muted); }
+.stats-tool-count { flex-shrink:0; }
+.stats-tool-badge { background:rgba(251,191,36,.15); color:#f59e0b; border:1px solid rgba(251,191,36,.35); padding:2px 8px; border-radius:10px; font-size:12px; font-weight:700; font-family:var(--font-family-mono); }
+.stats-tools-empty { font-size:13px; color:var(--text-muted); text-align:center; padding:16px; background:var(--bg-raised); border-radius:8px; }
+
+/* Model picker */
+.model-picker-list { display:flex; flex-direction:column; gap:4px; max-height:320px; overflow-y:auto; }
+.model-picker-item { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-radius:6px; cursor:pointer; border:1px solid transparent; transition:var(--transition-fast); }
+.model-picker-item:hover { background:var(--nav-item-hover); border-color:var(--border); }
+.model-picker-item.active { background:color-mix(in srgb, var(--accent) 12%, transparent); border-color:var(--accent); }
+.model-picker-name { font-size:14px; color:var(--text-primary); }
+.model-active-badge { font-size:11px; background:var(--accent); color:#fff; padding:1px 7px; border-radius:8px; }
+.model-picker-empty { text-align:center; padding:24px; color:var(--text-muted); }
+
+/* Prompt picker dialog */
+.prompt-picker { display:flex; flex-direction:column; gap:12px; }
+.prompt-picker-loading { display:flex; flex-direction:column; align-items:center; gap:12px; padding:40px; color:var(--text-muted); }
+.prompt-picker-error { color:var(--danger); font-size:13px; padding:8px 12px; background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.25); border-radius:4px; }
+.prompt-picker-search { font-size:13px; }
+.prompt-picker-empty { display:flex; align-items:center; gap:8px; padding:24px; color:var(--text-muted); justify-content:center; }
+.prompt-picker-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; max-height:360px; }
+.prompt-browser { overflow-y:auto; display:flex; flex-direction:column; gap:6px; border:1px solid var(--border); border-radius:6px; padding:8px; }
+.prompt-group-header { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); padding:4px 6px 2px; }
+.prompt-item { padding:7px 10px; border-radius:5px; cursor:pointer; border:1px solid transparent; transition:var(--transition-fast); }
+.prompt-item:hover { background:var(--nav-item-hover); border-color:var(--border); }
+.prompt-item.active { background:color-mix(in srgb, var(--accent) 12%, transparent); border-color:var(--accent); }
+.prompt-item-name { font-size:13px; font-weight:500; color:var(--text-primary); }
+.prompt-item-desc { font-size:11px; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.prompt-params-panel { overflow-y:auto; display:flex; flex-direction:column; gap:10px; border:1px solid var(--border); border-radius:6px; padding:12px; }
+.params-title { font-size:12px; font-weight:600; color:var(--text-muted); }
+.params-none { font-size:13px; color:var(--text-muted); text-align:center; padding:12px; }
+.params-empty-hint { font-size:13px; color:var(--text-muted); text-align:center; padding:24px; }
+.param-field { display:flex; flex-direction:column; gap:4px; }
+.param-label { font-size:12px; font-weight:600; color:var(--text-primary); }
+.param-required { color:var(--danger); margin-left:2px; }
+.param-hint { font-size:11px; color:var(--text-muted); }
 </style>
 
 <style>

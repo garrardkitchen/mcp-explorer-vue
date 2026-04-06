@@ -191,6 +191,10 @@ public sealed class AiChatService : IAiChatService
 
         foreach (var m in history)
         {
+            // Skip tool-call tracking messages — they are UI artifacts, not conversation context.
+            if (m.Role.Equals("System", StringComparison.OrdinalIgnoreCase) && m.ToolCallName is not null)
+                continue;
+
             var role = m.Role.ToLowerInvariant() switch
             {
                 "assistant" => ChatRole.Assistant,

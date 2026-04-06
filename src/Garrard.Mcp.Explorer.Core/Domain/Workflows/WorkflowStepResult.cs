@@ -1,12 +1,27 @@
+using System.Text.Json.Serialization;
+
 namespace Garrard.Mcp.Explorer.Core.Domain.Workflows;
 
-public sealed class WorkflowStepResult
+[JsonConverter(typeof(WorkflowStepResultJsonConverter))]
+public sealed record WorkflowStepResult
 {
-    public int StepNumber { get; set; }
-    public string ToolName { get; set; } = string.Empty;
-    public DateTime StartedUtc { get; set; }
-    public DateTime? CompletedUtc { get; set; }
-    public bool Success { get; set; }
-    public object? Result { get; set; }
-    public string? ErrorMessage { get; set; }
+    public int StepNumber { get; init; }
+    public string ToolName { get; init; } = string.Empty;
+    public StepExecutionStatus Status { get; init; } = StepExecutionStatus.Pending;
+    public DateTime? StartedUtc { get; init; }
+    public DateTime? CompletedUtc { get; init; }
+    public TimeSpan Duration => CompletedUtc.HasValue && StartedUtc.HasValue
+        ? CompletedUtc.Value - StartedUtc.Value
+        : TimeSpan.Zero;
+    public string? InputJson { get; init; }
+    public string? OutputJson { get; init; }
+    public string? ErrorMessage { get; init; }
+
+    // Derived — not serialised, computed from Status
+    [JsonIgnore]
+    public bool Success => Status == StepExecutionStatus.Completed;
+
+    // Runtime only — not persisted
+    [JsonIgnore]
+    public object? Result { get; init; }
 }

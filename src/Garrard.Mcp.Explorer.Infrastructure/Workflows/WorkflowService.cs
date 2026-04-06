@@ -6,6 +6,7 @@ using Garrard.Mcp.Explorer.Core.Domain.Workflows;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Garrard.Mcp.Explorer.Infrastructure.Mcp;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
 
 namespace Garrard.Mcp.Explorer.Infrastructure.Workflows;
 
@@ -202,6 +203,7 @@ public sealed class WorkflowService : IWorkflowService
         int durationSeconds,
         int maxParallelExecutions,
         Dictionary<string, string>? runtimeParameters = null,
+        Action<LoadTestProgress>? progressCallback = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workflowId);
@@ -210,8 +212,9 @@ public sealed class WorkflowService : IWorkflowService
         var started = DateTime.UtcNow;
         var endTime = started.AddSeconds(durationSeconds);
 
-        int totalRequests = 0, successful = 0, failed = 0;
+        int totalRequests = 0, successful = 0, failed = 0, active = 0;
         var durations = new System.Collections.Concurrent.ConcurrentBag<double>();
+        var snapshots = new System.Collections.Concurrent.ConcurrentBag<LoadTestSnapshot>();
 
         using var durationCts = new CancellationTokenSource(TimeSpan.FromSeconds(durationSeconds));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, durationCts.Token);
@@ -219,11 +222,40 @@ public sealed class WorkflowService : IWorkflowService
         var semaphore = new SemaphoreSlim(maxParallelExecutions);
         var tasks = new List<Task>();
 
+        // Snapshot timer — fires every second
+        var snapshotTimer = progressCallback is not null ? Task.Run(async () =>
+        {
+            while (!linked.Token.IsCancellationRequested)
+            {
+                await Task.Delay(1000, linked.Token).ConfigureAwait(false);
+                var elapsed = (DateTime.UtcNow - started).TotalMilliseconds;
+                var pct = Math.Min(100.0, elapsed / (durationSeconds * 1000.0) * 100.0);
+                var snap = new LoadTestSnapshot
+                {
+                    ElapsedMs = elapsed,
+                    CumulativeSuccesses = Volatile.Read(ref successful),
+                    CumulativeFailures = Volatile.Read(ref failed),
+                    ActiveExecutions = Volatile.Read(ref active)
+                };
+                snapshots.Add(snap);
+                progressCallback(new LoadTestProgress
+                {
+                    IsComplete = false,
+                    PercentComplete = pct,
+                    TotalExecutions = Volatile.Read(ref totalRequests),
+                    SuccessfulExecutions = Volatile.Read(ref successful),
+                    FailedExecutions = Volatile.Read(ref failed),
+                    ActiveExecutions = Volatile.Read(ref active)
+                });
+            }
+        }, CancellationToken.None) : Task.CompletedTask;
+
         while (!linked.Token.IsCancellationRequested && DateTime.UtcNow < endTime)
         {
             await semaphore.WaitAsync(linked.Token).ConfigureAwait(false);
 
             Interlocked.Increment(ref totalRequests);
+            Interlocked.Increment(ref active);
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             var t = Task.Run(async () =>
@@ -241,6 +273,7 @@ public sealed class WorkflowService : IWorkflowService
                 }
                 finally
                 {
+                    Interlocked.Decrement(ref active);
                     semaphore.Release();
                 }
             }, linked.Token);
@@ -251,26 +284,34 @@ public sealed class WorkflowService : IWorkflowService
         try { await Task.WhenAll(tasks).ConfigureAwait(false); } catch { /* ignore */ }
 
         var completed = DateTime.UtcNow;
-        var elapsed = (completed - started).TotalSeconds;
+        var elapsed2 = (completed - started).TotalSeconds;
         var sortedDurations = durations.OrderBy(d => d).ToList();
 
         double Percentile(double p) => sortedDurations.Count == 0 ? 0 :
             sortedDurations[Math.Min(sortedDurations.Count - 1, (int)(sortedDurations.Count * p / 100.0))];
 
+        var workflow = await GetByIdAsync(workflowId, cancellationToken).ConfigureAwait(false);
+        var workflowName = workflow?.Name ?? workflowId;
+
         return new LoadTestResult
         {
             WorkflowId = workflowId,
+            WorkflowName = workflowName,
+            ConnectionName = connectionName,
+            DurationSeconds = durationSeconds,
+            MaxParallelExecutions = maxParallelExecutions,
             StartedUtc = started,
             CompletedUtc = completed,
             TotalRequests = totalRequests,
             SuccessfulRequests = successful,
             FailedRequests = failed,
-            RequestsPerSecond = elapsed > 0 ? totalRequests / elapsed : 0,
+            RequestsPerSecond = elapsed2 > 0 ? totalRequests / elapsed2 : 0,
             AverageResponseMs = sortedDurations.Count > 0 ? sortedDurations.Average() : 0,
             P50ResponseMs = Percentile(50),
             P90ResponseMs = Percentile(90),
             P99ResponseMs = Percentile(99),
-            ErrorRate = totalRequests > 0 ? (double)failed / totalRequests : 0
+            ErrorRate = totalRequests > 0 ? (double)failed / totalRequests : 0,
+            Snapshots = snapshots.OrderBy(s => s.ElapsedMs).ToList()
         };
     }
 
@@ -285,7 +326,9 @@ public sealed class WorkflowService : IWorkflowService
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         try
         {
-            var w = JsonSerializer.Deserialize<WorkflowDefinition>(json);
+            // PropertyNameCaseInsensitive handles both PascalCase (exported files) and camelCase (settings.json)
+            var opts = new JsonSerializerOptions(JsonOpts) { PropertyNameCaseInsensitive = true };
+            var w = JsonSerializer.Deserialize<WorkflowDefinition>(json, opts);
             if (w is not null)
                 w = w with { Id = Guid.NewGuid().ToString(), CreatedUtc = DateTime.UtcNow, ModifiedUtc = DateTime.UtcNow };
             return w;
@@ -322,16 +365,122 @@ public sealed class WorkflowService : IWorkflowService
         Dictionary<string, string>? runtimeParameters,
         CancellationToken ct)
     {
-        var result = new WorkflowStepResult
-        {
-            StepNumber = step.StepNumber,
-            ToolName = step.ToolName,
-            StartedUtc = DateTime.UtcNow
-        };
+        // Dispatch to iteration handler if any mapping requests array iteration
+        var iterationMapping = step.ParameterMappings.FirstOrDefault(m =>
+            m.SourceType == MappingSourceType.FromPreviousStep &&
+            m.IterationMode != ArrayIterationMode.None);
 
+        if (iterationMapping is not null)
+        {
+            return await ExecuteStepWithIterationAsync(step, ctx, previousResults, runtimeParameters, iterationMapping, ct)
+                .ConfigureAwait(false);
+        }
+
+        return await ExecuteSingleToolCallAsync(step, ctx, previousResults, runtimeParameters, null, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<WorkflowStepResult> ExecuteStepWithIterationAsync(
+        WorkflowStep step,
+        ConnectionContext ctx,
+        List<WorkflowStepResult> previousResults,
+        Dictionary<string, string>? runtimeParameters,
+        ParameterMapping iterationMapping,
+        CancellationToken ct)
+    {
+        var startedUtc = DateTime.UtcNow;
         try
         {
-            var parameters = BuildParameters(step, previousResults, runtimeParameters);
+            var sourceStepIndex = iterationMapping.SourceStepIndex ?? (previousResults.Count - 1);
+            if (previousResults.Count == 0 || sourceStepIndex < 0 || sourceStepIndex >= previousResults.Count)
+                throw new InvalidOperationException(
+                    $"Cannot iterate: source step index {sourceStepIndex} is invalid. " +
+                    "The first workflow step cannot use array iteration because there are no previous step results.");
+
+
+            var sourceResult = previousResults[sourceStepIndex];
+            var parsedOutput = TryParseJson(sourceResult.OutputJson);
+            if (parsedOutput is null)
+                throw new InvalidOperationException($"Source step {sourceStepIndex} has no parseable output.");
+
+            var arrayElements = ExtractArrayElementsForIteration(parsedOutput, iterationMapping.SourcePropertyPath, iterationMapping.IterationMode);
+            if (arrayElements is null || arrayElements.Count == 0)
+            {
+                _logger.LogWarning("No array elements found for iteration in step {N}", step.StepNumber);
+                return new WorkflowStepResult
+                {
+                    StepNumber = step.StepNumber,
+                    ToolName = step.ToolName,
+                    Status = StepExecutionStatus.Completed,
+                    StartedUtc = startedUtc,
+                    CompletedUtc = DateTime.UtcNow,
+                    OutputJson = "[]"
+                };
+            }
+
+            var iterationResults = new List<JsonNode>();
+            var allInputs = new List<string>();
+
+            foreach (var element in arrayElements)
+            {
+                var overrides = new Dictionary<ParameterMapping, object> { { iterationMapping, element } };
+                var iterResult = await ExecuteSingleToolCallAsync(step, ctx, previousResults, runtimeParameters, overrides, ct)
+                    .ConfigureAwait(false);
+
+                if (!iterResult.Success)
+                    return iterResult;
+
+                var parsed = TryParseJson(iterResult.OutputJson);
+                if (parsed is not null) iterationResults.Add(parsed);
+                if (iterResult.InputJson is not null) allInputs.Add(iterResult.InputJson);
+            }
+
+            var combinedArray = new JsonArray(iterationResults
+                .Select(n => (JsonNode?)n.DeepClone())
+                .ToArray());
+            var combinedJson = combinedArray.ToJsonString(JsonOpts);
+
+            _logger.LogInformation("Step {N} ({Tool}) completed {Count} iterations", step.StepNumber, step.ToolName, arrayElements.Count);
+            return new WorkflowStepResult
+            {
+                StepNumber = step.StepNumber,
+                ToolName = step.ToolName,
+                Status = StepExecutionStatus.Completed,
+                StartedUtc = startedUtc,
+                CompletedUtc = DateTime.UtcNow,
+                InputJson = allInputs.Count > 0 ? $"[{string.Join(",", allInputs)}]" : null,
+                OutputJson = combinedJson,
+                Result = combinedArray
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Step {N} ({Tool}) iteration failed", step.StepNumber, step.ToolName);
+            return new WorkflowStepResult
+            {
+                StepNumber = step.StepNumber,
+                ToolName = step.ToolName,
+                Status = StepExecutionStatus.Failed,
+                StartedUtc = startedUtc,
+                CompletedUtc = DateTime.UtcNow,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    private async Task<WorkflowStepResult> ExecuteSingleToolCallAsync(
+        WorkflowStep step,
+        ConnectionContext ctx,
+        List<WorkflowStepResult> previousResults,
+        Dictionary<string, string>? runtimeParameters,
+        Dictionary<ParameterMapping, object>? iterationOverrides,
+        CancellationToken ct)
+    {
+        var startedUtc = DateTime.UtcNow;
+        try
+        {
+            var parameters = BuildParameters(step, previousResults, runtimeParameters, iterationOverrides);
+            var inputJson = JsonSerializer.Serialize(parameters, JsonOpts);
 
             var toolResult = await ctx.Client.CallToolAsync(
                 step.ToolName,
@@ -339,88 +488,287 @@ public sealed class WorkflowService : IWorkflowService
                 cancellationToken: ct)
                 .ConfigureAwait(false);
 
-            var json = JsonSerializer.Serialize(toolResult.Content, JsonOpts);
-            result.Success = true;
-            result.Result = JsonNode.Parse(json) ?? json;
-            result.CompletedUtc = DateTime.UtcNow;
+            var outputJson = ConvertToolResultToJson(toolResult);
+            var parsedNode = TryParseJson(outputJson);
 
             _logger.LogInformation("Step {N} ({Tool}) succeeded", step.StepNumber, step.ToolName);
+            return new WorkflowStepResult
+            {
+                StepNumber = step.StepNumber,
+                ToolName = step.ToolName,
+                Status = StepExecutionStatus.Completed,
+                StartedUtc = startedUtc,
+                CompletedUtc = DateTime.UtcNow,
+                InputJson = inputJson,
+                OutputJson = outputJson,
+                Result = parsedNode ?? (object)outputJson
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Step {N} ({Tool}) failed", step.StepNumber, step.ToolName);
-            result.Success = false;
-            result.ErrorMessage = ex.Message;
-            result.CompletedUtc = DateTime.UtcNow;
+            return new WorkflowStepResult
+            {
+                StepNumber = step.StepNumber,
+                ToolName = step.ToolName,
+                Status = StepExecutionStatus.Failed,
+                StartedUtc = startedUtc,
+                CompletedUtc = DateTime.UtcNow,
+                ErrorMessage = ex.Message
+            };
         }
-
-        return result;
     }
 
-    private static Dictionary<string, object> BuildParameters(
+    private Dictionary<string, object> BuildParameters(
         WorkflowStep step,
         List<WorkflowStepResult> previousResults,
-        Dictionary<string, string>? runtimeParameters)
+        Dictionary<string, string>? runtimeParameters,
+        Dictionary<ParameterMapping, object>? iterationOverrides = null)
     {
         var parameters = new Dictionary<string, object>();
 
         foreach (var mapping in step.ParameterMappings)
         {
+            if (string.IsNullOrWhiteSpace(mapping.TargetParameter)) continue;
+
             object? value = null;
 
-            if (!string.IsNullOrEmpty(mapping.Value))
+            // Iteration overrides take priority (set per-element during Each iteration)
+            if (iterationOverrides?.TryGetValue(mapping, out var ov) == true)
             {
-                // Static / runtime value
-                if (runtimeParameters?.TryGetValue(mapping.ParameterName, out var rv) == true)
-                    value = rv;
-                else
-                    value = mapping.Value;
+                value = ov;
             }
-            else if (mapping.SourceStepNumber.HasValue)
+            else
             {
-                // Extract from previous step result
-                var stepIdx = mapping.SourceStepNumber.Value - 1;
-                if (stepIdx >= 0 && stepIdx < previousResults.Count)
+                switch (mapping.SourceType)
                 {
-                    var prev = previousResults[stepIdx];
-                    value = ExtractProperty(prev.Result, mapping.SourcePropertyName);
+                    case MappingSourceType.FromPreviousStep:
+                        value = ExtractValueFromPreviousStep(mapping, previousResults);
+                        break;
+
+                    case MappingSourceType.ManualValue:
+                        value = mapping.ManualValue;
+                        break;
+
+                    case MappingSourceType.PromptAtRuntime:
+                        if (runtimeParameters?.TryGetValue(mapping.TargetParameter, out var rv) == true)
+                            value = rv;
+                        break;
                 }
             }
 
             if (value is not null)
-                parameters[mapping.ParameterName] = value;
+                parameters[mapping.TargetParameter] = value;
         }
 
         return parameters;
     }
 
-    private static object? ExtractProperty(object? result, string? propertyName)
+    private object? ExtractValueFromPreviousStep(ParameterMapping mapping, List<WorkflowStepResult> previousResults)
     {
-        if (result is null) return null;
-        if (string.IsNullOrWhiteSpace(propertyName)) return result?.ToString();
+        var sourceStepIndex = mapping.SourceStepIndex ?? (previousResults.Count - 1);
 
+        if (sourceStepIndex < 0 || sourceStepIndex >= previousResults.Count)
+        {
+            _logger.LogWarning("Invalid source step index {SourceStepIndex}", sourceStepIndex);
+            return null;
+        }
+
+        var sourceResult = previousResults[sourceStepIndex];
+        var parsedOutput = sourceResult.Result as JsonNode ?? TryParseJson(sourceResult.OutputJson);
+
+        if (parsedOutput is null)
+        {
+            _logger.LogWarning("Source step {StepIndex} has no parseable output", sourceStepIndex);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(mapping.SourcePropertyPath))
+            return sourceResult.OutputJson;
+
+        return ExtractJsonPathValue(parsedOutput, mapping.SourcePropertyPath);
+    }
+
+    private object? ExtractJsonPathValue(JsonNode node, string path)
+    {
         try
         {
-            var node = result is JsonNode jn ? jn : JsonNode.Parse(result.ToString() ?? "null");
-            if (node is null) return null;
-
-            var parts = propertyName.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            var parts = ParseJsonPath(path);
             JsonNode? current = node;
+
             foreach (var part in parts)
             {
-                if (current is JsonObject obj && obj.TryGetPropertyValue(part, out var next))
+                if (current is null) return null;
+
+                if (part.IsArrayIndex)
+                {
+                    if (current is JsonArray arr && part.ArrayIndex >= 0 && part.ArrayIndex < arr.Count)
+                        current = arr[part.ArrayIndex];
+                    else
+                        return null;
+                }
+                else
+                {
+                    if (current is JsonObject obj && obj.TryGetPropertyValue(part.PropertyName!, out var next))
+                        current = next;
+                    else
+                        return null;
+                }
+            }
+
+            return ConvertJsonNodeToValue(current);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to extract JSON path {Path}", path);
+            return null;
+        }
+    }
+
+    private static List<JsonPathPart> ParseJsonPath(string path)
+    {
+        var parts = new List<JsonPathPart>();
+        foreach (var segment in path.Split('.'))
+        {
+            var bracketIdx = segment.IndexOf('[');
+            if (bracketIdx >= 0)
+            {
+                var closeIdx = segment.IndexOf(']');
+                if (closeIdx > bracketIdx)
+                {
+                    if (bracketIdx > 0)
+                        parts.Add(new JsonPathPart { PropertyName = segment[..bracketIdx] });
+
+                    var indexStr = segment[(bracketIdx + 1)..closeIdx];
+                    if (string.IsNullOrEmpty(indexStr))
+                        // Empty brackets [] = array iteration marker
+                        parts.Add(new JsonPathPart { IsArrayIndex = true, IsIterationMarker = true });
+                    else if (int.TryParse(indexStr, out var idx))
+                        parts.Add(new JsonPathPart { IsArrayIndex = true, ArrayIndex = idx });
+                }
+            }
+            else if (!string.IsNullOrEmpty(segment))
+            {
+                parts.Add(new JsonPathPart { PropertyName = segment });
+            }
+        }
+        return parts;
+    }
+
+    private List<object>? ExtractArrayElementsForIteration(JsonNode node, string? path, ArrayIterationMode iterationMode)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                // No path — iterate the root if it's an array
+                if (node is JsonArray rootArray)
+                    return ApplyIterationModeFilter(rootArray.Where(x => x is not null).Select(x => ConvertJsonNodeToValue(x)!).Where(x => x is not null).ToList(), iterationMode);
+                return null;
+            }
+
+            var pathParts = ParseJsonPath(path);
+            var firstArrayIdx = pathParts.FindIndex(p => p.IsArrayIndex);
+            if (firstArrayIdx < 0)
+            {
+                _logger.LogWarning("Path {Path} contains no array indexing for iteration", path);
+                return null;
+            }
+
+            // Navigate to the array
+            JsonNode? current = node;
+            for (int i = 0; i < firstArrayIdx; i++)
+            {
+                var part = pathParts[i];
+                if (current is JsonObject obj && obj.TryGetPropertyValue(part.PropertyName!, out var next))
                     current = next;
                 else
                     return null;
             }
 
-            return current is JsonValue v ? v.ToString() : current?.ToJsonString();
+            if (current is not JsonArray array)
+            {
+                _logger.LogWarning("Expected array at path position but found {Type}", current?.GetType().Name ?? "null");
+                return null;
+            }
+
+            var partsAfter = pathParts.Skip(firstArrayIdx + 1).ToList();
+            var elements = new List<object>();
+
+            foreach (var elem in array)
+            {
+                if (elem is null) continue;
+                object? val = partsAfter.Count > 0 ? NavigateJsonPath(elem, partsAfter) : ConvertJsonNodeToValue(elem);
+                if (val is not null) elements.Add(val);
+            }
+
+            return elements.Count > 0 ? ApplyIterationModeFilter(elements, iterationMode) : null;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to extract array elements from path {Path}", path);
             return null;
         }
     }
+
+    private object? NavigateJsonPath(JsonNode node, List<JsonPathPart> pathParts)
+    {
+        JsonNode? current = node;
+        foreach (var part in pathParts)
+        {
+            if (current is null) return null;
+            if (part.IsArrayIndex)
+            {
+                if (current is JsonArray arr && !part.IsIterationMarker && part.ArrayIndex >= 0 && part.ArrayIndex < arr.Count)
+                    current = arr[part.ArrayIndex];
+                else
+                    return null;
+            }
+            else
+            {
+                if (current is JsonObject obj && obj.TryGetPropertyValue(part.PropertyName!, out var val))
+                    current = val;
+                else
+                    return null;
+            }
+        }
+        return ConvertJsonNodeToValue(current);
+    }
+
+    private static List<object> ApplyIterationModeFilter(List<object> elements, ArrayIterationMode mode) =>
+        mode switch
+        {
+            ArrayIterationMode.First => elements.Take(1).ToList(),
+            ArrayIterationMode.Last => elements.Skip(Math.Max(0, elements.Count - 1)).ToList(),
+            _ => elements
+        };
+
+    private static object? ConvertJsonNodeToValue(JsonNode? node) =>
+        node switch
+        {
+            null => null,
+            JsonValue v => v.GetValue<object>(),
+            _ => node.ToJsonString()
+        };
+
+    private static JsonNode? TryParseJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try { return JsonNode.Parse(json); }
+        catch { return null; }
+    }
+
+    private sealed class JsonPathPart
+    {
+        public string? PropertyName { get; init; }
+        public bool IsArrayIndex { get; init; }
+        public int ArrayIndex { get; init; }
+        /// <summary>True when the bracket was empty <c>[]</c> — marks array iteration, not a fixed index.</summary>
+        public bool IsIterationMarker { get; init; }
+    }
+
+    private static string ConvertToolResultToJson(CallToolResult toolResult)
+        => McpToolResultHelper.ConvertToJson(toolResult);
 
     private async Task SaveExecutionAsync(WorkflowExecution execution, CancellationToken ct)
     {

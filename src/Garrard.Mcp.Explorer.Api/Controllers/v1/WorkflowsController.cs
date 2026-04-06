@@ -1,14 +1,16 @@
 using Asp.Versioning;
 using Garrard.Mcp.Explorer.Core.Domain.Workflows;
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Garrard.Mcp.Explorer.Infrastructure.Workflows;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/workflows")]
-public sealed class WorkflowsController(IWorkflowService workflowService) : ControllerBase
+public sealed class WorkflowsController(IWorkflowService workflowService, LoadTestService loadTestService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
@@ -39,7 +41,24 @@ public sealed class WorkflowsController(IWorkflowService workflowService) : Cont
 
     [HttpPost("{id}/load-test")]
     public async Task<IActionResult> LoadTest(string id, [FromBody] LoadTestRequest request, CancellationToken ct)
-        => Ok(await workflowService.RunLoadTestAsync(id, request.ConnectionName, request.DurationSeconds, request.MaxParallel, request.RuntimeParameters, ct));
+    {
+        var wf = await workflowService.GetByIdAsync(id, ct);
+        if (wf is null) return NotFound();
+        var runId = loadTestService.StartAsync(id, request.ConnectionName, request.DurationSeconds, request.MaxParallel, wf.Name, request.RuntimeParameters, ct);
+        return Ok(new { runId });
+    }
+
+    [HttpGet("load-test-progress/{runId}")]
+    public IActionResult LoadTestProgress(string runId)
+    {
+        var progress = loadTestService.GetProgress(runId);
+        if (progress is null) return NotFound();
+        return Ok(progress);
+    }
+
+    [HttpGet("{id}/load-test-history")]
+    public async Task<IActionResult> LoadTestHistory(string id, CancellationToken ct)
+        => Ok(await loadTestService.ListResultsAsync(id, ct));
 
     [HttpGet("export/{id}")]
     public async Task<IActionResult> Export(string id, CancellationToken ct)
@@ -50,9 +69,9 @@ public sealed class WorkflowsController(IWorkflowService workflowService) : Cont
     }
 
     [HttpPost("import")]
-    public async Task<IActionResult> Import([FromBody] string json, CancellationToken ct)
+    public async Task<IActionResult> Import([FromBody] JsonElement payload, CancellationToken ct)
     {
-        var wf = workflowService.ImportFromJson(json);
+        var wf = workflowService.ImportFromJson(payload.GetRawText());
         if (wf is null) return BadRequest("Invalid workflow JSON.");
         return Ok(await workflowService.CreateAsync(wf, ct));
     }

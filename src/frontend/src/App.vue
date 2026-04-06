@@ -7,6 +7,7 @@ import { useThemeStore } from '@/stores/themes'
 import { useConnectionsStore } from '@/stores/connections'
 import CommandPalette from '@/components/common/CommandPalette.vue'
 import ThemeSwitcher from '@/components/common/ThemeSwitcher.vue'
+import { systemApi } from '@/api/system'
 
 const route = useRoute()
 useThemeStore()  // ensure theme is initialised
@@ -15,17 +16,46 @@ const connectionsStore = useConnectionsStore()
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
 
-const navItems = [
-  { name: 'connections',       label: 'Connections',  icon: 'pi-server'       },
-  { name: 'tools',             label: 'Tools',        icon: 'pi-wrench'       },
-  { name: 'prompts',           label: 'Prompts',      icon: 'pi-file-edit'    },
-  { name: 'resources',         label: 'Resources',    icon: 'pi-database'     },
-  { name: 'resource-templates',label: 'Templates',    icon: 'pi-copy'         },
-  { name: 'chat',              label: 'Chat',         icon: 'pi-comments'     },
-  { name: 'workflows',         label: 'Workflows',    icon: 'pi-sitemap'      },
-  { name: 'ai-models',         label: 'AI Models',    icon: 'pi-microchip-ai' },
-  { name: 'sensitive-fields',  label: 'Sensitive',    icon: 'pi-shield'       },
-  { name: 'elicitations',      label: 'Elicitations', icon: 'pi-bell'         },
+// Version info — fetched once on mount
+const apiVersion = ref<string | null>(null)
+const dotnetVersion = ref<string | null>(null)
+const frontendVersion = __APP_VERSION__
+
+const navGroups = [
+  {
+    label: 'Infrastructure',
+    accent: 'blue',
+    items: [
+      { name: 'connections', label: 'Connections', icon: 'pi-server' },
+    ],
+  },
+  {
+    label: 'Configuration',
+    accent: 'amber',
+    items: [
+      { name: 'ai-models',        label: 'AI Models',  icon: 'pi-microchip-ai' },
+      { name: 'sensitive-fields', label: 'Data Guard', icon: 'pi-shield'       },
+    ],
+  },
+  {
+    label: 'MCP Explorer',
+    accent: 'teal',
+    items: [
+      { name: 'tools',              label: 'Tools',        icon: 'pi-wrench'    },
+      { name: 'prompts',            label: 'Prompts',      icon: 'pi-file-edit' },
+      { name: 'resources',          label: 'Resources',    icon: 'pi-database'  },
+      { name: 'resource-templates', label: 'Templates',    icon: 'pi-copy'      },
+      { name: 'elicitations',       label: 'Elicitations', icon: 'pi-bell'      },
+    ],
+  },
+  {
+    label: 'Testing',
+    accent: 'violet',
+    items: [
+      { name: 'workflows', label: 'Workflows', icon: 'pi-sitemap'  },
+      { name: 'chat',      label: 'Chat',      icon: 'pi-comments' },
+    ],
+  },
 ]
 
 const isActive = (name: string) => route.name === name
@@ -40,7 +70,14 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
-  await Promise.all([connectionsStore.loadSaved(), connectionsStore.loadActive()])
+  await Promise.all([
+    connectionsStore.loadSaved(),
+    connectionsStore.loadActive(),
+    systemApi.getInfo().then(info => {
+      apiVersion.value = info.apiVersion
+      dotnetVersion.value = info.dotnetVersion
+    }).catch(() => { /* non-fatal */ }),
+  ])
   connectionsStore.initialized = true
 })
 
@@ -64,6 +101,30 @@ onUnmounted(() => {
         </span>
       </div>
 
+      <div class="topbar-center">
+        <!-- Version pills -->
+        <span
+          v-if="dotnetVersion"
+          class="version-pill dotnet-pill"
+          v-tooltip="`Runtime: ${dotnetVersion}`"
+        >
+          <i class="pi pi-server" />
+          {{ dotnetVersion.replace('Microsoft .NET', '.NET') }}
+        </span>
+        <span class="version-pill fe-pill" v-tooltip="`Frontend v${frontendVersion}`">
+          <i class="pi pi-desktop" />
+          UI v{{ frontendVersion }}
+        </span>
+        <span
+          v-if="apiVersion"
+          class="version-pill api-pill"
+          v-tooltip="`API v${apiVersion}`"
+        >
+          <i class="pi pi-cloud" />
+          API v{{ apiVersion }}
+        </span>
+      </div>
+
       <div class="topbar-right">
         <!-- Command palette trigger -->
         <button class="topbar-btn" @click="showCommandPalette = true"
@@ -81,33 +142,57 @@ onUnmounted(() => {
           <i class="pi pi-circle-fill status-dot" />
           {{ connectionsStore.activeConnections.length }}
         </span>
+
+        <!-- Author credit -->
+        <a
+          class="author-credit"
+          href="mailto:garrardkitchen@gmail.com"
+          v-tooltip="'garrardkitchen@gmail.com'"
+          title="garrardkitchen@gmail.com"
+        >
+          <i class="pi pi-user author-icon" />
+          <span class="author-by">by</span>
+          <span class="author-name">Garrard Kitchen</span>
+        </a>
       </div>
     </header>
 
     <!-- Body: sidebar + main -->
     <div class="app-body">
       <!-- Sidebar nav -->
-      <nav class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+      <nav class="sidebar" :class="{ collapsed: sidebarCollapsed }" aria-label="Main navigation">
         <ul class="nav-list">
-          <li v-for="item in navItems" :key="item.name">
-            <RouterLink
-              :to="{ name: item.name }"
-              class="nav-item"
-              :class="{ active: isActive(item.name) }"
-              v-tooltip.right="sidebarCollapsed ? item.label : ''"
-            >
-              <i :class="`pi ${item.icon} nav-icon`" />
-              <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
-            </RouterLink>
-          </li>
+          <template v-for="(group, gi) in navGroups" :key="group.label">
+            <!-- Separator between groups (not before first) -->
+            <li v-if="gi > 0" class="nav-separator" aria-hidden="true" />
+
+            <!-- Group header (hidden when collapsed) -->
+            <li v-if="!sidebarCollapsed" class="nav-group-header" :class="`accent-${group.accent}`">
+              <span class="nav-group-dot" />
+              <span class="nav-group-label">{{ group.label }}</span>
+            </li>
+
+            <!-- Nav items -->
+            <li v-for="item in group.items" :key="item.name">
+              <RouterLink
+                :to="{ name: item.name }"
+                class="nav-item"
+                :class="{ active: isActive(item.name), [`accent-${group.accent}`]: isActive(item.name) }"
+                v-tooltip.right="sidebarCollapsed ? item.label : ''"
+              >
+                <i :class="`pi ${item.icon} nav-icon`" />
+                <span v-if="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
+              </RouterLink>
+            </li>
+          </template>
         </ul>
       </nav>
 
       <!-- Main content area -->
       <main class="main-content">
         <RouterView v-slot="{ Component }">
-          <Transition name="page" mode="out-in">
-            <component :is="Component" />
+          <Transition name="page">
+            <component :is="Component" :key="route.name" />
           </Transition>
         </RouterView>
       </main>
@@ -140,6 +225,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   z-index: 100;
+  gap: 12px;
 }
 
 .topbar-left,
@@ -147,6 +233,90 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.topbar-center {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Version pills */
+.version-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  cursor: default;
+  font-family: var(--font-family-mono);
+  letter-spacing: 0.02em;
+  transition: opacity var(--transition-fast);
+}
+.version-pill:hover { opacity: 0.85; }
+.version-pill .pi { font-size: 9px; }
+
+.dotnet-pill {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.fe-pill {
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+.api-pill {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+/* Author credit */
+.author-credit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(56, 189, 248, 0.12));
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+              box-shadow var(--transition-fast);
+}
+.author-credit:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(56, 189, 248, 0.2));
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.25);
+}
+.author-icon {
+  font-size: 11px;
+  color: #a78bfa;
+}
+.author-by {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+.author-name {
+  font-size: 12px;
+  font-weight: 600;
+  background: linear-gradient(90deg, #a78bfa, #38bdf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.01em;
 }
 
 .sidebar-toggle,
@@ -221,8 +391,47 @@ onUnmounted(() => {
 .nav-list {
   list-style: none;
   margin: 0;
-  padding: 8px 0;
+  padding: 6px 0 12px;
 }
+
+/* ── Group headers ── */
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+.nav-group-header:first-child { padding-top: 4px; }
+.nav-group-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+.nav-group-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* accent colours on group headers */
+.nav-group-header.accent-blue   { color: var(--nav-accent-blue); opacity: 0.85; }
+.nav-group-header.accent-amber  { color: var(--nav-accent-amber); opacity: 0.85; }
+.nav-group-header.accent-teal   { color: var(--nav-accent-teal); opacity: 0.85; }
+.nav-group-header.accent-violet { color: var(--nav-accent-violet); opacity: 0.85; }
+
+/* ── Separators ── */
+.nav-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 12px;
+  opacity: 0.5;
+}
+
+/* ── Nav items ── */
 .nav-item {
   display: flex;
   align-items: center;
@@ -230,8 +439,7 @@ onUnmounted(() => {
   padding: 9px 16px;
   color: var(--text-secondary);
   text-decoration: none;
-  border-radius: 0;
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   font-size: 13px;
   white-space: nowrap;
@@ -241,12 +449,34 @@ onUnmounted(() => {
   background: var(--nav-item-hover);
   color: var(--text-primary);
 }
-.nav-item.active {
-  background: var(--nav-item-active);
-  color: var(--text-primary);
-  border-left-color: var(--nav-item-active-border);
-  font-weight: 500;
+
+/* Active state per accent group */
+.nav-item.active { color: var(--text-primary); font-weight: 500; }
+
+.nav-item.active.accent-blue {
+  background: color-mix(in srgb, var(--nav-accent-blue) 13%, transparent);
+  border-left-color: var(--nav-accent-blue);
 }
+.nav-item.active.accent-blue .nav-icon { color: var(--nav-accent-blue); }
+
+.nav-item.active.accent-amber {
+  background: color-mix(in srgb, var(--nav-accent-amber) 11%, transparent);
+  border-left-color: var(--nav-accent-amber);
+}
+.nav-item.active.accent-amber .nav-icon { color: var(--nav-accent-amber); }
+
+.nav-item.active.accent-teal {
+  background: color-mix(in srgb, var(--nav-accent-teal) 11%, transparent);
+  border-left-color: var(--nav-accent-teal);
+}
+.nav-item.active.accent-teal .nav-icon { color: var(--nav-accent-teal); }
+
+.nav-item.active.accent-violet {
+  background: color-mix(in srgb, var(--nav-accent-violet) 11%, transparent);
+  border-left-color: var(--nav-accent-violet);
+}
+.nav-item.active.accent-violet .nav-icon { color: var(--nav-accent-violet); }
+
 .nav-icon { width: 16px; font-size: 15px; flex-shrink: 0; }
 .nav-label { overflow: hidden; text-overflow: ellipsis; }
 
@@ -260,8 +490,8 @@ onUnmounted(() => {
 }
 
 /* ── Page transitions ── */
-.page-enter-active,
-.page-leave-active { transition: opacity 150ms ease, transform 150ms ease; }
-.page-enter-from   { opacity: 0; transform: translateY(6px); }
-.page-leave-to     { opacity: 0; transform: translateY(-4px); }
+.page-enter-active { transition: opacity 120ms ease; }
+.page-leave-active { transition: opacity 80ms ease; position: absolute; width: 100%; pointer-events: none; }
+.page-enter-from   { opacity: 0; }
+.page-leave-to     { opacity: 0; }
 </style>

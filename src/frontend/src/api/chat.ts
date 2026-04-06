@@ -23,13 +23,15 @@ export const chatApi = {
     message: string,
     modelName: string | undefined,
     connectionNames: string[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    promptName?: string,
+    promptInvocationParams?: string,
   ): AsyncGenerator<ChatStreamEvent> {
     const url = `${BASE_URL}/api/v1/chat/sessions/${sessionId}/messages`
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify({ message, modelName, connectionNames }),
+      body: JSON.stringify({ message, modelName, connectionNames, promptName, promptInvocationParams }),
       signal,
     })
 

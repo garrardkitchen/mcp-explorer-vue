@@ -8,45 +8,89 @@ namespace Garrard.Mcp.Explorer.Infrastructure.Workflows;
 
 /// <summary>
 /// Executes and persists load test results for workflows.
-/// Results are stored in the platform-specific data directory alongside settings.
+/// Results are stored in a load_tests subdirectory alongside the settings file,
+/// so they respect the mounted volume path (PREFERENCES__StoragePath).
 /// </summary>
 public sealed class LoadTestService
 {
     private readonly IWorkflowService _workflowService;
     private readonly ILogger<LoadTestService> _logger;
-    private static readonly string ResultsDirectory;
+    private readonly string _resultsDirectory;
 
-    static LoadTestService()
-    {
-        var dataDir = OperatingSystem.IsWindows()
-            ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+    // In-memory progress store — keyed by runId, expires on completion retrieval
+    private static readonly ConcurrentDictionary<string, LoadTestProgress> _progressStore = new();
 
-        ResultsDirectory = Path.Combine(dataDir, "McpExplorer", "load_tests");
-        Directory.CreateDirectory(ResultsDirectory);
-    }
-
-    public LoadTestService(IWorkflowService workflowService, ILogger<LoadTestService> logger)
+    public LoadTestService(IWorkflowService workflowService, IUserPreferencesStore preferencesStore, ILogger<LoadTestService> logger)
     {
         _workflowService = workflowService;
         _logger = logger;
+
+        // Derive the load_tests directory from the same base directory as settings.json
+        var baseDir = Path.GetDirectoryName(preferencesStore.StoragePath)
+                      ?? Path.Combine(Path.GetTempPath(), "McpExplorer");
+        _resultsDirectory = Path.Combine(baseDir, "load_tests");
+        Directory.CreateDirectory(_resultsDirectory);
+
+        _logger.LogInformation("Load test results directory: {Path}", _resultsDirectory);
     }
 
-    public async Task<LoadTestResult> RunAsync(
+    /// <summary>Starts a load test in the background and returns a runId for progress polling.</summary>
+    public string StartAsync(
         string workflowId,
         string connectionName,
         int durationSeconds,
         int maxParallelExecutions,
+        string workflowName,
         Dictionary<string, string>? runtimeParameters = null,
         CancellationToken cancellationToken = default)
     {
-        return await _workflowService.RunLoadTestAsync(
-            workflowId,
-            connectionName,
-            durationSeconds,
-            maxParallelExecutions,
-            runtimeParameters,
-            cancellationToken).ConfigureAwait(false);
+        var runId = Guid.NewGuid().ToString();
+        _progressStore[runId] = new LoadTestProgress { RunId = runId, IsComplete = false };
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Use CancellationToken.None — the HTTP request token is cancelled once the
+                // response is sent (returning the runId), which would abort a long-running
+                // background load test and prevent results from being saved.
+                var result = await _workflowService.RunLoadTestAsync(
+                    workflowId, connectionName, durationSeconds, maxParallelExecutions,
+                    runtimeParameters,
+                    progress => _progressStore[runId] = progress with { RunId = runId },
+                    CancellationToken.None).ConfigureAwait(false);
+
+                await SaveResultAsync(result, workflowName, CancellationToken.None).ConfigureAwait(false);
+
+                _progressStore[runId] = new LoadTestProgress
+                {
+                    RunId = runId,
+                    IsComplete = true,
+                    PercentComplete = 100,
+                    TotalExecutions = result.TotalRequests,
+                    SuccessfulExecutions = result.SuccessfulRequests,
+                    FailedExecutions = result.FailedRequests,
+                    ActiveExecutions = 0,
+                    Result = result
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Load test {RunId} failed", runId);
+                _progressStore[runId] = new LoadTestProgress { RunId = runId, IsComplete = true, PercentComplete = 100 };
+            }
+        }, CancellationToken.None);
+
+        return runId;
+    }
+
+    public LoadTestProgress? GetProgress(string runId)
+    {
+        _progressStore.TryGetValue(runId, out var progress);
+        // Clean up completed entries after they are retrieved
+        if (progress?.IsComplete == true)
+            _progressStore.TryRemove(runId, out _);
+        return progress;
     }
 
     public async Task SaveResultAsync(LoadTestResult result, string workflowName, CancellationToken cancellationToken = default)
@@ -55,7 +99,7 @@ public sealed class LoadTestService
 
         var sanitized = string.Join("_", workflowName.Split(Path.GetInvalidFileNameChars()));
         var fileName = $"loadtest_{sanitized}_{result.StartedUtc:yyyyMMdd_HHmmss}.json";
-        var filePath = Path.Combine(ResultsDirectory, fileName);
+        var filePath = Path.Combine(_resultsDirectory, fileName);
 
         var json = JsonSerializer.Serialize(result, new JsonSerializerOptions
         {
@@ -70,10 +114,10 @@ public sealed class LoadTestService
     public async Task<List<LoadTestResult>> ListResultsAsync(
         string workflowId, CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(ResultsDirectory)) return [];
+        if (!Directory.Exists(_resultsDirectory)) return [];
 
         var results = new List<LoadTestResult>();
-        foreach (var file in Directory.GetFiles(ResultsDirectory, "loadtest_*.json"))
+        foreach (var file in Directory.GetFiles(_resultsDirectory, "loadtest_*.json"))
         {
             try
             {

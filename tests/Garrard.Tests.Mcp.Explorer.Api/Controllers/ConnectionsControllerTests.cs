@@ -16,13 +16,15 @@ public class ConnectionsControllerTests
 {
     private readonly Mock<IConnectionService> _connectionServiceMock;
     private readonly Mock<IUserPreferencesStore> _storeMock;
+    private readonly Mock<IConnectionExportService> _exportServiceMock;
     private readonly ConnectionsController _sut;
 
     public ConnectionsControllerTests()
     {
         _connectionServiceMock = new Mock<IConnectionService>();
         _storeMock = new Mock<IUserPreferencesStore>();
-        _sut = new ConnectionsController(_connectionServiceMock.Object, _storeMock.Object);
+        _exportServiceMock = new Mock<IConnectionExportService>();
+        _sut = new ConnectionsController(_connectionServiceMock.Object, _storeMock.Object, _exportServiceMock.Object);
     }
 
     // ── GET /connections ──────────────────────────────────────────────────────
@@ -288,6 +290,110 @@ public class ConnectionsControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(200, ok.StatusCode);
+    }
+
+    // ── POST /connections/export ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task Export_NoPassword_Returns400()
+    {
+        var req = new ExportConnectionsRequest(["conn-a"], "");
+        var result = await _sut.Export(req, CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Export_NoNames_Returns400()
+    {
+        var req = new ExportConnectionsRequest([], "secret");
+        var result = await _sut.Export(req, CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Export_ValidRequest_ReturnsFile()
+    {
+        var conn = new ConnectionDefinition { Name = "conn-a", Endpoint = "http://a.example.com" };
+        _storeMock.Setup(s => s.LoadAsync(It.IsAny<CancellationToken>()))
+                  .ReturnsAsync(new UserPreferences { Connections = [conn] });
+        _exportServiceMock.Setup(e => e.Encrypt(It.IsAny<IReadOnlyList<ConnectionDefinition>>(), "secret"))
+                          .Returns(new ConnectionExportPayload { Salt = "s", Nonce = "n", Data = "d" });
+
+        var req    = new ExportConnectionsRequest(["conn-a"], "secret");
+        var result = await _sut.Export(req, CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(result);
+        Assert.Equal("application/json", file.ContentType);
+        Assert.Equal("connections-export.json", file.FileDownloadName);
+    }
+
+    // ── POST /connections/import ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task Import_NoPassword_Returns400()
+    {
+        var payload = new ExportPayloadDto(1, "s", "n", "d");
+        var req     = new ImportConnectionsRequest(payload, "");
+        var result  = await _sut.Import(req, CancellationToken.None);
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Import_WrongPassword_Returns400WithMessage()
+    {
+        var payload = new ExportPayloadDto(1, "s", "n", "d");
+        var req     = new ImportConnectionsRequest(payload, "wrong-pw");
+        _exportServiceMock
+            .Setup(e => e.Decrypt(It.IsAny<ConnectionExportPayload>(), "wrong-pw"))
+            .Throws(new InvalidOperationException("Incorrect password or corrupted file."));
+
+        var result = await _sut.Import(req, CancellationToken.None);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.NotNull(bad.Value);
+    }
+
+    [Fact]
+    public async Task Import_ValidPayload_ImportsAndReturnsCount()
+    {
+        var existing = new ConnectionDefinition { Name = "existing", Endpoint = "http://e.example.com" };
+        var incoming = new ConnectionDefinition { Name = "new-conn", Endpoint = "http://new.example.com" };
+
+        _storeMock.Setup(s => s.LoadAsync(It.IsAny<CancellationToken>()))
+                  .ReturnsAsync(new UserPreferences { Connections = [existing] });
+        _storeMock.Setup(s => s.SaveAsync(It.IsAny<UserPreferences>(), It.IsAny<CancellationToken>()))
+                  .Returns(Task.CompletedTask);
+        _exportServiceMock
+            .Setup(e => e.Decrypt(It.IsAny<ConnectionExportPayload>(), "pw"))
+            .Returns([incoming]);
+
+        var payload = new ExportPayloadDto(1, "s", "n", "d");
+        var req     = new ImportConnectionsRequest(payload, "pw");
+        var result  = await _sut.Import(req, CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Import_NameCollision_AddsVersionSuffix()
+    {
+        var existing  = new ConnectionDefinition { Name = "my-conn", Endpoint = "http://old.example.com" };
+        var duplicate = new ConnectionDefinition { Name = "my-conn", Endpoint = "http://new.example.com" };
+
+        _storeMock.Setup(s => s.LoadAsync(It.IsAny<CancellationToken>()))
+                  .ReturnsAsync(new UserPreferences { Connections = [existing] });
+        UserPreferences? saved = null;
+        _storeMock.Setup(s => s.SaveAsync(It.IsAny<UserPreferences>(), It.IsAny<CancellationToken>()))
+                  .Callback<UserPreferences, CancellationToken>((p, _) => saved = p)
+                  .Returns(Task.CompletedTask);
+        _exportServiceMock
+            .Setup(e => e.Decrypt(It.IsAny<ConnectionExportPayload>(), "pw"))
+            .Returns([duplicate]);
+
+        await _sut.Import(new ImportConnectionsRequest(new ExportPayloadDto(1, "s", "n", "d"), "pw"), CancellationToken.None);
+
+        Assert.NotNull(saved);
+        Assert.Contains(saved!.Connections, c => c.Name == "my-conn (v2)");
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────

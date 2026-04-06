@@ -1,6 +1,204 @@
 # Changelog
 
+## [Unreleased] - 2026-04-05
+
+### Added
+- **Encrypted connection export/import**: Export now opens a dialog where you select individual connections (filterable by name/endpoint), enter a password and confirm it, then download an encrypted `.json` file. Import opens a dedicated dialog with a drag-and-drop file zone and a password field; if the password doesn't match, the API returns a clear error. On name collision the imported connection is renamed `(v2)`, `(v3)`, etc. Encryption uses AES-256-GCM with PBKDF2-SHA256 key derivation (100,000 iterations). New `IConnectionExportService` / `ConnectionExportService` in Core/Infrastructure; 16 new unit tests covering round-trips, wrong-password rejection, tamper detection, and name-collision versioning.
+
+### Fixed
+- Connections export returned 405 Method Not Allowed. `GET /connections/export` and `POST /connections/import` endpoints were missing from `ConnectionsController`. Added both: export returns a downloadable `connections.json` file; import accepts a JSON array of connection definitions and merges them in, skipping any whose name already exists and returning `{ imported, skipped }` counts. Updated `connectionsApi` helper signatures to match.
+
+### Changed
+- Prompts page: "Send to LLM" no longer navigates away to the Chat page. The result panel is now a two-tab panel: **JSON Result** tab (auto-focused on Execute) and **LLM Response** tab (auto-focused on Send to LLM). The model picker is now an inline popover triggered from a `✦ Send to LLM` button in the action bar — no full-screen dialog. The LLM response streams in real-time with a blinking cursor indicator and animated dot on the tab. A **Cancel** button appears during streaming. The response is rendered as DOMPurify-sanitised markdown. The LLM session is created in the background; streaming is cleanly cancelled on re-execute, prompt change, or page unmount. The args section caps at 40% height with overflow-scroll to prevent crowding when a prompt has many arguments.
+
+### Added
+- Favourites feature extended to Prompts, Resources, and Resource Templates pages. Each page now supports: per-item ⭐ star button to toggle favourites (persisted via preferences API), a ⭐ star toggle in the panel header to group favourites first with visual separator rows, and a count badge that shows filtered/total when a search is active. Backend: added `FavoriteResourceTemplates` and `ShowResourceTemplateFavoritesFirst` to `UserPreferences` domain model; `PatchPreferencesRequest` now exposes all six `ShowXxxFavoritesFirst` flags for prompts, resources, and templates. Preferences are loaded on mount and persisted on every toggle.
+- Markdown documentation dialog extended to Prompts, Resources, and Resource Templates pages. Each page now has: (1) a 📖 book icon button in the list panel header to open a reference doc for all visible items, and (2) a 📖 book icon button in the detail panel to open docs for the selected item. Generates well-structured markdown with argument/parameter tables, URI info, MIME type, and anchor navigation. `ToolDocsDialog` now accepts `rawMarkdown` and `title` props to support non-tool content. New generators added to `useToolDocs.ts`: `generatePromptMarkdown`, `generatePromptsListMarkdown`, `generateResourceMarkdown`, `generateResourcesListMarkdown`, `generateResourceTemplateMarkdown`, `generateResourceTemplatesListMarkdown`.
+
+### Fixed
+- Markdown documentation dialog (all-tools mode): scroll now works correctly when the dialog is maximised. Two root causes resolved: (1) the Dialog `:style` binding applied `max-height: 85vh; width: 780px` as inline styles even in maximised mode — inline styles override PrimeVue's class-based maximize CSS, capping the dialog at 85 vh; fixed by making `:style` conditional on `isMaximized`. (2) PrimeVue's own `.p-tabpanel` stylesheet sets `display: block; flex: 0 1 auto` which overrides the scoped `flex: 1; min-height: 0` chain; fixed with higher-specificity global overrides on `.docs-dialog .p-tabpanel-active` and `.docs-dialog .p-tabpanels`.
+
+## [Unreleased] - 2026-04-04
+
+### Added
+- Two additional light themes: **Material Light** (Material Design 3 light scheme — deep violet `#6750a4` accent, M3 tonal surface container layers, `#fffbfe` base) and **GitHub Light** (GitHub Primer light palette — GitHub blue `#0969da` accent, exact canvas/border values from github.com `#ffffff` base). The theme switcher now offers 10 themes total (6 dark, 4 light).
+
+### Added
+- Two new themes: **Material Dark** (Material Design 3 dark scheme — tonal violet `#d0bcff` accent, M3 tonal surface layers) and **GitHub Dark** (GitHub Primer dark palette — GitHub blue `#58a6ff` accent, exact canvas/border values from github.com). Both themes are dark mode and appear in the theme switcher alongside the existing 6 themes.
+
+### Added
+- Elicitation dialog now renders **radio buttons** for single-select enum schemas (`UntitledSingleSelectEnumSchema` → `{type:"string",enum:[...]}`, `TitledSingleSelectEnumSchema` → `{type:"string",oneOf:[{const,title}]}`) and **checkboxes** for multi-select schemas (`UntitledMultiSelectEnumSchema` → `{type:"array",items:{enum:[...]}}`, `TitledMultiSelectEnumSchema` → `{type:"array",items:{anyOf:[{const,title}]}}`). Options render as styled interactive cards with a highlighted border and custom radio/check indicator when selected. Multi-select values are submitted as a JSON array.
+
+### Fixed
+- Elicitation dialog now correctly renders all schema fields (boolean toggle, enum dropdown, number input, date picker, string input). Root cause was two bugs: (1) schema property objects were stored as `Dictionary<string, object>` causing STJ to emit `{}` for each field due to polymorphic boxing — fixed by serializing each property using its concrete runtime type via `JsonSerializer.SerializeToElement`; (2) `ElicitationDialog.vue` was looking for `schema.properties` but the backend sends properties as the schema root — fixed to iterate the schema map directly
+- Elicitation number fields now correctly coerce the HTML string input value to a number before sending to the backend (MCP server calls `GetInt32()`/`GetDouble()` on the `JsonElement`)
+- Elicitation date/datetime fields now render a native `<input type="date">` / `<input type="datetime-local">` instead of a plain text field
+- Type-pill in field rows now shows the format when present (e.g. `string (date)`)
+
+### Added
+- Elicitation dialogs now appear directly inside the Tools page when the MCP server requests user input mid-tool-call
+- `useElicitation` composable (`src/composables/useElicitation.ts`): opens an SSE stream scoped to the selected connection; maintains a FIFO queue so multi-step elicitation flows (multiple consecutive requests) are handled one at a time; automatically reopens stream when the selected connection changes
+- `ElicitationDialog.vue` (`src/components/common/ElicitationDialog.vue`): reusable modal with ⚡ amber-accented header, server message quote block, schema-aware field rendering (boolean toggle, enum select, number, password, URI, string), step counter for multi-step flows, Accept / Decline actions
+
+### Added
+- Frontend auto-retry on tool invocation failure: up to 3 attempts with an automatic reconnect between each; Execute button label updates to `Retrying (1/2)…` / `Reconnecting (1/2)…` during the loop
+- "Reconnect & Retry" button appears inline in the error panel after all retry attempts are exhausted — no sidebar hunting required
+- `MAX_INVOKE_RETRIES` constant (3) in `ToolsView.vue` controls frontend retry budget
+- `invokingLabel` and `retryExhausted` refs drive the dynamic button label and contextual retry action
+- `retryExhausted` is cleared automatically when the user changes tool or connection
+
+
+### Added
+- Connection health tracking: `IActiveConnection.IsHealthy` flag, set to `false` when all tool-invoke retry attempts are exhausted and restored to `true` on the next successful call
+- `GET /connections/active` now includes `isHealthy` in each active connection entry
+- Per-connection reconnect semaphore (`_reconnectGates`) in `ConnectionService` — serialises concurrent reconnect attempts so only one caller reconnects while others wait and benefit from the result
+- 🔄 reconnect button appears next to degraded connections in the Tools view sidebar; clicking it calls the connect endpoint and reloads tools on success
+- Amber dot and amber left-border on unhealthy connection items in the sidebar
+
+### Fixed
+- `ReconnectAsync` failure now correctly marks the connection as unhealthy and surfaces the reconnect error; previously the exception escaped the retry loop leaving `IsHealthy` unset
+- Frontend `reconnecting` state migrated from `ref<Set<string>>` to `ref<Record<string, boolean>>` for cleaner Vue 3 reactivity (no in-place mutation)
+- After a failed tool invocation the connections store is refreshed so the UI immediately reflects the degraded state without requiring a page reload
+
+
+### Added
+- `GET /api/v1/system/info` endpoint returns `apiVersion` (from assembly `AssemblyInformationalVersion`) and `dotnetVersion` (from `RuntimeInformation.FrameworkDescription`)
+- Topbar version pills: `.NET runtime`, `UI vX.Y.Z`, `API vX.Y.Z` — all dynamic, not static values
+- "Created by Garrard Kitchen" author credit in topbar with email tooltip on hover (`garrardkitchen@gmail.com`)
+- `src/frontend/src/api/system.ts` typed API client for the new system info endpoint
+- `src/frontend/src/env.d.ts` declaring `__APP_VERSION__` global injected by Vite at build time
+- Vite `define.__APP_VERSION__` reads `package.json#version` at build time — no runtime API call needed for frontend version
+
+## [Unreleased] - 2025-04-04
+
+### Fixed
+- Prompt invocation blocks now persist across chat reloads — `PromptName` and `PromptInvocationParams` fields added to `ChatMessage` domain model and threaded through `SendMessageRequest`, controller, and `GetMessages` response
+- Prompt picker no longer injects a synthetic client-side `system` message; metadata travels with the user message so no second bubble appears
+- `isPromptInvocation` now matches `role: 'user'` messages with `promptName` set (not `role: 'system'`)
+- `isToolCall` guard simplified (no longer needs to exclude prompt messages)
+
+### Added
+- Expand/collapse toggle on prompt invocation blocks to reveal the full rendered prompt content sent to the AI
+- `parsePromptParams` helper in ChatView parses the JSON-string `promptInvocationParams` for key/value chip rendering
+- `expandedPromptContent` set and `togglePromptContent()` in ChatView for per-message expand state
+- CSS classes `.prompt-content-expanded`, `.prompt-content-pre`, `.prompt-content-toggle`, `.prompt-no-params-hint`
+
 All notable changes to MCP Explorer v2 are documented here.
+
+## [Unreleased] — 2026-04-04 (24)
+- feat: Prompt invocation block (Design A) — violet card with gradient header, connection badge, model badge, parameter key-value chips, and "↳ sent to chat" hint; distinct from amber tool-call blocks
+- feat: `ChatMessage` type extended with `promptName` and `promptInvocationParams` (client-side only)
+- fix: Prompt Picker "Run in Chat" now pushes invocation block into timeline before sending prompt result to AI
+
+## [Unreleased] — 2026-04-04 (23)
+- feat: Stats dialog redesigned — hero banner with animated token ratio bar, 4 metric cards with icons, tool call breakdown list grouped by tool+connection with call count badges
+- feat: Prompt Picker now sends the executed prompt directly into chat (calls `sendMessage`) instead of pasting raw text into the textarea — button renamed "Run in Chat"
+
+## [Unreleased] — 2026-04-04 (22)
+- feat: Slash command menu in Chat (`/prompt`, `/recent1-3`, `/stats`, `/report`, `/system`, `/model`, `/clear`) — floating Design A popup with fuzzy search, keyboard nav (↑↓↵ Esc), group headers, icon badges, and enter-hint
+- feat: Prompt Picker dialog — browse prompts from all connected servers, filter, select, fill parameters, inject result into chat input
+- feat: Token Stats dialog (`/stats`) — shows input/output/total tokens and AI turn count for the session
+- feat: Model Picker dialog (`/model`) — quick-switch active model inline
+- feat: `/clear` clears current session via confirm dialog
+- feat: `clearMessages()` added to chat Pinia store
+- fix: Input placeholder updated to hint at `/` commands
+
+- fix: Nav accent colours now use CSS custom properties (`--nav-accent-blue/amber/teal/violet`) per theme instead of hardcoded hex — all 6 themes now render correct accent tints
+- fix: Added `aria-label="Main navigation"` to sidebar `<nav>` for accessibility
+
+## [Unreleased] — 2026-04-04 (20)
+- feat: Left navigation redesigned with Design A — 4 grouped sections (Infrastructure, Configuration, MCP Explorer, Intelligence) with colour-coded headers and separators
+- feat: Rename "Sensitive" → "Data Guard" in sidebar label, router meta, and page title
+- feat: Active nav items show per-group accent colour (blue/amber/teal/violet) as left border + background tint
+- feat: Group headers hidden when sidebar collapses to icon-only mode
+
+## [Unreleased] — 2026-04-04 (19)
+- fix: Tool calls now appear in real-time during streaming — root cause was SSE event name mismatch (`toolcall` vs `tool-call`); backend now uses explicit kebab-case switch for `ToolCall → tool-call`
+- fix: Duplicate tool calls caused by LLM receiving user message twice — `session.Messages` snapshot is now taken BEFORE adding the new user message, so `BuildMessages` doesn't append it again
+- fix: Tool call messages (role=System) filtered out of LLM history context — they were being sent to the LLM as system prompts, causing confusing re-calls on subsequent turns
+- refactor: Chat store simplified — removed in-progress `assistantMsg` placeholder from `messages.value` during streaming; tool calls now push (not splice) and appear above the streaming placeholder naturally; final assistant message is pushed on stream completion
+
+## [Unreleased] — 2026-04-04 (18)
+- fix: Token usage (input/output/total) now persists — backend captures `TokenUsage` from stream and saves it to the assistant message in settings.json; was previously never saved
+- fix: Tool call messages now appear in real-time as they are invoked — added `await nextTick()` after each splice to flush Vue's DOM update queue immediately
+- fix: Vue reactive update for `tokenUsage` now uses object replacement (`{ ...msg, tokenUsage }`) instead of direct property mutation to guarantee reactivity
+- feat: `ModelName` now attached to tool call messages and user messages so both can display the model pill
+- feat: 🤖 robot avatar moved inside the assistant bubble and wrapped in a circle (`.asst-avatar-circle`)
+- feat: All emojis in chat messages placed in CSS circles — user 👤, assistant 🤖, tool call 🔧
+- feat: Tool call blocks now show a model pill next to the connection badge
+- feat: User message bubbles now show a model pill (indicating which model was selected at send time)
+- feat: Token badge redesigned — shows `↑in ↓out total` in green monospace with border; distinct from thinking badge
+
+## [Unreleased] — 2026-04-04 (17)
+- fix: Load test results and snapshots now save correctly — background `Task.Run` was capturing the HTTP request's `CancellationToken` which gets cancelled when the response is returned; changed to `CancellationToken.None` for both `RunLoadTestAsync` and `SaveResultAsync`
+- fix: `📊` chart button is no longer disabled for new runs (snapshots now persist)
+- fix: Progress bar and percentage label no longer show decimal places (`Math.round()`)
+- feat: Load test form redesigned as a single compact horizontal row (Connection flex-1, Duration + Max Parallel side-by-side, Run button)
+- feat: Load test history item stats now show duration and max parallel as a grouped pair (⏱ Xs · ⚡ Y×) with totals/success/fail right-aligned
+- feat: Load test history list expanded from `max-height:220px` to `max-height:340px` for better space utilisation
+
+## [Unreleased] — 2026-04-04 (16)
+- feat: Load test history items now show duration, max parallel, total/successful/failed executions inline
+- feat: Load test now runs asynchronously — `POST /{id}/load-test` returns `{ runId }` immediately; frontend polls `GET /workflows/load-test-progress/{runId}` every second
+- feat: Progress dialog shows live percentage bar, total executions, successful, failed, and active counts during execution
+- feat: `📊` button on each history item opens a chart dialog with line graph of Cumulative Successes, Cumulative Failures, and Active Executions (dashed) over elapsed time — powered by Chart.js via PrimeVue Chart component
+- feat: `LoadTestResult` gains `DurationSeconds`, `MaxParallelExecutions`, and `Snapshots[]` (one per second) fields
+- feat: `LoadTestProgress` domain record tracks live run state; `LoadTestService` stores per-runId progress in `ConcurrentDictionary`
+- fix: `active` execution counter tracked via `Interlocked.Increment/Decrement` around each task
+
+## [Unreleased] — 2026-04-04 (15)
+- fix: `LoadTestService` now derives its storage directory from `IUserPreferencesStore.StoragePath` instead of the platform-specific path — results are written to `/data/load_tests` inside the container (the mounted volume) rather than the ephemeral `~/.local/share/McpExplorer/load_tests`
+- fix: `LoadTestService` is now properly injected with `IUserPreferencesStore` via constructor DI; static initialiser removed
+
+## [Unreleased] — 2026-04-04 (14)
+- feat: Load test results are now persisted to disk after each run via `LoadTestService.SaveResultAsync`
+- feat: New `GET /api/v1/workflows/{id}/load-test-history` endpoint returns all saved load test runs for a workflow
+- feat: Load Test tab now shows a scrollable history list — click any entry to expand its full stats (P50/P90/P99, req/s, connection name, error rate badge)
+- feat: `LoadTestResult` gains `WorkflowName` and `ConnectionName` fields for richer history display
+- fix: `WorkflowsController.LoadTest` now injects `LoadTestService` and calls `SaveResultAsync` — previously results were discarded after every run
+
+## [Unreleased] — 2026-04-04 (13)
+- feat: Workflow execute now detects `PromptAtRuntime` parameter mappings and shows a dialog to collect values before running — values are passed as `runtimeParameters` to the API
+
+## [Unreleased] — 2026-04-04 (12)
+- fix: `ImportFromJson` now uses `PropertyNameCaseInsensitive = true` so both PascalCase (exported files) and camelCase (settings.json) workflow JSON are deserialized correctly
+- fix: `WorkflowsController.Import` now accepts `[FromBody] JsonElement` — resolves 400 Bad Request when Axios posts a JSON object body
+- fix: Frontend `importFromJson` now sends the parsed object directly to Axios instead of re-stringifying, preventing `text/plain` body rejection
+- fix: `workflowsApi.importFromJson` parameter type changed from `string` to `unknown` to match the corrected call site
+
+## [Unreleased] — 2026-04-03 (11)
+- fix: Parameter field in workflow step mappings is now a `Select` dropdown populated from the selected tool's `inputSchema.properties` — prevents entering invalid parameter names; falls back to `InputText` when tool schema is unavailable
+- fix: `connectionToolsMap` now stores full `ActiveTool[]` objects (was just names) so `inputSchema` is available for parameter name extraction
+- fix: Extract `McpToolResultHelper.ConvertToJson` shared helper — used by both `WorkflowService` and `ConnectionService.InvokeToolAsync` so all tool result JSON is consistent (real response, not raw MCP content blocks)
+- fix: `isError` flag now propagated for all code paths in tool result conversion, including when `StructuredContent` is present or the text is valid JSON (HIGH severity bug caught in code review)
+- fix: Property path browser now falls back to live tool invocation of the previous step (using ManualValue params) when no cached execution output exists — no longer requires executing the workflow first
+- fix: Don't cache empty tool lists on connection errors — allows re-fetch once the connection becomes available (MEDIUM severity bug caught in code review)
+- fix: `ConnectionService.InvokeToolAsync` now returns real tool response JSON instead of raw MCP content blocks — also fixes ToolsView display
+- fix: Port `ConvertToolResultToJson` from v1 — `outputJson` now contains real tool response JSON instead of raw MCP `[{type, text}]` content blocks; fixes property path browser, manual-value chaining, and downstream property extraction
+- fix: Tool name field in workflow step editor is now a `Select` dropdown populated from the connected connection's tools (falls back to `InputText` when connection is not connected or has no tools)
+- fix: `sourceStepIndex` dropdown no longer loses persisted value — replaced `null` option value with `'__auto__'` sentinel to avoid PrimeVue Select's known issue with falsy option values
+- fix: Watch `defaultConnectionName` in workflow edit dialog to eagerly load tool list when connection changes
+
+- fix: Port array iteration execution from v1 — `ExecuteStepWithIterationAsync`, `ExtractArrayElementsForIteration`, `NavigateJsonPath`, `ApplyIterationModeFilter` now handle Each/First/Last iteration modes
+- fix: `ParseJsonPath` now recognises empty brackets `[]` as array iteration marker (supports `data[].id` paths)
+- fix: `BuildParameters` accepts `iterationOverrides` dict and skips mappings with empty `targetParameter`
+- fix: Guard negative array indices in `ExtractJsonPathValue` and `NavigateJsonPath`
+- fix: Clear error message when first workflow step attempts array iteration (no previous results)
+- feat: Property path browser — 🔍 button next to sourcePropertyPath opens a dialog listing all selectable paths extracted from the previous step's output JSON (from live run or most recent history)
+- fix: `openEdit` now normalises stepNumbers to 1-based so "previous step" dropdown generates correct option count
+- fix: `openPathBrowser` uses array indexing (not stepNumber matching) for reliable result lookup across 0-based and 1-based stored data
+
+## [Unreleased] — 2026-04-03 (8)
+- fix: ParameterMapping rewritten to match v1 model — TargetParameter, SourceType (ManualValue/FromPreviousStep/PromptAtRuntime), SourceStepIndex, SourcePropertyPath (JSONPath with array indexing), ManualValue, IterationMode (None/Each/First/Last)
+- fix: WorkflowService.BuildParameters ported from v1 — proper MappingSourceType switch, ExtractJsonPathValue with bracket notation, ConvertJsonNodeToValue
+- feat: Workflow edit dialog now shows full parameter mapping UI per step — source type selector, conditional fields for each mode, array iteration mode when path contains brackets
+- fix: Tests updated to use new ParameterMapping field names
+
+## [Unreleased] — 2026-04-03 (7)
+- feat: Workflow execution viewer — rich step-tabs UI showing Input Parameters and Output Result JSON per step
+- feat: WorkflowStepResult now persists InputJson/OutputJson/StepExecutionStatus for new executions
+- feat: MCP error banner shown when tool response contains isError=true
+- feat: Legacy history entries with `result` field still render correctly via fallback
 
 ## [Unreleased] — 2026-04-03 (6)
 

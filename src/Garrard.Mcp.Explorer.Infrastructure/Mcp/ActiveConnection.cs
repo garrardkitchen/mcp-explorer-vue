@@ -26,13 +26,20 @@ internal sealed class ActiveConnection : IActiveConnection, IAsyncDisposable
     public string Name => Context.Name;
     public string Endpoint => Context.Endpoint;
     public bool IsConnected => true;
+    public bool IsHealthy { get; internal set; } = true;
 
     public IReadOnlyList<ActiveTool> Tools => _tools ??= Context.Tools
-        .Select(t => new ActiveTool(
-            t.Name,
-            t.Description ?? string.Empty,
-            TryGetInputSchema(t),
-            McpIconHelper.GetBestIconUrl(GetProtocolObject(t, "ProtocolTool"))))
+        .Select(t =>
+        {
+            var proto = GetProtocolObject(t, "ProtocolTool");
+            return new ActiveTool(
+                t.Name,
+                t.Description ?? string.Empty,
+                TryGetSchema(proto, "InputSchema"),
+                McpIconHelper.GetBestIconUrl(proto),
+                TryGetSchema(proto, "OutputSchema"),
+                TryGetAnnotations(proto));
+        })
         .ToList();
 
     public IReadOnlyList<ActivePrompt> Prompts => _prompts ??= Context.Prompts
@@ -65,19 +72,35 @@ internal sealed class ActiveConnection : IActiveConnection, IAsyncDisposable
         await Context.DisposeAsync().ConfigureAwait(false);
     }
 
-    private static object? TryGetInputSchema(McpClientTool tool)
+    private static object? TryGetSchema(object? proto, string propertyName)
     {
+        if (proto is null) return null;
+        try { return proto.GetType().GetProperty(propertyName)?.GetValue(proto); }
+        catch { return null; }
+    }
+
+    private static ToolAnnotations? TryGetAnnotations(object? proto)
+    {
+        if (proto is null) return null;
         try
         {
-            var protocolTool = GetProtocolObject(tool, "ProtocolTool");
-            if (protocolTool is null) return null;
-            var schemaProp = protocolTool.GetType().GetProperty("InputSchema");
-            return schemaProp?.GetValue(protocolTool);
+            var ann = proto.GetType().GetProperty("Annotations")?.GetValue(proto);
+            if (ann is null) return null;
+            var t = ann.GetType();
+            return new ToolAnnotations(
+                GetProp<string?>(ann, t, "Title"),
+                GetProp<bool?>(ann, t, "ReadOnlyHint"),
+                GetProp<bool?>(ann, t, "DestructiveHint"),
+                GetProp<bool?>(ann, t, "IdempotentHint"),
+                GetProp<bool?>(ann, t, "OpenWorldHint"));
         }
-        catch
-        {
-            return null;
-        }
+        catch { return null; }
+    }
+
+    private static T? GetProp<T>(object obj, Type type, string name)
+    {
+        try { return (T?)type.GetProperty(name)?.GetValue(obj); }
+        catch { return default; }
     }
 
     /// <summary>

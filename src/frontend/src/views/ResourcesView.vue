@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import Splitter from 'primevue/splitter'
 import SplitterPanel from 'primevue/splitterpanel'
@@ -8,8 +8,11 @@ import InputText from 'primevue/inputtext'
 import Skeleton from 'primevue/skeleton'
 import Tag from 'primevue/tag'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
+import { preferencesApi } from '@/api/preferences'
+import { generateResourceMarkdown, generateResourcesListMarkdown } from '@/composables/useToolDocs'
 import type { ActiveResource } from '@/api/types'
 
 const toast = useToast()
@@ -25,11 +28,53 @@ const content = ref<unknown>(null)
 const readError = ref<string | null>(null)
 
 const connectedConnections = computed(() => store.activeConnections.filter(c => c.isConnected))
-const filteredResources = computed(() => {
+type ResourceListItem = ActiveResource | { isSeparator: true; label: string }
+
+const filteredResources = computed<ResourceListItem[]>(() => {
+  let list = resources.value
   const q = resourceSearch.value.toLowerCase()
-  if (!q) return resources.value
-  return resources.value.filter(r => r.name.toLowerCase().includes(q) || r.uri?.toLowerCase().includes(q))
+  if (q) list = list.filter(r => r.name.toLowerCase().includes(q) || r.uri?.toLowerCase().includes(q))
+
+  if (!showFavoritesFirst.value || favorites.value.size === 0) return list
+
+  const favs = list.filter(r => favorites.value.has(r.uri))
+  const rest = list.filter(r => !favorites.value.has(r.uri))
+  const items: ResourceListItem[] = []
+  if (favs.length) { items.push({ isSeparator: true, label: '⭐ Favourites' }); items.push(...favs) }
+  if (rest.length) { items.push({ isSeparator: true, label: 'All Resources' }); items.push(...rest) }
+  return items
 })
+
+const filteredResourcesOnly = computed(() =>
+  filteredResources.value.filter((r): r is ActiveResource => !('isSeparator' in r))
+)
+
+const docsVisible = ref(false)
+const listDocsVisible = ref(false)
+
+// ── Favourites ────────────────────────────────────────────────────────
+const favorites = ref<Set<string>>(new Set())
+const showFavoritesFirst = ref(false)
+
+async function toggleFav(uri: string) {
+  if (favorites.value.has(uri)) favorites.value.delete(uri)
+  else favorites.value.add(uri)
+  favorites.value = new Set(favorites.value)
+  try {
+    await preferencesApi.patch({ favoriteResources: [...favorites.value] })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save favourite', detail: e.message, life: 3000 })
+  }
+}
+
+async function toggleShowFavoritesFirst() {
+  showFavoritesFirst.value = !showFavoritesFirst.value
+  try {
+    await preferencesApi.patch({ showResourceFavoritesFirst: showFavoritesFirst.value })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save preference', detail: e.message, life: 3000 })
+  }
+}
 
 watch(selectedConnName, async (name) => {
   selectedResource.value = null; resources.value = []; content.value = null
@@ -59,6 +104,14 @@ async function readResource() {
 }
 
 watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) store.loadActive() }, { immediate: true })
+
+onMounted(async () => {
+  try {
+    const prefs = await preferencesApi.getAll()
+    favorites.value = new Set(prefs.favoriteResources ?? [])
+    showFavoritesFirst.value = prefs.showResourceFavoritesFirst ?? false
+  } catch { /* non-fatal */ }
+})
 </script>
 
 <template>
@@ -83,7 +136,20 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         <div class="panel">
           <div class="panel-header">
             Resources
-            <Tag v-if="resources.length" :value="String(resources.length)" severity="secondary" />
+            <Tag v-if="resources.length" :value="filteredResourcesOnly.length < resources.length ? `${filteredResourcesOnly.length} / ${resources.length}` : String(resources.length)" :severity="filteredResourcesOnly.length < resources.length ? 'warn' : 'secondary'" />
+            <button
+              v-if="filteredResourcesOnly.length > 0"
+              class="fav-btn"
+              :style="showFavoritesFirst ? 'color:var(--warning)' : ''"
+              @click="toggleShowFavoritesFirst"
+              :title="showFavoritesFirst ? 'Show all resources' : 'Show favourites first'"
+            ><i :class="showFavoritesFirst ? 'pi pi-star-fill' : 'pi pi-star'" /></button>
+            <button
+              v-if="filteredResourcesOnly.length > 0"
+              class="fav-btn"
+              @click="listDocsVisible = true"
+              :title="`View docs for ${filteredResourcesOnly.length} visible resource${filteredResourcesOnly.length === 1 ? '' : 's'}`"
+            ><i class="pi pi-book" /></button>
           </div>
           <div class="panel-search">
             <InputText v-model="resourceSearch" placeholder="Filter resources…" style="width:100%" />
@@ -92,19 +158,25 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           <div v-else-if="!selectedConnName" class="empty-panel"><p>Select a connection</p></div>
           <div v-else-if="filteredResources.length === 0" class="empty-panel"><p>No resources found</p></div>
           <div v-else class="item-list">
-            <div v-for="r in filteredResources" :key="r.uri" class="list-item resource-item"
-                 :class="{ active: selectedResource?.uri === r.uri }" @click="selectResource(r)">
-              <div class="item-body-icon">
-                <img v-if="r.iconUrl" :src="r.iconUrl" :alt="r.name" class="item-icon-img" />
-                <span v-else class="item-icon-badge">{{ r.name.charAt(0).toUpperCase() }}</span>
+            <template v-for="item in filteredResources" :key="'isSeparator' in item ? item.label : item.uri">
+              <div v-if="'isSeparator' in item" class="list-separator">{{ item.label }}</div>
+              <div v-else class="list-item resource-item"
+                   :class="{ active: selectedResource?.uri === item.uri }" @click="selectResource(item)">
+                <div class="item-body-icon">
+                  <img v-if="item.iconUrl" :src="item.iconUrl" :alt="item.name" class="item-icon-img" />
+                  <span v-else class="item-icon-badge">{{ item.name.charAt(0).toUpperCase() }}</span>
+                </div>
+                <div class="resource-body">
+                  <span class="item-name">{{ item.name }}</span>
+                  <span class="item-uri">{{ item.uri }}</span>
+                  <span v-if="item.description" class="item-desc">{{ item.description }}</span>
+                </div>
+                <Tag v-if="item.mimeType" :value="item.mimeType" severity="secondary" style="font-size:10px;flex-shrink:0" />
+                <button class="fav-btn" @click.stop="toggleFav(item.uri)" :title="favorites.has(item.uri) ? 'Unfavourite' : 'Favourite'">
+                  <i :class="favorites.has(item.uri) ? 'pi pi-star-fill' : 'pi pi-star'" :style="favorites.has(item.uri) ? 'color:var(--warning)' : ''" />
+                </button>
               </div>
-              <div class="resource-body">
-                <span class="item-name">{{ r.name }}</span>
-                <span class="item-uri">{{ r.uri }}</span>
-                <span v-if="r.description" class="item-desc">{{ r.description }}</span>
-              </div>
-              <Tag v-if="r.mimeType" :value="r.mimeType" severity="secondary" style="font-size:10px;flex-shrink:0" />
-            </div>
+            </template>
           </div>
         </div>
       </SplitterPanel>
@@ -116,11 +188,16 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
           </div>
           <template v-else>
             <div class="detail-header">
-              <h3 class="item-title">{{ selectedResource.name }}</h3>
-              <p class="item-uri-full">{{ selectedResource.uri }}</p>
-              <p v-if="selectedResource.description" class="item-desc-full">{{ selectedResource.description }}</p>
-              <div class="meta-row">
-                <Tag v-if="selectedResource.mimeType" :value="selectedResource.mimeType" severity="secondary" />
+              <div class="detail-header-row">
+                <div>
+                  <h3 class="item-title">{{ selectedResource.name }}</h3>
+                  <p class="item-uri-full">{{ selectedResource.uri }}</p>
+                  <p v-if="selectedResource.description" class="item-desc-full">{{ selectedResource.description }}</p>
+                  <div class="meta-row">
+                    <Tag v-if="selectedResource.mimeType" :value="selectedResource.mimeType" severity="secondary" />
+                  </div>
+                </div>
+                <button class="fav-btn" @click="docsVisible = true" title="View documentation"><i class="pi pi-book" /></button>
               </div>
             </div>
             <div class="action-bar">
@@ -134,6 +211,17 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
         </div>
       </SplitterPanel>
     </Splitter>
+
+    <ToolDocsDialog
+      v-model:visible="docsVisible"
+      :raw-markdown="selectedResource ? generateResourceMarkdown(selectedResource) : ''"
+      :title="selectedResource ? `Documentation: ${selectedResource.name}` : 'Documentation'"
+    />
+    <ToolDocsDialog
+      v-model:visible="listDocsVisible"
+      :raw-markdown="generateResourcesListMarkdown(filteredResourcesOnly)"
+      :title="`Documentation: ${filteredResourcesOnly.length} resource${filteredResourcesOnly.length === 1 ? '' : 's'}`"
+    />
   </div>
 </template>
 
@@ -158,8 +246,12 @@ watch(() => store.initialized, (ready, wasReady) => { if (ready && !wasReady) st
 .item-name { display:block; font-size:13px; font-weight:500; color:var(--text-primary); }
 .item-uri { display:block; font-size:11px; font-family:var(--font-family-mono); color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .item-desc { display:block; font-size:11px; color:var(--text-muted); }
+.list-separator { padding:6px 16px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); background:var(--bg-raised); border-bottom:1px solid var(--border); flex-shrink:0; }
 .dot { font-size:8px; color:var(--success); flex-shrink:0; }
 .detail-header { padding:16px 20px; border-bottom:1px solid var(--border); }
+.detail-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.fav-btn { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px 6px; border-radius:var(--border-radius-sm); transition:var(--transition-fast); flex-shrink:0; }
+.fav-btn:hover { color:var(--accent); background:var(--nav-item-hover); }
 .item-title { margin:0 0 4px; font-size:16px; font-weight:600; color:var(--text-primary); }
 .item-uri-full { margin:0 0 4px; font-family:var(--font-family-mono); font-size:12px; color:var(--text-muted); word-break:break-all; }
 .item-desc-full { margin:0 0 8px; font-size:13px; color:var(--text-secondary); }

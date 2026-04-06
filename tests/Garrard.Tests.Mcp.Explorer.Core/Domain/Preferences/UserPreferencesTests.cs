@@ -45,6 +45,7 @@ public class UserPreferencesTests
         Assert.Empty(prefs.FavoriteTools);
         Assert.Empty(prefs.FavoritePrompts);
         Assert.Empty(prefs.FavoriteResources);
+        Assert.Empty(prefs.FavoriteResourceTemplates);
         Assert.Empty(prefs.LlmModels);
         Assert.Empty(prefs.Workflows);
         Assert.Empty(prefs.WorkflowExecutions);
@@ -68,6 +69,7 @@ public class UserPreferencesTests
         Assert.False(prefs.ShowFavoritesFirst);
         Assert.False(prefs.ShowPromptFavoritesFirst);
         Assert.False(prefs.ShowResourceFavoritesFirst);
+        Assert.False(prefs.ShowResourceTemplateFavoritesFirst);
         Assert.False(prefs.ShowConnectionTimestamps);
     }
 

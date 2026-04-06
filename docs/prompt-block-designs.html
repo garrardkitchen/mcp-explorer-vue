@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Prompt Invocation Block — 3 Designs</title>
+<style>
+  :root {
+    --bg-base: #0d1117;
+    --bg-surface: #161b22;
+    --bg-raised: #1c2128;
+    --bg-overlay: #21262d;
+    --border: rgba(255,255,255,.1);
+    --text-primary: #e6edf3;
+    --text-muted: #7d8590;
+    --accent: #38bdf8;
+    --accent-muted: rgba(56,189,248,.2);
+    --font-mono: 'SF Mono', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    padding: 32px;
+    line-height: 1.5;
+  }
+
+  h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 40px; }
+
+  .design-section { margin-bottom: 52px; }
+  .design-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--text-muted); border: 1px solid var(--border);
+    padding: 4px 12px; border-radius: 20px; margin-bottom: 20px;
+  }
+  .recommended { color: #38bdf8; border-color: rgba(56,189,248,.4); background: rgba(56,189,248,.07); }
+  .rec-star { color: #fbbf24; }
+
+  /* Simulated chat context */
+  .chat-context {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 680px;
+  }
+
+  /* Existing tool block (for reference) */
+  .tool-call-block {
+    background: rgba(251,191,36,.08);
+    border: 1px solid rgba(251,191,36,.25);
+    border-left: 3px solid #f59e0b;
+    border-radius: 6px; padding: 8px 12px;
+    font-size: 12px; align-self: stretch;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tool-avatar { width: 26px; height: 26px; border-radius: 50%; background: rgba(251,191,36,.18); border: 1px solid rgba(251,191,36,.35); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  .tool-name { color: #f59e0b; flex: 1; }
+  .tool-name strong { font-weight: 700; }
+  .conn-badge { background: rgba(20,184,166,.15); color: #14b8a6; border: 1px solid rgba(20,184,166,.4); padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .model-badge { background: rgba(251,191,36,.12); color: #f59e0b; border: 1px solid rgba(251,191,36,.35); padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+
+  /* User bubble */
+  .user-row { display: flex; justify-content: flex-end; }
+  .user-bubble {
+    background: var(--accent); color: #fff;
+    border-radius: 12px 12px 4px 12px;
+    padding: 10px 14px; max-width: 72%; font-size: 14px;
+  }
+
+  /* Label row */
+  .context-label { font-size: 11px; color: var(--text-muted); text-align: center; font-style: italic; }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* DESIGN A — "Prompt Card" — card-style with gradient header */
+  /* ─────────────────────────────────────────────────────── */
+  .prompt-block-a {
+    align-self: stretch;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(139, 92, 246, .35);
+    font-size: 12px;
+  }
+  .prompt-block-a-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(90deg, rgba(139,92,246,.18), rgba(139,92,246,.06));
+    border-bottom: 1px solid rgba(139,92,246,.2);
+  }
+  .prompt-avatar-a {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: rgba(139,92,246,.25); border: 1px solid rgba(139,92,246,.5);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0;
+  }
+  .prompt-label-a { color: #a78bfa; font-weight: 600; flex: 1; }
+  .prompt-badge-a {
+    background: rgba(139,92,246,.15); color: #a78bfa;
+    border: 1px solid rgba(139,92,246,.4); padding: 1px 8px;
+    border-radius: 10px; font-size: 11px; font-weight: 500;
+  }
+  .prompt-block-a-body {
+    padding: 8px 12px;
+    background: rgba(139,92,246,.04);
+    display: flex; gap: 12px; align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .prompt-param {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .param-k { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .param-v { font-size: 12px; color: var(--text-primary); font-family: var(--font-mono); background: rgba(255,255,255,.06); padding: 2px 6px; border-radius: 4px; }
+  .prompt-time-a { font-size: 11px; color: var(--text-muted); margin-left: auto; align-self: center; }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* DESIGN B — "Inline Banner" — compact single-line with left accent */
+  /* ─────────────────────────────────────────────────────── */
+  .prompt-block-b {
+    align-self: stretch;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    background: rgba(52, 211, 153, .07);
+    border: 1px solid rgba(52,211,153,.2);
+    border-left: 3px solid #34d399;
+    border-radius: 6px;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .prompt-icon-b {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(52,211,153,.15); border: 1px solid rgba(52,211,153,.4);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+    flex-shrink: 0;
+  }
+  .prompt-text-b { color: #34d399; flex: 1; min-width: 0; }
+  .prompt-text-b strong { font-weight: 700; }
+  .prompt-text-b .prompt-from { color: var(--text-muted); font-weight: 400; }
+  .prompt-params-b { display: flex; gap: 6px; flex-wrap: wrap; }
+  .prompt-param-chip {
+    background: rgba(52,211,153,.1); color: #34d399;
+    border: 1px solid rgba(52,211,153,.3); padding: 1px 8px;
+    border-radius: 8px; font-size: 11px;
+    font-family: var(--font-mono);
+  }
+  .prompt-time-b { font-size: 11px; color: var(--text-muted); }
+  .expand-btn {
+    background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    color: var(--text-muted); border-radius: 3px; padding: 1px 6px;
+    font-size: 10px; cursor: pointer; white-space: nowrap;
+  }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* DESIGN C — "Paper Slip" — document-like with header bar + body */
+  /* ─────────────────────────────────────────────────────── */
+  .prompt-block-c {
+    align-self: stretch;
+    border-radius: 8px;
+    border: 1px solid rgba(251,191,36,.15);
+    font-size: 12px;
+    background: var(--bg-raised);
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,.3);
+  }
+  .prompt-block-c-top {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px;
+    background: rgba(251,191,36,.06);
+    border-bottom: 1px solid rgba(251,191,36,.1);
+  }
+  .prompt-icon-c { font-size: 14px; }
+  .prompt-type-c {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .1em; color: #fbbf24;
+    background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.3);
+    padding: 1px 7px; border-radius: 3px;
+  }
+  .prompt-name-c { font-size: 13px; font-weight: 600; color: var(--text-primary); flex: 1; }
+  .prompt-conn-c { font-size: 11px; color: var(--text-muted); }
+  .prompt-time-c { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+  .prompt-block-c-body {
+    padding: 8px 12px;
+    display: flex; gap: 16px; flex-wrap: wrap;
+  }
+  .prompt-block-c-body .prompt-param { gap: 2px; }
+  .prompt-block-c-body .param-k { color: rgba(251,191,36,.6); }
+  .prompt-block-c-body .param-v { background: rgba(251,191,36,.07); color: #fde68a; border: 1px solid rgba(251,191,36,.15); }
+  .prompt-divider { width: 100%; height: 1px; background: rgba(255,255,255,.04); }
+
+  /* Callout box */
+  .callout {
+    background: rgba(56,189,248,.07);
+    border: 1px solid rgba(56,189,248,.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #7dd3fc;
+    max-width: 680px;
+  }
+  .callout strong { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>Prompt Invocation Block — 3 Designs</h1>
+<p class="subtitle">How a prompt execution appears in the chat stream, distinct from the existing amber tool-call block.</p>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- DESIGN A -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="design-section">
+  <div class="design-label recommended">
+    <span class="rec-star">★</span> Design A — "Prompt Card" &nbsp;·&nbsp; Recommended
+  </div>
+
+  <div class="chat-context">
+    <p class="context-label">… earlier messages …</p>
+
+    <!-- Prompt invocation block -->
+    <div class="prompt-block-a">
+      <div class="prompt-block-a-header">
+        <div class="prompt-avatar-a">📋</div>
+        <span class="prompt-label-a">Prompt: <strong>generate-summary</strong></span>
+        <span class="prompt-badge-a">🔌 my-server</span>
+        <span class="model-badge">gpt-4o-mini</span>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">12:43:01</span>
+      </div>
+      <div class="prompt-block-a-body">
+        <div class="prompt-param">
+          <span class="param-k">topic</span>
+          <span class="param-v">machine learning</span>
+        </div>
+        <div class="prompt-param">
+          <span class="param-k">length</span>
+          <span class="param-v">short</span>
+        </div>
+        <div class="prompt-param">
+          <span class="param-k">style</span>
+          <span class="param-v">bullet-points</span>
+        </div>
+        <span class="prompt-time-a" style="flex:1;text-align:right;">↳ sent to chat</span>
+      </div>
+    </div>
+
+    <!-- Existing tool call (shown for contrast) -->
+    <div class="tool-call-block">
+      <div class="tool-avatar">🔧</div>
+      <span class="tool-name">Calling tool: <strong>search_docs</strong></span>
+      <span class="conn-badge">🔌 my-server</span>
+      <span class="model-badge">gpt-4o-mini</span>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <strong>Design A</strong> uses a <strong>violet/purple palette</strong> to contrast with the amber tool block.
+    A two-row card: header shows prompt name + badges; body shows parameters as key-value chips.
+    Visual weight matches the tool block, instantly recognisable as "a prompt was run."
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- DESIGN B -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="design-section">
+  <div class="design-label">Design B — "Inline Banner"</div>
+
+  <div class="chat-context">
+    <p class="context-label">… earlier messages …</p>
+
+    <div class="prompt-block-b">
+      <div class="prompt-icon-b">📋</div>
+      <span class="prompt-text-b">
+        Prompt: <strong>generate-summary</strong>
+        <span class="prompt-from"> via my-server</span>
+      </span>
+      <div class="prompt-params-b">
+        <span class="prompt-param-chip">topic=machine learning</span>
+        <span class="prompt-param-chip">length=short</span>
+      </div>
+      <span class="prompt-time-b">12:43:01</span>
+      <button class="expand-btn">params ▾</button>
+    </div>
+
+    <!-- Existing tool call for contrast -->
+    <div class="tool-call-block">
+      <div class="tool-avatar">🔧</div>
+      <span class="tool-name">Calling tool: <strong>search_docs</strong></span>
+      <span class="conn-badge">🔌 my-server</span>
+      <span class="model-badge">gpt-4o-mini</span>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <strong>Design B</strong> uses a <strong>green (emerald) palette</strong> — compact, single-row.
+    Parameters become inline <code>key=value</code> chips. Works well when there are few params.
+    Closest to the existing tool-call block in terms of density. Optional expand button for many params.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- DESIGN C -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="design-section">
+  <div class="design-label">Design C — "Paper Slip"</div>
+
+  <div class="chat-context">
+    <p class="context-label">… earlier messages …</p>
+
+    <div class="prompt-block-c">
+      <div class="prompt-block-c-top">
+        <span class="prompt-icon-c">📄</span>
+        <span class="prompt-type-c">PROMPT</span>
+        <span class="prompt-name-c">generate-summary</span>
+        <span class="prompt-conn-c">🔌 my-server</span>
+        <span class="prompt-time-c">12:43:01</span>
+      </div>
+      <div class="prompt-block-c-body">
+        <div class="prompt-param">
+          <span class="param-k">topic</span>
+          <span class="param-v">machine learning</span>
+        </div>
+        <div class="prompt-param">
+          <span class="param-k">length</span>
+          <span class="param-v">short</span>
+        </div>
+        <div class="prompt-param">
+          <span class="param-k">style</span>
+          <span class="param-v">bullet-points</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Existing tool call for contrast -->
+    <div class="tool-call-block">
+      <div class="tool-avatar">🔧</div>
+      <span class="tool-name">Calling tool: <strong>search_docs</strong></span>
+      <span class="conn-badge">🔌 my-server</span>
+      <span class="model-badge">gpt-4o-mini</span>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <strong>Design C</strong> uses a <strong>yellow/gold palette</strong> — a "document slip" aesthetic.
+    The <code>PROMPT</code> type badge makes the block type immediately obvious.
+    Heavier visual footprint than B; closer to a "form receipt" feel. Good for prompts with many parameters.
+  </div>
+</div>
+
+</body>
+</html>

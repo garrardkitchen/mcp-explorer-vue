@@ -1,4 +1,5 @@
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Garrard.Mcp.Explorer.Infrastructure.Connections;
 using Garrard.Mcp.Explorer.Infrastructure.Elicitation;
 using Garrard.Mcp.Explorer.Infrastructure.LlmProviders;
 using Garrard.Mcp.Explorer.Infrastructure.Mcp;
@@ -32,6 +33,7 @@ public static class ServiceCollectionExtensions
 
         // MCP connections
         services.AddSingleton<OAuthCallbackService>();
+        services.AddScoped<IConnectionExportService, ConnectionExportService>();
         services.AddSingleton<ElicitationService>();
         services.AddSingleton<IElicitationService>(sp => sp.GetRequiredService<ElicitationService>());
         services.AddSingleton<ConnectionService>();

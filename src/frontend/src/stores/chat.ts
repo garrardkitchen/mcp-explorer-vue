@@ -1,6 +1,6 @@
 // src/stores/chat.ts
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { chatApi } from '@/api/chat'
 import type { ChatSession, ChatMessage, ChatTokenUsage } from '@/api/types'
 
@@ -51,7 +51,9 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(
     text: string,
     modelName: string | undefined,
-    connectionNames: string[]
+    connectionNames: string[],
+    promptName?: string,
+    promptInvocationParams?: Record<string, string>,
   ) {
     if (!activeSessionId.value) throw new Error('No active session')
     error.value = null
@@ -60,12 +62,20 @@ export const useChatStore = defineStore('chat', () => {
     thinkingMs.value = 0
     lastUsage.value = null
 
-    // Add user message optimistically
+    const paramsJson = promptInvocationParams && Object.keys(promptInvocationParams).length
+      ? JSON.stringify(promptInvocationParams)
+      : undefined
+
+    // Add user message optimistically — include prompt metadata so the timeline
+    // renders the invocation block immediately before the server confirms it
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: text,
       timestampUtc: new Date().toISOString(),
+      modelName,
+      promptName,
+      promptInvocationParams: paramsJson,
     }
     messages.value.push(userMsg)
 
@@ -78,16 +88,11 @@ export const useChatStore = defineStore('chat', () => {
 
     _streamAbort = new AbortController()
 
-    // Add assistant message placeholder — tool calls will be spliced before it
-    const assistantMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: '',
-      timestampUtc: new Date().toISOString(),
-      modelName,
-    }
-    messages.value.push(assistantMsg)
-    let assistantIdx = messages.value.length - 1
+    // Track accumulated data for the final assistant message
+    let assistantId: string | null = null
+    let assistantThinkingMs: number | null = null
+    let assistantTokenUsage: ChatTokenUsage | null = null
+    let assistantContent = ''
 
     try {
       for await (const evt of chatApi.streamMessage(
@@ -95,20 +100,21 @@ export const useChatStore = defineStore('chat', () => {
         text,
         modelName,
         connectionNames,
-        _streamAbort.signal
+        _streamAbort.signal,
+        promptName,
+        paramsJson,
       )) {
         if (evt.type === 'token' && evt.text) {
           if (!firstToken) {
             firstToken = true
-            const elapsed = Date.now() - startMs
-            thinkingMs.value = elapsed
-            messages.value[assistantIdx].thinkingMilliseconds = elapsed
+            assistantThinkingMs = Date.now() - startMs
+            thinkingMs.value = assistantThinkingMs
             if (_thinkingInterval) { clearInterval(_thinkingInterval); _thinkingInterval = null }
           }
-          messages.value[assistantIdx].content += evt.text
-          streamingContent.value = messages.value[assistantIdx].content
+          assistantContent += evt.text
+          streamingContent.value = assistantContent
         } else if (evt.type === 'tool-call') {
-          // Insert a tool call message before the assistant placeholder
+          // Push tool call message — it appears above the streaming placeholder in the DOM
           const toolMsg: ChatMessage = {
             id: crypto.randomUUID(),
             role: 'system',
@@ -117,14 +123,15 @@ export const useChatStore = defineStore('chat', () => {
             toolCallName: evt.toolName,
             toolCallParameters: evt.toolParameters,
             connectionName: evt.connectionName,
+            modelName,
           }
-          messages.value.splice(assistantIdx, 0, toolMsg)
-          assistantIdx++ // assistant is now one further back
+          messages.value.push(toolMsg)
+          await nextTick() // flush DOM so tool call renders immediately
         } else if (evt.type === 'usage' && evt.usage) {
-          messages.value[assistantIdx].tokenUsage = evt.usage
+          assistantTokenUsage = evt.usage
           lastUsage.value = evt.usage
         } else if (evt.type === 'done') {
-          if (evt.messageId) messages.value[assistantIdx].id = evt.messageId
+          if (evt.messageId) assistantId = evt.messageId
         } else if (evt.type === 'error') {
           error.value = evt.errorMessage ?? 'Unknown streaming error'
         }
@@ -132,6 +139,16 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e: any) {
       if (e.name !== 'AbortError') error.value = e.message
     } finally {
+      // Push complete assistant message — replaces the streaming placeholder visually
+      messages.value.push({
+        id: assistantId ?? crypto.randomUUID(),
+        role: 'assistant',
+        content: assistantContent,
+        timestampUtc: new Date().toISOString(),
+        modelName,
+        thinkingMilliseconds: assistantThinkingMs ?? undefined,
+        tokenUsage: assistantTokenUsage ?? undefined,
+      })
       streaming.value = false
       streamingContent.value = ''
       if (_thinkingInterval) { clearInterval(_thinkingInterval); _thinkingInterval = null }
@@ -144,9 +161,19 @@ export const useChatStore = defineStore('chat', () => {
     _streamAbort?.abort()
   }
 
+  async function clearMessages() {
+    if (!activeSessionId.value) return
+    // Delete and recreate the session to clear messages
+    const id = activeSessionId.value
+    await chatApi.deleteSession(id)
+    const newSession = await chatApi.createSession()
+    await loadSessions()
+    await selectSession(newSession.id)
+  }
+
   return {
     sessions, activeSessionId, messages, streaming,
     streamingContent, thinkingMs, error, lastUsage,
-    loadSessions, createSession, deleteSession, selectSession, sendMessage, cancelStream,
+    loadSessions, createSession, deleteSession, selectSession, sendMessage, cancelStream, clearMessages,
   }
 })

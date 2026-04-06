@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import Button from 'primevue/button'
-import OverlayPanel from 'primevue/overlaypanel'
+import Popover from 'primevue/popover'
 import { useThemeStore, THEMES } from '@/stores/themes'
 import type { ThemeId } from '@/stores/themes'
 
 const themeStore = useThemeStore()
-const op = ref<InstanceType<typeof OverlayPanel> | null>(null)
+const op = ref<InstanceType<typeof Popover> | null>(null)
 
 function toggle(e: Event) { op.value?.toggle(e) }
 function select(id: ThemeId) {
@@ -24,7 +24,7 @@ function select(id: ThemeId) {
     @click="toggle"
     v-tooltip="'Change theme'"
   />
-  <OverlayPanel ref="op" class="theme-panel">
+  <Popover ref="op" class="theme-panel">
     <div class="theme-title">Theme</div>
     <ul class="theme-list">
       <li
@@ -39,7 +39,7 @@ function select(id: ThemeId) {
         <i v-if="themeStore.activeTheme === t.id" class="pi pi-check theme-check" />
       </li>
     </ul>
-  </OverlayPanel>
+  </Popover>
 </template>
 
 <style scoped>

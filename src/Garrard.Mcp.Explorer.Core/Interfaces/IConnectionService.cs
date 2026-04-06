@@ -10,13 +10,32 @@ public interface IActiveConnection
     string Name { get; }
     string Endpoint { get; }
     bool IsConnected { get; }
+    /// <summary>
+    /// False when all retry attempts to invoke a tool have been exhausted, indicating the
+    /// underlying transport has failed. Cleared automatically when the connection is re-established.
+    /// </summary>
+    bool IsHealthy { get; }
     IReadOnlyList<ActiveTool> Tools { get; }
     IReadOnlyList<ActivePrompt> Prompts { get; }
     IReadOnlyList<ActiveResource> Resources { get; }
     IReadOnlyList<ActiveResourceTemplate> ResourceTemplates { get; }
 }
 
-public sealed record ActiveTool(string Name, string Description, object? InputSchema, string? IconUrl = null);
+public sealed record ActiveTool(
+    string Name,
+    string Description,
+    object? InputSchema,
+    string? IconUrl = null,
+    object? OutputSchema = null,
+    ToolAnnotations? Annotations = null);
+
+/// <summary>Hints about a tool's behaviour. All values are advisory only.</summary>
+public sealed record ToolAnnotations(
+    string? Title = null,
+    bool? ReadOnlyHint = null,
+    bool? DestructiveHint = null,
+    bool? IdempotentHint = null,
+    bool? OpenWorldHint = null);
 public sealed record ActivePrompt(string Name, string? Description, IReadOnlyList<PromptArgument> Arguments, string? IconUrl = null);
 public sealed record PromptArgument(string Name, string? Description, bool Required);
 public sealed record ActiveResource(string Uri, string Name, string? Description, string? MimeType, string? IconUrl = null);

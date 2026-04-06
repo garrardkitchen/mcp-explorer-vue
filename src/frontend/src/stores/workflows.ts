@@ -53,10 +53,8 @@ export const useWorkflowsStore = defineStore('workflows', () => {
     return history
   }
 
-  async function runLoadTest(id: string, connectionName = '', concurrency: number, iterations: number): Promise<LoadTestResult> {
-    const result = await workflowsApi.runLoadTest(id, connectionName, iterations, concurrency)
-    loadTestResults.value[id] = result
-    return result
+  async function runLoadTest(id: string, connectionName = '', concurrency: number, iterations: number): Promise<{ runId: string }> {
+    return workflowsApi.startLoadTest(id, connectionName, iterations, concurrency)
   }
 
   return {

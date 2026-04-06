@@ -5,6 +5,7 @@ using Garrard.Mcp.Explorer.Core.Domain.Connections;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Garrard.Mcp.Explorer.Infrastructure.Elicitation;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
@@ -28,18 +29,23 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
     private static readonly TimeSpan OAuthTimeout = TimeSpan.FromMinutes(5);
 
     private readonly ILogger<ConnectionService> _logger;
+    private readonly IConfiguration _configuration;
     private readonly ElicitationService? _elicitationService;
     private readonly OAuthCallbackService _oAuthCallbackService;
     private readonly ConcurrentDictionary<string, ActiveConnection> _connections = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ConnectionDefinition> _definitions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _reconnectGates = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, AzureTokenCacheEntry> _azureTokenCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _azureTokenSemaphore = new(1, 1);
 
     public ConnectionService(
         ILogger<ConnectionService> logger,
+        IConfiguration configuration,
         IElicitationService elicitationService,
         OAuthCallbackService oAuthCallbackService)
     {
         _logger = logger;
+        _configuration = configuration;
         // Cast to concrete type to access HandleElicitationRequestAsync, which is
         // intentionally not on the IElicitationService interface. If the registered
         // implementation is a different type, elicitation handlers are simply skipped.
@@ -157,6 +163,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             }
 
             _logger.LogInformation("Connected to {ConnectionName}", definition.Name);
+            _definitions[definition.Name] = definition;
             return activeConnection;
         }
         catch (Exception ex)
@@ -178,6 +185,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
 
     public async Task DisconnectAsync(string name, CancellationToken cancellationToken = default)
     {
+        _definitions.TryRemove(name, out _);
         if (_connections.TryRemove(name, out var connection))
         {
             await connection.DisposeAsync().ConfigureAwait(false);
@@ -209,11 +217,119 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         Dictionary<string, object?> parameters,
         CancellationToken cancellationToken = default)
     {
-        var connection = GetActiveConnectionOrThrow(connectionName);
-        var result = await connection.Context.Client
-            .CallToolAsync(toolName, parameters, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        return JsonSerializer.Serialize(result.Content);
+        var maxAttempts = Math.Max(1, _configuration.GetValue<int>("ToolInvoke:MaxRetryAttempts", 2));
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var connection = GetActiveConnectionOrThrow(connectionName);
+                var result = await connection.Context.Client
+                    .CallToolAsync(toolName, parameters, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                // Successful call — restore health in case a previous attempt had degraded it.
+                connection.IsHealthy = true;
+                return McpToolResultHelper.ConvertToJson(result);
+            }
+            catch (Exception ex) when (IsTransientConnectionError(ex, cancellationToken))
+            {
+                if (attempt < maxAttempts)
+                {
+                    _logger.LogWarning(ex,
+                        "Transient error invoking tool '{ToolName}' on '{ConnectionName}' " +
+                        "(attempt {Attempt}/{Max}), reconnecting…",
+                        toolName, connectionName, attempt, maxAttempts);
+
+                    try
+                    {
+                        await ReconnectAsync(connectionName, cancellationToken).ConfigureAwait(false);
+                        // Loop continues to next attempt naturally.
+                    }
+                    catch (Exception reconnectEx)
+                    {
+                        // Reconnect itself failed — mark unhealthy and surface the reconnect error.
+                        if (_connections.TryGetValue(connectionName, out var d))
+                        {
+                            d.IsHealthy = false;
+                            _logger.LogError(reconnectEx,
+                                "Reconnect failed for '{ConnectionName}', marking as unhealthy.", connectionName);
+                        }
+                        throw;
+                    }
+                }
+                else
+                {
+                    // All attempts exhausted — mark the connection as degraded so the UI
+                    // can display a reconnect indicator, then re-throw to the caller.
+                    if (_connections.TryGetValue(connectionName, out var degraded))
+                    {
+                        degraded.IsHealthy = false;
+                        _logger.LogError(ex,
+                            "All {Max} retry attempts for tool '{ToolName}' on '{ConnectionName}' exhausted. " +
+                            "Connection marked as unhealthy.",
+                            maxAttempts, toolName, connectionName);
+                    }
+                    throw;
+                }
+            }
+        }
+
+        // Unreachable — the last attempt either returns or throws without being caught above.
+        throw new InvalidOperationException("Exhausted retry attempts.");
+    }
+
+    /// <summary>
+    /// Returns true for transport-level failures that are worth retrying after a
+    /// reconnect. Server-side errors (McpException), user cancellation, and
+    /// argument errors are NOT retried.
+    /// </summary>
+    private static bool IsTransientConnectionError(Exception ex, CancellationToken ct)
+    {
+        // Never retry when the caller's token was explicitly cancelled (timeout / user cancel).
+        if (ct.IsCancellationRequested) return false;
+
+        return ex is HttpRequestException
+            or ObjectDisposedException
+            or System.IO.IOException
+            or TaskCanceledException { InnerException: HttpRequestException };
+        // McpException (server returned an error) is intentionally NOT retried.
+    }
+
+    private async Task ReconnectAsync(string connectionName, CancellationToken cancellationToken)
+    {
+        if (!_definitions.TryGetValue(connectionName, out var definition))
+        {
+            throw new InvalidOperationException(
+                $"Cannot reconnect '{connectionName}': connection definition not found. " +
+                "The connection may have been manually disconnected.");
+        }
+
+        // Serialise concurrent reconnect attempts for the same connection.
+        // If another caller is already reconnecting, wait for it to finish and
+        // skip the redundant reconnect if the connection is healthy again.
+        var gate = _reconnectGates.GetOrAdd(connectionName, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Another concurrent caller may have already reconnected successfully.
+            if (_connections.TryGetValue(connectionName, out var existing) && existing.IsHealthy)
+            {
+                _logger.LogDebug(
+                    "Reconnect for '{ConnectionName}' skipped — already recovered by a concurrent caller.",
+                    connectionName);
+                return;
+            }
+
+            _logger.LogInformation("Reconnecting to '{ConnectionName}'…", connectionName);
+            await ConnectAsync(definition, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public async Task<string> ExecutePromptAsync(

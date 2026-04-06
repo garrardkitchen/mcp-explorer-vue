@@ -80,6 +80,8 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             m.TokenUsage,
             m.ThinkingMilliseconds,
             m.SensitiveSegments,
+            m.PromptName,
+            m.PromptInvocationParams,
         }));
     }
 
@@ -106,12 +108,17 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             return;
         }
 
-        // Save user message immediately
+        // Snapshot history BEFORE adding the new user message — BuildMessages appends
+        // the new message itself, so passing the snapshot avoids sending it twice.
+        var historySnapshot = session.Messages.ToList();
+
         var userMessage = new ChatMessage
         {
             Role = "user",
             Content = request.Message,
-            TimestampUtc = DateTime.UtcNow
+            TimestampUtc = DateTime.UtcNow,
+            PromptName = request.PromptName,
+            PromptInvocationParams = request.PromptInvocationParams,
         };
         session.Messages.Add(userMessage);
         session.LastActivityUtc = DateTime.UtcNow;
@@ -123,13 +130,19 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         var thinkingStart = DateTime.UtcNow;
         int? thinkingMilliseconds = null;
         bool firstToken = false;
+        ChatTokenUsage? tokenUsage = null;
 
         try
         {
             await foreach (var evt in chatService.StreamAsync(
-                request.Message, session.Messages, model, request.ConnectionNames ?? [], cancellationToken))
+                request.Message, historySnapshot, model, request.ConnectionNames ?? [], cancellationToken))
             {
-                var eventName = evt.Type.ToString().ToLowerInvariant().Replace("_", "-");
+                // Convert PascalCase enum to kebab-case: ToolCall → tool-call
+                var eventName = evt.Type switch
+                {
+                    ChatStreamEventType.ToolCall => "tool-call",
+                    _ => evt.Type.ToString().ToLowerInvariant()
+                };
                 await WriteSseEvent(eventName, evt, cancellationToken);
 
                 if (evt.Type == ChatStreamEventType.Token && evt.Text is not null)
@@ -151,7 +164,12 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
                         ToolCallName = evt.ToolName,
                         ToolCallParameters = evt.ToolParameters,
                         ConnectionName = evt.ConnectionName,
+                        ModelName = model.Name,
                     });
+                }
+                else if (evt.Type == ChatStreamEventType.Usage && evt.Usage is not null)
+                {
+                    tokenUsage = evt.Usage; // Keep the latest usage (final pass has the full totals)
                 }
                 else if (evt.Type == ChatStreamEventType.Done && evt.MessageId is not null)
                     assistantMessageId = evt.MessageId;
@@ -170,7 +188,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         foreach (var tc in toolCallMessages)
             session.Messages.Add(tc);
 
-        // Save assistant message
+        // Save assistant message with accumulated token usage
         var assistantMessage = new ChatMessage
         {
             Id = assistantMessageId ?? Guid.NewGuid().ToString(),
@@ -179,6 +197,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             TimestampUtc = DateTime.UtcNow,
             ModelName = model.Name,
             ThinkingMilliseconds = thinkingMilliseconds,
+            TokenUsage = tokenUsage,
         };
         session.Messages.Add(assistantMessage);
         session.LastActivityUtc = DateTime.UtcNow;
@@ -231,5 +250,5 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
     }
 }
 
-public sealed record SendMessageRequest(string Message, string? ModelName, IReadOnlyList<string>? ConnectionNames);
+public sealed record SendMessageRequest(string Message, string? ModelName, IReadOnlyList<string>? ConnectionNames, string? PromptName = null, string? PromptInvocationParams = null);
 public sealed record RenameSessionRequest(string? Name);

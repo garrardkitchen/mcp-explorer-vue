@@ -51,9 +51,9 @@ export const connectionsApi = {
 
   getGroups: () => apiClient.get<ConnectionGroup[]>('/connections/groups').then(r => r.data),
 
-  exportConnections: (names?: string[]) =>
-    apiClient.post<{ data: string }>('/connections/export', { names }).then(r => r.data),
+  exportConnections: () =>
+    apiClient.get('/connections/export', { responseType: 'blob' }).then(r => r.data),
 
-  importConnections: (data: string) =>
-    apiClient.post<ConnectionDefinition[]>('/connections/import', { data }).then(r => r.data),
+  importConnections: (connections: ConnectionDefinition[]) =>
+    apiClient.post<{ imported: number; skipped: number }>('/connections/import', connections).then(r => r.data),
 }

@@ -6,11 +6,13 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import Password from 'primevue/password'
 import Textarea from 'primevue/textarea'
 import Dialog from 'primevue/dialog'
 import Select from 'primevue/select'
 import Tag from 'primevue/tag'
 import Skeleton from 'primevue/skeleton'
+import Checkbox from 'primevue/checkbox'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
@@ -28,15 +30,143 @@ const searchQuery = ref('')
 const showDialog = ref(false)
 const editMode = ref(false)
 const saving = ref(false)
-const fileInputRef = ref<HTMLInputElement>()
-const exporting = ref(false)
-const importing = ref(false)
 
 // Group management state
 const groupDialog = ref(false)
 const groupEditMode = ref(false)
 const groupForm = ref<ConnectionGroup>({ name: '', color: '#6366f1', description: '' })
 const groupFormOriginalName = ref('')
+
+// ── Export dialog ────────────────────────────────────────────────────────────
+const exportDialogVisible   = ref(false)
+const exportFilter          = ref('')
+const exportSelected        = ref<Set<string>>(new Set())
+const exportPassword        = ref('')
+const exportPasswordConfirm = ref('')
+const exportPasswordCopied    = ref(false)
+const exporting             = ref(false)
+
+const exportableConnections = computed(() => {
+  const q = exportFilter.value.toLowerCase()
+  return store.savedConnections.filter(c =>
+    !q || c.name.toLowerCase().includes(q) || c.endpoint?.toLowerCase().includes(q)
+  )
+})
+const exportAllChecked = computed(() =>
+  exportableConnections.value.length > 0 &&
+  exportableConnections.value.every(c => exportSelected.value.has(c.name))
+)
+
+function generateExportPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
+  const arr = crypto.getRandomValues(new Uint8Array(20))
+  exportPassword.value = Array.from(arr, b => chars[b % chars.length]).join('')
+  exportPasswordConfirm.value = exportPassword.value
+  exportPasswordCopied.value = false
+}
+async function copyExportPassword() {
+  await navigator.clipboard.writeText(exportPassword.value)
+  exportPasswordCopied.value = true
+  setTimeout(() => { exportPasswordCopied.value = false }, 2000)
+}
+
+function openExportDialog() {
+  exportFilter.value = ''
+  exportSelected.value = new Set(store.savedConnections.map(c => c.name))
+  exportPassword.value = ''
+  exportPasswordConfirm.value = ''
+  exportPasswordCopied.value = false
+  exportDialogVisible.value = true
+}
+function toggleExportItem(name: string) {
+  const s = new Set(exportSelected.value)
+  s.has(name) ? s.delete(name) : s.add(name)
+  exportSelected.value = s
+}
+function toggleExportAll() {
+  if (exportAllChecked.value) {
+    exportSelected.value = new Set()
+  } else {
+    exportSelected.value = new Set(exportableConnections.value.map(c => c.name))
+  }
+}
+
+async function doExport() {
+  if (exportSelected.value.size === 0) {
+    toast.add({ severity: 'warn', summary: 'Select connections', detail: 'Choose at least one connection to export.', life: 3000 }); return
+  }
+  if (!exportPassword.value) {
+    toast.add({ severity: 'warn', summary: 'Password required', detail: 'Enter a password to protect the export file.', life: 3000 }); return
+  }
+  if (exportPassword.value !== exportPasswordConfirm.value) {
+    toast.add({ severity: 'warn', summary: 'Passwords do not match', detail: 'Re-enter the same password in both fields.', life: 3000 }); return
+  }
+  exporting.value = true
+  try {
+    const res = await apiClient.post('/connections/export',
+      { names: [...exportSelected.value], password: exportPassword.value },
+      { responseType: 'blob' }
+    )
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/json' }))
+    const a = document.createElement('a'); a.href = url; a.download = 'connections-export.json'; a.click(); URL.revokeObjectURL(url)
+    exportDialogVisible.value = false
+    toast.add({ severity: 'success', summary: 'Exported', detail: `${exportSelected.value.size} connection(s) exported.`, life: 3000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Export failed', detail: e.message, life: 5000 })
+  } finally { exporting.value = false }
+}
+
+// ── Import dialog ────────────────────────────────────────────────────────────
+const importDialogVisible = ref(false)
+const importFile          = ref<File | null>(null)
+const importPassword      = ref('')
+const importing           = ref(false)
+const importDropHover     = ref(false)
+const importFileInput     = ref<HTMLInputElement>()
+
+function openImportDialog() {
+  importFile.value = null
+  importPassword.value = ''
+  importDialogVisible.value = true
+}
+function onImportFileDrop(e: DragEvent) {
+  importDropHover.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file?.name.endsWith('.json')) importFile.value = file
+  else toast.add({ severity: 'warn', summary: 'Invalid file', detail: 'Please drop a .json export file.', life: 3000 })
+}
+function onImportFileInput(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (file) importFile.value = file
+}
+
+async function doImport() {
+  if (!importFile.value) {
+    toast.add({ severity: 'warn', summary: 'No file', detail: 'Select an export file first.', life: 3000 }); return
+  }
+  if (!importPassword.value) {
+    toast.add({ severity: 'warn', summary: 'Password required', detail: 'Enter the password used when exporting.', life: 3000 }); return
+  }
+  importing.value = true
+  try {
+    const text    = await importFile.value.text()
+    const payload = JSON.parse(text)
+    const res = await apiClient.post<{ imported: number; total: number }>(
+      '/connections/import', { payload, password: importPassword.value }
+    )
+    await load()
+    importDialogVisible.value = false
+    const { imported, total } = res.data
+    const skipped = total - imported
+    const msg = skipped > 0
+      ? `${imported} imported, ${skipped} renamed (version suffix added for name conflicts).`
+      : `${imported} connection(s) imported.`
+    toast.add({ severity: 'success', summary: 'Import complete', detail: msg, life: 5000 })
+  } catch (e: any) {
+    const detail = e.response?.data?.error ?? e.message
+    toast.add({ severity: 'error', summary: 'Import failed', detail, life: 6000 })
+  } finally { importing.value = false; if (importFileInput.value) importFileInput.value.value = '' }
+}
 
 const blankForm = (): Partial<ConnectionDefinition> => ({
   name: '', endpoint: '', authenticationMode: 'CustomHeaders',
@@ -196,28 +326,6 @@ function addHeader() {
 }
 function removeHeader(idx: number) { form.value.headers?.splice(idx, 1) }
 
-async function exportConnections() {
-  exporting.value = true
-  try {
-    const res = await apiClient.get('/connections/export', { responseType: 'blob' })
-    const url = URL.createObjectURL(new Blob([res.data]))
-    const a = document.createElement('a'); a.href = url; a.download = 'connections.json'; a.click(); URL.revokeObjectURL(url)
-    toast.add({ severity: 'success', summary: 'Exported', life: 2000 })
-  } catch (e: any) { toast.add({ severity: 'error', summary: 'Export failed', detail: e.message, life: 5000 }) }
-  finally { exporting.value = false }
-}
-
-function triggerImport() { fileInputRef.value?.click() }
-async function onImportFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return
-  importing.value = true
-  try {
-    await apiClient.post('/connections/import', JSON.parse(await file.text()))
-    await load(); toast.add({ severity: 'success', summary: 'Imported', life: 2000 })
-  } catch (e: any) { toast.add({ severity: 'error', summary: 'Import failed', detail: e.message, life: 5000 }) }
-  finally { importing.value = false; if (fileInputRef.value) fileInputRef.value.value = '' }
-}
-
 function openCreateGroup() {
   groupForm.value = { name: '', color: '#6366f1', description: '' }
   groupEditMode.value = false
@@ -277,10 +385,9 @@ onMounted(load)
         <span class="stat success"><i class="pi pi-circle-fill dot" /> {{ connectedCount }} connected</span>
       </div>
       <div class="bar-actions">
-        <Button label="Import" icon="pi pi-upload" text size="small" :loading="importing" @click="triggerImport" />
-        <Button label="Export" icon="pi pi-download" text size="small" :loading="exporting" @click="exportConnections" />
+        <Button label="Import" icon="pi pi-upload" text size="small" @click="openImportDialog" />
+        <Button label="Export" icon="pi pi-download" text size="small" @click="openExportDialog" />
         <Button label="New Connection" icon="pi pi-plus" size="small" @click="openCreate" />
-        <input ref="fileInputRef" type="file" accept=".json" hidden @change="onImportFile" />
       </div>
     </div>
 
@@ -355,7 +462,7 @@ onMounted(load)
         <!-- Row 1: Name + Endpoint -->
         <div class="form-field">
           <label>Name *</label>
-          <InputText v-model="form.name" placeholder="my-mcp-server" class="w-full" :disabled="editMode" />
+          <InputText v-model="form.name" placeholder="my-mcp-server" class="w-full" />
         </div>
         <div class="form-field">
           <label>Endpoint *</label>
@@ -459,7 +566,8 @@ onMounted(load)
       <div class="form-grid" style="gap:12px">
         <div class="form-field">
           <label>Name <span class="req">*</span></label>
-          <InputText v-model="groupForm.name" :disabled="groupEditMode" class="w-full" placeholder="e.g. Production" />
+          <InputText v-model="groupForm.name" class="w-full" placeholder="e.g. Production" />
+          <small v-if="groupEditMode" class="field-hint">Renaming a group will update all connections in it.</small>
         </div>
         <div class="form-field">
           <label>Colour</label>
@@ -476,6 +584,119 @@ onMounted(load)
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="groupDialog = false" />
         <Button :label="groupEditMode ? 'Save' : 'Create'" icon="pi pi-check" :disabled="!groupForm.name.trim()" @click="saveGroup" />
+      </template>
+    </Dialog>
+
+    <!-- ── Export Dialog ───────────────────────────────────────────────────── -->
+    <Dialog v-model:visible="exportDialogVisible" header="Export Connections" modal style="width:520px">
+      <div class="export-dialog">
+        <p class="dialog-hint">Select the connections to export and set a password to encrypt the file.</p>
+
+        <div class="dialog-section">
+          <div class="dialog-section-header">
+            <span class="section-label">Connections</span>
+            <button class="select-all-btn" @click="toggleExportAll">
+              {{ exportAllChecked ? 'Deselect all' : 'Select all' }}
+            </button>
+          </div>
+          <InputText v-model="exportFilter" placeholder="Filter…" class="w-full mb-2" />
+          <div class="export-list">
+            <div v-if="exportableConnections.length === 0" class="muted-sm">No connections match the filter.</div>
+            <label v-for="c in exportableConnections" :key="c.name" class="export-item">
+              <Checkbox :modelValue="exportSelected.has(c.name)" binary @change="toggleExportItem(c.name)" />
+              <div class="export-item-info">
+                <span class="conn-name">{{ c.name }}</span>
+                <span class="mono muted-sm">{{ c.endpoint }}</span>
+              </div>
+            </label>
+          </div>
+          <p class="selected-count">{{ exportSelected.size }} of {{ store.savedConnections.length }} selected</p>
+        </div>
+
+        <div class="dialog-section">
+          <div class="section-label mb-2">Password</div>
+          <div class="form-field mb-2">
+            <div class="password-field-row">
+              <label>Password *</label>
+              <div class="password-actions">
+                <Button
+                  label="Generate"
+                  icon="pi pi-bolt"
+                  size="small"
+                  severity="secondary"
+                  text
+                  @click="generateExportPassword"
+                />
+                <Button
+                  :icon="exportPasswordCopied ? 'pi pi-check' : 'pi pi-copy'"
+                  :label="exportPasswordCopied ? 'Copied!' : 'Copy'"
+                  size="small"
+                  severity="secondary"
+                  text
+                  :disabled="!exportPassword"
+                  @click="copyExportPassword"
+                />
+              </div>
+            </div>
+            <Password v-model="exportPassword" placeholder="Enter or generate a password" :feedback="true" toggleMask class="w-full" inputClass="w-full" />
+          </div>
+          <div class="form-field">
+            <label>Confirm Password *</label>
+            <Password v-model="exportPasswordConfirm" placeholder="Repeat password" :feedback="false" toggleMask class="w-full" inputClass="w-full" />
+            <small v-if="exportPasswordConfirm && exportPassword !== exportPasswordConfirm" class="pw-mismatch">Passwords do not match</small>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="exportDialogVisible = false" />
+        <Button
+          label="Export & Download"
+          icon="pi pi-download"
+          :loading="exporting"
+          :disabled="exportSelected.size === 0 || !exportPassword || exportPassword !== exportPasswordConfirm"
+          @click="doExport"
+        />
+      </template>
+    </Dialog>
+
+    <!-- ── Import Dialog ───────────────────────────────────────────────────── -->
+    <Dialog v-model:visible="importDialogVisible" header="Import Connections" modal style="width:460px">
+      <div class="import-dialog">
+        <p class="dialog-hint">Upload an encrypted export file and enter the password used when it was created.</p>
+
+        <div class="dialog-section">
+          <div class="section-label mb-2">Export File</div>
+          <div
+            class="drop-zone"
+            :class="{ hover: importDropHover, 'has-file': !!importFile }"
+            @dragover.prevent="importDropHover = true"
+            @dragleave="importDropHover = false"
+            @drop.prevent="onImportFileDrop"
+            @click="importFileInput?.click()"
+          >
+            <i :class="importFile ? 'pi pi-file-check' : 'pi pi-upload'" class="drop-icon" />
+            <span v-if="importFile">{{ importFile.name }}</span>
+            <span v-else>Drop a .json file here or click to browse</span>
+          </div>
+          <input ref="importFileInput" type="file" accept=".json" hidden @change="onImportFileInput" />
+        </div>
+
+        <div class="dialog-section">
+          <div class="form-field">
+            <label>Password *</label>
+            <Password v-model="importPassword" placeholder="Enter export password" :feedback="false" toggleMask class="w-full" inputClass="w-full" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="importDialogVisible = false" />
+        <Button
+          label="Import"
+          icon="pi pi-upload"
+          :loading="importing"
+          :disabled="!importFile || !importPassword"
+          @click="doImport"
+        />
       </template>
     </Dialog>
 
@@ -524,6 +745,7 @@ onMounted(load)
 .form-field { display:flex; flex-direction:column; gap:6px; }
 .form-field label { font-size:12px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
 .optional { text-transform:none; font-weight:400; color:var(--text-muted); }
+.field-hint { color:var(--text-muted); font-size:11px; margin-top:4px; display:block; }
 .full-width { grid-column:1/-1; }
 .w-full { width:100%; }
 
@@ -538,5 +760,29 @@ onMounted(load)
 .form-section { grid-column:1/-1; }
 .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
 .header-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
-</style>
+
+/* ── Export / Import dialogs ── */
+.dialog-hint { margin:0 0 16px; font-size:13px; color:var(--text-secondary); }
+.dialog-section { margin-bottom:20px; }
+.dialog-section:last-child { margin-bottom:0; }
+.dialog-section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.select-all-btn { background:none; border:none; cursor:pointer; font-size:12px; color:var(--accent); padding:2px 4px; border-radius:4px; }
+.select-all-btn:hover { background:var(--nav-item-hover); }
+.export-list { max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--border-radius-sm); padding:4px 0; background:var(--bg-surface); }
+.export-item { display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; transition:background .12s; }
+.export-item:hover { background:var(--nav-item-hover); }
+.export-item-info { display:flex; flex-direction:column; min-width:0; }
+.selected-count { margin:6px 0 0; font-size:11px; color:var(--text-muted); text-align:right; }
+.mb-2 { margin-bottom:10px; }
+.pw-mismatch { color:var(--danger); font-size:11px; margin-top:4px; }
+.password-field-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+.password-field-row label { margin-bottom:0; }
+.password-actions { display:flex; gap:2px; }
+
+/* Drop zone */
+.drop-zone { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:28px 20px; border:2px dashed var(--border); border-radius:var(--border-radius); cursor:pointer; transition:all .15s; color:var(--text-muted); font-size:13px; text-align:center; }
+.drop-zone:hover, .drop-zone.hover { border-color:var(--accent); color:var(--accent); background:var(--nav-item-hover); }
+.drop-zone.has-file { border-color:var(--success); color:var(--success); background:rgba(34,197,94,.05); }
+.drop-icon { font-size:28px; }
+.req { color:var(--danger); }</style>
 

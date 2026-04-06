@@ -3,13 +3,15 @@ using Garrard.Mcp.Explorer.Api.Dtos.Connections;
 using Garrard.Mcp.Explorer.Core.Domain.Connections;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
-
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
-public sealed class ConnectionsController(IConnectionService connectionService, IUserPreferencesStore preferencesStore) : ControllerBase
+public sealed class ConnectionsController(
+    IConnectionService connectionService,
+    IUserPreferencesStore preferencesStore,
+    IConnectionExportService exportService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -142,7 +144,7 @@ public sealed class ConnectionsController(IConnectionService connectionService, 
         var definition = prefs.Connections.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         if (definition is null) return NotFound();
         var connection = await connectionService.ConnectAsync(definition, cancellationToken);
-        return Ok(new { name = connection.Name, endpoint = connection.Endpoint, toolCount = connection.Tools.Count });
+        return Ok(new { name = connection.Name, endpoint = connection.Endpoint, isConnected = connection.IsConnected, isHealthy = connection.IsHealthy, toolCount = connection.Tools.Count });
     }
 
     [HttpPost("{name}/disconnect")]
@@ -156,8 +158,101 @@ public sealed class ConnectionsController(IConnectionService connectionService, 
     public IActionResult GetActive()
     {
         var active = connectionService.GetActiveConnections()
-            .Select(c => new { c.Name, c.Endpoint, c.IsConnected, toolCount = c.Tools.Count });
+            .Select(c => new { c.Name, c.Endpoint, c.IsConnected, c.IsHealthy, toolCount = c.Tools.Count });
         return Ok(active);
+    }
+
+    [HttpPost("export")]
+    public async Task<IActionResult> Export([FromBody] ExportConnectionsRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest(new { error = "Password is required." });
+
+        if (request.Names is null || request.Names.Count == 0)
+            return BadRequest(new { error = "Select at least one connection to export." });
+
+        var prefs = await preferencesStore.LoadAsync(cancellationToken);
+        var selected = prefs.Connections
+            .Where(c => request.Names.Any(n => string.Equals(n, c.Name, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        if (selected.Count == 0)
+            return NotFound(new { error = "None of the requested connections were found." });
+
+        var payload = exportService.Encrypt(selected, request.Password);
+        var json = System.Text.Json.JsonSerializer.Serialize(payload,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        return File(bytes, "application/json", "connections-export.json");
+    }
+
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] ImportConnectionsRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest(new { error = "Password is required." });
+
+        if (request.Payload is null)
+            return BadRequest(new { error = "Export payload is required." });
+
+        var payload = new Core.Interfaces.ConnectionExportPayload
+        {
+            Version = request.Payload.Version,
+            Salt    = request.Payload.Salt,
+            Nonce   = request.Payload.Nonce,
+            Data    = request.Payload.Data
+        };
+
+        IReadOnlyList<ConnectionDefinition> decrypted;
+        try
+        {
+            decrypted = exportService.Decrypt(payload, request.Password);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+
+        var prefs = await preferencesStore.LoadAsync(cancellationToken);
+        var existingNames = prefs.Connections.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var toAdd = new List<ConnectionDefinition>();
+        foreach (var conn in decrypted)
+        {
+            if (string.IsNullOrWhiteSpace(conn.Name)) continue;
+
+            var finalName = conn.Name;
+            if (existingNames.Contains(finalName))
+            {
+                var version = 2;
+                while (existingNames.Contains($"{conn.Name} (v{version})"))
+                    version++;
+                finalName = $"{conn.Name} (v{version})";
+            }
+
+            var imported = new ConnectionDefinition
+            {
+                Name               = finalName,
+                Endpoint           = conn.Endpoint,
+                AuthenticationMode = conn.AuthenticationMode,
+                Headers            = conn.Headers,
+                AzureCredentials   = conn.AzureCredentials,
+                OAuthOptions       = conn.OAuthOptions,
+                Note               = conn.Note,
+                GroupName          = conn.GroupName,
+                CreatedAt          = DateTime.UtcNow
+            };
+            toAdd.Add(imported);
+            existingNames.Add(finalName);
+        }
+
+        if (toAdd.Count > 0)
+        {
+            var updated = prefs with { Connections = [..prefs.Connections, ..toAdd] };
+            await preferencesStore.SaveAsync(updated, cancellationToken);
+        }
+
+        return Ok(new { imported = toAdd.Count, total = decrypted.Count });
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
