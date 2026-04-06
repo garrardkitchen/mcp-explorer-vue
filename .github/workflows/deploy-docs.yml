@@ -63,10 +63,6 @@ jobs:
             echo "No Hugo modules configured; skipping"
           fi
 
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v5
-
       - name: Build with Hugo
         working-directory: docs/learn
         env:
