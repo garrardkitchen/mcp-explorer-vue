@@ -26,12 +26,13 @@ namespace Garrard.Mcp.Explorer.Infrastructure.Mcp;
 /// </summary>
 public sealed class ConnectionService : IConnectionService, IAsyncDisposable
 {
-    private const string ClientName = "mcp-explorer";
+    private const string DefaultClientName = "mcp-explorer";
     private const string DefaultAzureManagementScope = "https://management.azure.com/.default";
     private static readonly TimeSpan OAuthTimeout = TimeSpan.FromMinutes(5);
     private static readonly string _version = ResolveVersion();
     private static readonly string _userAgent = _version;
 
+    private readonly string _clientName;
     private readonly ILogger<ConnectionService> _logger;
     private readonly IConfiguration _configuration;
     private readonly ElicitationService? _elicitationService;
@@ -50,6 +51,9 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
     {
         _logger = logger;
         _configuration = configuration;
+        _clientName = configuration.GetValue<string>("MCP_CLIENT_NAME")?.Trim() is { Length: > 0 } name
+            ? name
+            : DefaultClientName;
         // Cast to concrete type to access HandleElicitationRequestAsync, which is
         // intentionally not on the IElicitationService interface. If the registered
         // implementation is a different type, elicitation handlers are simply skipped.
@@ -91,7 +95,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
 
             LogAuthDiagnostics("[MCP Connect]", definition.Name, transportOptions.AdditionalHeaders);
 
-            transport = new HttpClientTransport(transportOptions, CreateMcpHttpClient(), ownsHttpClient: true);
+            transport = new HttpClientTransport(transportOptions, CreateMcpHttpClient(_clientName), ownsHttpClient: true);
 
             var clientOptions = BuildClientOptions(definition.Name);
             client = await McpClient.CreateAsync(transport, clientOptions, NullLoggerFactory.Instance, cancellationToken);
@@ -140,7 +144,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             var context = new ConnectionContext(
                 definition.Name,
                 endpointUri.ToString(),
-                ClientName,
+                _clientName,
                 _version,
                 definition.AuthenticationMode,
                 definition.AzureCredentials,
@@ -422,7 +426,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 McpClient? newClient = null;
                 try
                 {
-                newTransport = new HttpClientTransport(transportOptions, CreateMcpHttpClient(), ownsHttpClient: true);
+                newTransport = new HttpClientTransport(transportOptions, CreateMcpHttpClient(_clientName), ownsHttpClient: true);
                 var clientOptions = BuildClientOptions(name, samplingHandler);
                 newClient = await McpClient.CreateAsync(newTransport, clientOptions, NullLoggerFactory.Instance, cancellationToken).ConfigureAwait(false);
 
@@ -516,10 +520,10 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         return connection;
     }
 
-    private static HttpClient CreateMcpHttpClient()
+    private static HttpClient CreateMcpHttpClient(string clientName)
     {
         var client = new HttpClient();
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(ClientName, _userAgent));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(clientName, _userAgent));
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"({Dns.GetHostName()})"));
         return client;
     }
@@ -545,7 +549,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         {
             ClientInfo = new Implementation
             {
-                Name = ClientName,
+                Name = _clientName,
                 Title = "MCP Explorer",
                 Version = _version
             },

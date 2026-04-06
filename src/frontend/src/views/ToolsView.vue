@@ -91,6 +91,15 @@ async function toggleFav(toolName: string) {
   }
 }
 
+async function toggleFavoritesFirst() {
+  showFavoritesFirst.value = !showFavoritesFirst.value
+  try {
+    await preferencesApi.patch({ showFavoritesFirst: showFavoritesFirst.value })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Failed to save preference', detail: e.message, life: 3000 })
+  }
+}
+
 // ── Parameter history (backend) ────────────────────────────────────────
 const allParamHistory = ref<Record<string, string[]>>({})
 
@@ -367,7 +376,7 @@ watch(() => store.initialized, async (ready, wasReady) => {
             <button
               class="fav-btn"
               :style="showFavoritesFirst ? 'color:var(--warning)' : ''"
-              @click="showFavoritesFirst = !showFavoritesFirst"
+              @click="toggleFavoritesFirst()"
               :title="showFavoritesFirst ? 'Show all tools' : 'Show favourites first'"
             >
               <i :class="showFavoritesFirst ? 'pi pi-star-fill' : 'pi pi-star'" />

@@ -28,6 +28,9 @@ services:
       - ToolInvoke__TimeoutSeconds=${ToolInvoke__TimeoutSeconds:-300}
       - ToolInvoke__MaxRetryAttempts=${ToolInvoke__MaxRetryAttempts:-2}
       - Elicitation__TimeoutSeconds=${Elicitation__TimeoutSeconds:-0}
+      # Override the client name sent to MCP servers (User-Agent + handshake).
+      # Defaults to "mcp-explorer" if not set.
+      - MCP_CLIENT_NAME=${MCP_CLIENT_NAME:-mcp-explorer}
       # Point to an existing settings.json (e.g. from the original MCP Explorer)
       # Leave empty to use the default path inside the container (/data/settings.json)
       - PREFERENCES__StoragePath=${PREFERENCES__StoragePath:-/data/settings.json}

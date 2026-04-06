@@ -1,0 +1,59 @@
+baseURL: "/"
+title: "MCP Explorer X"
+languageCode: "en-us"
+enableEmoji: true
+enableGitInfo: false
+
+module:
+  hugoVersion:
+    extended: true
+    min: "0.100.0"
+  imports:
+    - path: github.com/colinwilson/lotusdocs
+    - path: github.com/gohugoio/hugo-mod-bootstrap-scss/v5
+
+params:
+  description: "Explore, test and interact with MCP servers — tools, prompts, resources, chat and workflows in one powerful UI."
+  author: "MCP Explorer X"
+
+  google_fonts:
+    - ["Inter", "300,400,500,600,700"]
+    - ["JetBrains Mono", "400,700"]
+
+  docs:
+    title: "Documentation"
+    pathName: "docs"
+    themeColor: "blue"
+    darkMode: true
+    prism: true
+    prismTheme: "lotusdocs"
+
+  lotus:
+    customSCSS: []
+
+  social:
+    github: "your-username/mcp-explorer-x"
+
+  footer:
+    copyright: "© :YEAR: MCP Explorer X"
+    version: true
+
+menu:
+  primary:
+    - name: Home
+      url: /
+      weight: 10
+    - name: Documentation
+      url: /docs/
+      weight: 20
+    - name: GitHub
+      url: https://github.com/your-username/mcp-explorer-x
+      weight: 30
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    style: "nord"
+    lineNos: false
