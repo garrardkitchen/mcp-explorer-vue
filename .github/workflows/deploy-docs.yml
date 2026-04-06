@@ -1,12 +1,14 @@
 name: Deploy Documentation to GitHub Pages
 
 on:
-  push:
+  pull_request:
     branches:
       - main
+    types:
+      - closed
     paths:
       - 'docs/learn/**'
-      - '.github/workflows/deploy-docs.yml'
+      - '.github/workflows/docs-publish.yml'
   workflow_dispatch:
 
 permissions:
@@ -23,15 +25,23 @@ defaults:
     shell: bash
 
 jobs:
-  build:
+  build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       HUGO_VERSION: 0.153.2
+      TARGET_REPO: garrardkitchen/mcp-explorer-x-docs
+      TARGET_BRANCH: main
+      TARGET_BASE_URL: https://mcp-explorer-x-docs.garrardkitchen.com/
+      TARGET_CNAME: mcp-explorer-x-docs.garrardkitchen.com
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -46,7 +56,12 @@ jobs:
 
       - name: Download Hugo modules
         working-directory: docs/learn
-        run: hugo mod get
+        run: |
+          if [[ -f go.mod ]]; then
+            hugo mod get
+          else
+            echo "No Hugo modules configured; skipping"
+          fi
 
       - name: Setup Pages
         id: pages
@@ -61,20 +76,16 @@ jobs:
           hugo \
             --gc \
             --minify \
-            --baseURL "${{ steps.pages.outputs.base_url }}/"
+            --baseURL "${TARGET_BASE_URL}"
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gif-creator-docs repository
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: ./docs/learn/public
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+          external_repository: garrardkitchen/mcp-explorer-x-docs
+          publish_branch: main
+          publish_dir: ./docs/learn/public
+          cname: ${{ env.TARGET_CNAME }}
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy documentation from ${{ github.sha }}'
