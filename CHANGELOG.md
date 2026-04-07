@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased] - 2026-04-07
+
+### Fixed
+- **Transport type corrections**: MCP Explorer only supports Streamable HTTP transport. Removed all incorrect references to `stdio`, `SSE`, and multi-transport from: connections docs, architecture diagram, configuration docs, landing page quick-start, landing page feature card, README features list, README architecture diagram.
+
+---
+
 ## [Unreleased] - 2026-04-06 (latest)
 
 ### Changed

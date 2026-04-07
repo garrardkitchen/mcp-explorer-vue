@@ -21,13 +21,13 @@ The Connections page is your hub for all MCP server connections. From here you c
 
 <img src="/images/screenshots/02-connections-new-form.png" alt="New connection form with fields for name, URL, transport type, and optional headers" style="max-width:700px;border-radius:8px;border:1px solid #e2e8f0;" />
 
-*The connection form supports stdio, SSE, and HTTP transports, with optional custom headers and OAuth/Azure credentials.*
+*The connection form uses Streamable HTTP transport, with optional custom headers and OAuth/Azure credentials.*
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | **Name** | ✅ | A friendly display name |
-| **Endpoint URL** | ✅ | The MCP server URL (for SSE/HTTP) or command (for stdio) |
-| **Transport** | ✅ | `stdio`, `sse`, or `http` |
+| **Endpoint URL** | ✅ | The MCP server URL |
+| **Transport** | — | Streamable HTTP (the only supported transport) |
 | **Group** | ❌ | Assign to a named group for organisation |
 | **Description** | ❌ | Free-text notes |
 | **Headers** | ❌ | Custom HTTP headers (e.g. `Authorization: Bearer ...`) |

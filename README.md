@@ -6,7 +6,7 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 
 ## Features
 
-- 🔌 **MCP Connections** — Connect to stdio, SSE, and HTTP MCP servers with custom headers and OAuth/Azure credentials
+- 🔌 **MCP Connections** — Connect to MCP servers over Streamable HTTP with custom headers and OAuth/Azure credentials
 - 🛠️ **Tools** — Browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
 - 💬 **Prompts** — List, execute, and evaluate prompts; pipe results directly to an LLM
 - 📄 **Resources & Templates** — Browse MCP resources; expand templates with runtime parameters
@@ -112,7 +112,7 @@ flowchart TB
   %% ── External world ───────────────────────────────────────────────────────
   subgraph EXTERNAL["🌍  External"]
     direction LR
-    MCPSERVERS["🖥️ MCP Servers\nstdio · SSE · HTTP\n(local or remote)"]
+    MCPSERVERS["🖥️ MCP Servers\nStreamable HTTP\n(local or remote)"]
     LLMAPIS["☁️ LLM APIs\nOpenAI · Azure\nOllama · Custom"]
   end
 
@@ -138,7 +138,7 @@ flowchart TB
   DEPLOY   <-->|"REST calls"| BACKEND
   INFRA    <-->|"read / write"| FILE
   ENVFILE   -->|"env vars injected\nat container start"| DEPLOY
-  INFRA    <-->|"MCP protocol\n(stdio/SSE/HTTP)"| MCPSERVERS
+  INFRA    <-->|"MCP protocol\n(Streamable HTTP)"| MCPSERVERS
   INFRA    <-->|"HTTPS + API key"| LLMAPIS
   BROWSER  <-->|"download / upload"| IMPORTEXPORT
   IMPORTEXPORT <-->|"POST /connections/export·import\nPOST /workflows/export·import"| BACKEND
