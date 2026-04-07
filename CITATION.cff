@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "MCP Explorer"
+abstract: >
+  MCP Explorer is an open-source web application for exploring and interacting
+  with Model Context Protocol (MCP) servers. It provides a Vue 3 + PrimeVue
+  frontend backed by an ASP.NET Core 10 API, supporting multiple transport
+  types (SSE, Streamable HTTP, stdio), connection management with Azure Key Vault
+  secret resolution, Entra ID / OAuth authentication, AI-assisted tool invocation,
+  workflow automation, and an elicitation dialog system. Deployable as a single
+  container or as separate services via Docker Compose.
+authors:
+  - family-names: Kitchen
+    given-names: Garrard
+    email: garrardkitchen@gmail.com
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+repository-code: "https://github.com/garrardkitchen/mcp-explorer-vue"
+url: "https://github.com/garrardkitchen/mcp-explorer-vue"
+license: MIT
+version: "0.5.0"
+date-released: "2026-04-07"
+keywords:
+  - mcp
+  - model-context-protocol
+  - llm
+  - ai-tools
+  - vue
+  - dotnet
+  - aspnetcore
+  - docker
+  - azure
+  - devtools
