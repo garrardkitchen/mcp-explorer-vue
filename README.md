@@ -2,7 +2,7 @@
 
 A modern MCP (Model Context Protocol) server explorer — browse tools, prompts, resources, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core** backend using clean architecture.
 
-📚 **[Documentation →](docs/learn/)** — full user guide and feature reference built with Hugo
+📚 **[Documentation →](https://mcp-explorer-x-docs.garrardkitchen.com/)** — full user guide and feature reference built with Hugo
 
 ## Features
 
