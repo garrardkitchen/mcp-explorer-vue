@@ -32,7 +32,7 @@
           <span>No app registrations found</span>
         </div>
 
-        <div v-else class="picker-list">
+        <div v-else class="picker-list" ref="listEl">
           <div
             v-for="app in filtered"
             :key="app.appId"
@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
@@ -72,6 +72,11 @@ import IconField from 'primevue/iconfield'
 import ProgressSpinner from 'primevue/progressspinner'
 import { azureApi } from '@/api/azure'
 import type { AzureAppRegistration } from '@/api/types'
+
+const props = defineProps<{
+  /** Pre-select the app registration matching this App ID (e.g. existing clientId) */
+  clientId?: string
+}>()
 
 const emit = defineEmits<{
   selected: [app: AzureAppRegistration]
@@ -83,6 +88,14 @@ const error = ref<string | null>(null)
 const apps = ref<AzureAppRegistration[]>([])
 const query = ref('')
 const selectedApp = ref<AzureAppRegistration | null>(null)
+
+const listEl = ref<HTMLElement | null>(null)
+
+async function scrollSelectedIntoView() {
+  await nextTick()
+  const selected = listEl.value?.querySelector('.picker-item.selected') as HTMLElement | null
+  selected?.scrollIntoView({ block: 'nearest' })
+}
 
 const filtered = computed(() => {
   if (!query.value.trim()) return apps.value
@@ -109,6 +122,11 @@ async function open() {
   query.value = ''
   if (apps.value.length === 0) {
     await loadApps()
+  }
+  // Pre-select the app matching the current clientId
+  if (props.clientId) {
+    selectedApp.value = apps.value.find(a => a.appId === props.clientId) ?? selectedApp.value
+    scrollSelectedIntoView()
   }
 }
 

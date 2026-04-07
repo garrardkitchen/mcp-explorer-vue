@@ -13,4 +13,10 @@ public sealed record AzureClientCredentialsOptions
     /// is resolved at runtime from Azure Key Vault via <c>DefaultAzureCredential</c>.
     /// </summary>
     public KeyVaultSecretReference? KeyVaultSecretRef { get; init; }
+
+    /// <summary>
+    /// The Azure subscription ID used for Key Vault browsing in the UI.
+    /// Not used in the authentication flow — persisted for UX convenience only.
+    /// </summary>
+    public string? SubscriptionId { get; init; }
 }

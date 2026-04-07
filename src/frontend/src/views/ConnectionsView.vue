@@ -17,7 +17,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { apiClient } from '@/api/client'
-import type { ConnectionDefinition, ConnectionGroup, AzureAccountInfo, AzureAppRegistration } from '@/api/types'
+import type { ConnectionDefinition, ConnectionGroup, AzureAccountInfo, AzureAppRegistration, AzureSubscription } from '@/api/types'
 import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
 import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
@@ -241,7 +241,9 @@ async function load() {
 
 function openCreate() {
   editMode.value = false; originalName.value = ''
-  form.value = blankForm(); showDialog.value = true
+  form.value = blankForm()
+  selectedSubscriptionId.value = undefined
+  showDialog.value = true
 }
 
 function openEdit(conn: ConnectionDefinition) {
@@ -255,6 +257,8 @@ function openEdit(conn: ConnectionDefinition) {
   if (form.value.authenticationMode === 'OAuth' && !form.value.oAuthOptions) {
     form.value.oAuthOptions = { clientId: '', redirectUri: '', scopes: '' }
   }
+  // Restore persisted subscription selection for KV browsing
+  selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
   showDialog.value = true
 }
 
@@ -274,17 +278,18 @@ const selectedSubscriptionId = ref<string | undefined>(undefined)
 
 function onAzureAccountLoaded(account: AzureAccountInfo | null) {
   if (!account) return
-  // Auto-populate Tenant ID if blank
+  // Auto-populate Tenant ID if blank (only when no subscription has been selected yet)
   if (form.value.azureCredentials && !form.value.azureCredentials.tenantId.trim()) {
     form.value.azureCredentials = { ...form.value.azureCredentials, tenantId: account.tenantId }
   }
-  if (!selectedSubscriptionId.value) {
-    selectedSubscriptionId.value = account.subscriptionId
-  }
 }
 
-function onSubscriptionChanged(subscriptionId: string) {
-  selectedSubscriptionId.value = subscriptionId
+function onSubscriptionChanged(subscription: AzureSubscription) {
+  selectedSubscriptionId.value = subscription.id
+  // Update tenant ID to match the selected subscription's tenant
+  if (form.value.azureCredentials) {
+    form.value.azureCredentials = { ...form.value.azureCredentials, tenantId: subscription.tenantId }
+  }
 }
 
 function onAppRegistrationSelected(app: AzureAppRegistration) {
@@ -322,6 +327,10 @@ async function save() {
     }
   }
   saving.value = true
+  // Persist the selected subscription so it's restored on next edit
+  if (form.value.azureCredentials) {
+    form.value.azureCredentials = { ...form.value.azureCredentials, subscriptionId: selectedSubscriptionId.value }
+  }
   try {
     if (editMode.value) {
       await connectionsApi.update(originalName.value, form.value)
@@ -539,7 +548,11 @@ onMounted(load)
           <div class="section-divider full-width">Azure Client Credentials</div>
           <!-- Azure Assist Banner (Design 2) -->
           <div class="full-width">
-            <AzureContextBanner @account-loaded="onAzureAccountLoaded" @subscription-changed="onSubscriptionChanged" />
+            <AzureContextBanner
+              :subscriptionId="selectedSubscriptionId"
+              @account-loaded="onAzureAccountLoaded"
+              @subscription-changed="onSubscriptionChanged"
+            />
           </div>
           <div class="form-field">
             <div class="field-label-row">
@@ -551,7 +564,7 @@ onMounted(load)
           <div class="form-field">
             <label>Client ID</label>
             <InputText v-model="form.azureCredentials!.clientId" class="w-full" />
-            <AppRegistrationPicker @selected="onAppRegistrationSelected" />
+            <AppRegistrationPicker :clientId="form.azureCredentials!.clientId" @selected="onAppRegistrationSelected" />
           </div>
           <div class="form-field">
             <label>Client Secret</label>
@@ -585,12 +598,16 @@ onMounted(load)
           <div class="section-divider full-width">OAuth Settings</div>
           <!-- Azure Assist Banner for OAuth too -->
           <div class="full-width">
-            <AzureContextBanner @account-loaded="() => {}" @subscription-changed="onSubscriptionChanged" />
+            <AzureContextBanner
+              :subscriptionId="selectedSubscriptionId"
+              @account-loaded="() => {}"
+              @subscription-changed="onSubscriptionChanged"
+            />
           </div>
           <div class="form-field">
             <label>Client ID</label>
             <InputText v-model="form.oAuthOptions!.clientId" class="w-full" />
-            <AppRegistrationPicker @selected="onOAuthAppRegistrationSelected" />
+            <AppRegistrationPicker :clientId="form.oAuthOptions!.clientId" @selected="onOAuthAppRegistrationSelected" />
           </div>
           <div class="form-field">
             <label>Client Secret <span class="optional">(optional)</span></label>
@@ -818,7 +835,7 @@ onMounted(load)
 
 /* ── Dialog form ── */
 .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.form-field { display:flex; flex-direction:column; gap:6px; }
+.form-field { display:flex; flex-direction:column; gap:6px; min-width: 0; }
 .form-field label { font-size:12px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
 .optional { text-transform:none; font-weight:400; color:var(--text-muted); }
 .field-hint { color:var(--text-muted); font-size:11px; margin-top:4px; display:block; }

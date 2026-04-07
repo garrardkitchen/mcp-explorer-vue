@@ -70,16 +70,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import ProgressSpinner from 'primevue/progressspinner'
 import { azureApi } from '@/api/azure'
 import type { AzureAccountInfo, AzureSubscription } from '@/api/types'
 
+const props = defineProps<{
+  /** Pre-select this subscription ID (e.g. persisted from a connection) */
+  subscriptionId?: string
+}>()
+
 const emit = defineEmits<{
   accountLoaded: [account: AzureAccountInfo | null]
-  subscriptionChanged: [subscriptionId: string]
+  subscriptionChanged: [subscription: AzureSubscription]
 }>()
 
 const state = ref<'loading' | 'ready' | 'error'>('loading')
@@ -106,8 +111,13 @@ async function loadSubscriptions() {
   subsLoading.value = true
   try {
     subscriptions.value = await azureApi.getSubscriptions()
-    // Pre-select the active subscription from the account info
-    selectedSubscription.value = account.value?.subscriptionId ?? null
+    // Prefer the persisted subscription from prop, then fall back to the account default
+    const preferred = props.subscriptionId ?? account.value?.subscriptionId ?? null
+    selectedSubscription.value = subscriptions.value.find(s => s.id === preferred)?.id
+      ?? subscriptions.value.find(s => s.isDefault)?.id
+      ?? null
+    // Emit so the parent immediately reflects the resolved selection
+    emitCurrentSelection()
   } catch {
     // Non-fatal — subscription picker just won't populate
   } finally {
@@ -115,11 +125,22 @@ async function loadSubscriptions() {
   }
 }
 
-function onSubscriptionChange() {
-  if (selectedSubscription.value) {
-    emit('subscriptionChanged', selectedSubscription.value)
-  }
+function emitCurrentSelection() {
+  const sub = subscriptions.value.find(s => s.id === selectedSubscription.value)
+  if (sub) emit('subscriptionChanged', sub)
 }
+
+function onSubscriptionChange() {
+  emitCurrentSelection()
+}
+
+// If the parent updates the prop after load (e.g. different connection opened), sync the visual selection
+watch(() => props.subscriptionId, (id) => {
+  if (id && subscriptions.value.length > 0) {
+    const match = subscriptions.value.find(s => s.id === id)
+    if (match) selectedSubscription.value = match.id
+  }
+})
 
 onMounted(load)
 

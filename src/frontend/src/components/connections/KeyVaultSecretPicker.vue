@@ -261,6 +261,11 @@ watch(() => props.subscriptionId, () => {
 </script>
 
 <style scoped>
+.kv-picker {
+  min-width: 0;
+  width: 100%;
+}
+
 .browse-btn {
   width: 100%;
   justify-content: flex-start;

@@ -4,6 +4,7 @@
 
 ### Added
 - **Azure subscription picker**: Connections page now shows a subscription dropdown in the Azure Context Banner when multiple subscriptions are available; changing the selection propagates to `KeyVaultSecretPicker` so vaults are scoped to the chosen subscription. Backend exposes `GET /api/v1/azure/subscriptions` and `GET /api/v1/azure/keyvaults?subscriptionId=` accordingly.
+- **Subscription persistence**: The selected Azure subscription is now persisted in `AzureClientCredentialsOptions.SubscriptionId` alongside the connection — it is automatically restored when the connection is edited again.
 - **Azure CLI in Docker**: `Dockerfile.api` now installs `azure-cli` in the final stage so `AzureCliCredential` can call `az account get-access-token` inside the container.
 - **Azure credential log noise eliminated**: `AzureContextService` now routes `CredentialUnavailableException` to `Debug` instead of `Warning` — the full stack trace no longer appears in production logs when running without Azure credentials. `KeyVaultSecretResolver` does the same and wraps it in a clear user-facing message.
 

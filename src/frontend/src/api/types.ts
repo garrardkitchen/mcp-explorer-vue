@@ -22,6 +22,8 @@ export interface AzureClientCredentialsOptions {
   scope: string
   authorityHost?: string
   keyVaultSecretRef?: KeyVaultSecretReference
+  /** Azure subscription used for KV browsing in the UI — not used in auth flow */
+  subscriptionId?: string
 }
 
 export interface OAuthConnectionOptions {
