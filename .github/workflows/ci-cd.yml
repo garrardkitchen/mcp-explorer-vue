@@ -52,13 +52,13 @@ jobs:
             -- RunConfiguration.MaxCpuCount=1
 
       - name: Publish test results
-        uses: dorny/test-reporter@6e6a65b7a0bd2c9197df7d0ae36ac5cee784230c # v1.9.1
+        uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
         if: always()
         with:
-          name: .NET Tests
-          path: ./coverage/*.trx
-          reporter: dotnet-trx
-          fail-on-error: true
+          files: ./coverage/*.trx
+          check_name: .NET Tests
+          comment_title: .NET Test Results
+          fail_on: test failures
 
       - name: Generate coverage report
         run: |
