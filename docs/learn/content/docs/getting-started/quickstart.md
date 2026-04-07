@@ -228,6 +228,130 @@ networks:
 
 ---
 
+## Option 3 — Single Container with All Variables (`docker run -e`)
+
+Same single container as Option 1 but with every environment variable passed explicitly via `-e` flags. Useful when you cannot use a `.env` file or a volume mount — for example, in CI pipelines, cloud container services (Azure Container Instances, AWS ECS, etc.), or when scripting a fully-reproducible deployment.
+
+{{< tabs tabTotal="3" >}}
+
+{{% tab tabName="macOS / Linux" %}}
+
+```bash
+docker run --rm -it \
+  -p 8090:8080 \
+  \
+  -e ASPNETCORE_ENVIRONMENT=Production \
+  -e ASPNETCORE_URLS=http://+:5000 \
+  -e AppMetadata__Version=0.5.0 \
+  \
+  -e MCP_CLIENT_NAME=mcp-explorer \
+  \
+  -e PREFERENCES__StoragePath=/data/settings.json \
+  -v "$HOME/Library/Application Support/McpExplorerX":/data \
+  \
+  -e LlmService__OpenAiBaseUrl=https://api.openai.com/v1 \
+  -e LlmService__AzureApiVersion=2024-02-15-preview \
+  -e LlmService__MaxRetryAttempts=3 \
+  -e LlmService__TimeoutSeconds=30 \
+  \
+  -e ToolInvoke__TimeoutSeconds=300 \
+  -e ToolInvoke__MaxRetryAttempts=2 \
+  \
+  -e Elicitation__TimeoutSeconds=0 \
+  \
+  garrardkitchen/mcp-explorer-x:latest
+```
+
+**With Azure Key Vault / App Registration support:**
+
+```bash
+docker run --rm -it \
+  -p 8090:8080 \
+  -v "$HOME/Library/Application Support/McpExplorerX":/data \
+  -v "$HOME/.azure":/root/.azure:ro \
+  \
+  -e ASPNETCORE_ENVIRONMENT=Production \
+  -e ASPNETCORE_URLS=http://+:5000 \
+  -e AppMetadata__Version=0.5.0 \
+  -e MCP_CLIENT_NAME=mcp-explorer \
+  -e PREFERENCES__StoragePath=/data/settings.json \
+  -e LlmService__OpenAiBaseUrl=https://api.openai.com/v1 \
+  -e LlmService__AzureApiVersion=2024-02-15-preview \
+  -e LlmService__MaxRetryAttempts=3 \
+  -e LlmService__TimeoutSeconds=30 \
+  -e ToolInvoke__TimeoutSeconds=300 \
+  -e ToolInvoke__MaxRetryAttempts=2 \
+  -e Elicitation__TimeoutSeconds=0 \
+  -e AZURE_CONFIG_DIR=/root/.azure \
+  \
+  garrardkitchen/mcp-explorer-x:latest
+```
+
+{{% /tab %}}
+
+{{% tab tabName="Windows (PowerShell)" %}}
+
+```powershell
+docker run --rm -it `
+  -p 8090:8080 `
+  `
+  -e ASPNETCORE_ENVIRONMENT=Production `
+  -e ASPNETCORE_URLS=http://+:5000 `
+  -e AppMetadata__Version=0.5.0 `
+  `
+  -e MCP_CLIENT_NAME=mcp-explorer `
+  `
+  -e PREFERENCES__StoragePath=/data/settings.json `
+  -v "$HOME\AppData\Local\McpExplorerX:/data" `
+  `
+  -e LlmService__OpenAiBaseUrl=https://api.openai.com/v1 `
+  -e LlmService__AzureApiVersion=2024-02-15-preview `
+  -e LlmService__MaxRetryAttempts=3 `
+  -e LlmService__TimeoutSeconds=30 `
+  `
+  -e ToolInvoke__TimeoutSeconds=300 `
+  -e ToolInvoke__MaxRetryAttempts=2 `
+  `
+  -e Elicitation__TimeoutSeconds=0 `
+  `
+  garrardkitchen/mcp-explorer-x:latest
+```
+
+**With Azure Key Vault / App Registration support:**
+
+```powershell
+docker run --rm -it `
+  -p 8090:8080 `
+  -v "$HOME\AppData\Local\McpExplorerX:/data" `
+  -v "$HOME\.azure:/root/.azure:ro" `
+  `
+  -e ASPNETCORE_ENVIRONMENT=Production `
+  -e ASPNETCORE_URLS=http://+:5000 `
+  -e AppMetadata__Version=0.5.0 `
+  -e MCP_CLIENT_NAME=mcp-explorer `
+  -e PREFERENCES__StoragePath=/data/settings.json `
+  -e LlmService__OpenAiBaseUrl=https://api.openai.com/v1 `
+  -e LlmService__AzureApiVersion=2024-02-15-preview `
+  -e LlmService__MaxRetryAttempts=3 `
+  -e LlmService__TimeoutSeconds=30 `
+  -e ToolInvoke__TimeoutSeconds=300 `
+  -e ToolInvoke__MaxRetryAttempts=2 `
+  -e Elicitation__TimeoutSeconds=0 `
+  -e AZURE_CONFIG_DIR=/root/.azure `
+  `
+  garrardkitchen/mcp-explorer-x:latest
+```
+
+{{% /tab %}}
+
+{{< /tabs >}}
+
+> **Note:** `VITE_API_BASE_URL` and `VITE_APP_VERSION` are **build-time** variables baked into the image — they cannot be changed via `-e` at runtime. The published image uses `VITE_API_BASE_URL=` (empty = same-origin, correct for the single-container setup).
+
+See the [Environment Variables](../../reference/environment-variables/) reference for the full list.
+
+---
+
 ## Verify It's Running
 
 You should see the Connections page — MCP Explorer's home screen.

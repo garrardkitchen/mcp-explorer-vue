@@ -3,6 +3,8 @@
 # Used by docker-compose for the separate-services deployment.
 
 ARG NODE_VERSION=22
+ARG APP_VERSION=0.0.0
+ARG VITE_API_BASE_URL=
 
 # ── Stage 1: build Vue/Vite SPA ───────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS build
@@ -10,7 +12,9 @@ WORKDIR /app
 COPY src/frontend/package*.json ./
 RUN npm ci
 COPY src/frontend/ .
-RUN npm run build
+ARG APP_VERSION
+ARG VITE_API_BASE_URL
+RUN VITE_APP_VERSION=${APP_VERSION} VITE_API_BASE_URL=${VITE_API_BASE_URL} npm run build
 
 # ── Stage 2: serve with nginx ─────────────────────────────────────────────────
 FROM nginx:alpine AS final

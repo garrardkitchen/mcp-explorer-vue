@@ -1,0 +1,322 @@
+name: CI / CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1 — test (PR only)
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+      statuses: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests with coverage
+        run: |
+          dotnet test --no-build --configuration Release \
+            --verbosity normal \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./coverage \
+            --logger "trx;LogFileName=test-results.trx" \
+            -- RunConfiguration.MaxCpuCount=1
+
+      - name: Publish test results
+        uses: dorny/test-reporter@6e6a65b7a0bd2c9197df7d0ae36ac5cee784230c # v1.9.1
+        if: always()
+        with:
+          name: .NET Tests
+          path: ./coverage/**/*.trx
+          reporter: dotnet-trx
+          fail-on-error: true
+
+      - name: Generate coverage report
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator \
+            -reports:./coverage/**/coverage.cobertura.xml \
+            -targetdir:./coverage/report \
+            -reporttypes:"Html;Cobertura;MarkdownSummaryGithub"
+
+      - name: Code Coverage Summary
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95 # v1.3.0
+        with:
+          filename: ./coverage/report/Cobertura.xml
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: both
+          thresholds: '60 80'
+
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@5060d4700a91de252c87eeddd2da026382d9298a # v2.9.2
+        if: github.event_name == 'pull_request'
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+      - name: Write to Job Summary
+        run: cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: ./coverage/report
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 2 — determine-version (main push only)
+# Resolves the next semantic version from PR labels.
+# Labels:  release_major → X+1.0.0 | release_minor → x.Y+1.0 | (default) → x.y.Z+1
+# ─────────────────────────────────────────────────────────────────────────────
+  determine-version:
+    name: Determine Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        id: get_latest_tag
+        run: |
+          LATEST_TAG=$(git tag -l "v*" | sort -V | tail -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.4.0"
+          fi
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest tag: $LATEST_TAG"
+
+      - name: Determine version increment
+        id: version
+        run: |
+          LATEST_TAG="${{ steps.get_latest_tag.outputs.latest_tag }}"
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r MAJOR MINOR BUILD <<< "$VERSION"
+
+          COMMIT_SHA=$(git rev-parse HEAD)
+          LABELS=""
+
+          echo "Fetching pull requests associated with commit $COMMIT_SHA"
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/commit_prs.json \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json, application/vnd.github.groot-preview+json" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT_SHA/pulls")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            PR_NUMBERS=$(jq -r '.[].number' /tmp/commit_prs.json | uniq)
+            if [ -n "$PR_NUMBERS" ]; then
+              for PR_NUMBER in $PR_NUMBERS; do
+                echo "Found PR #$PR_NUMBER for commit $COMMIT_SHA"
+                HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/pr_response.json \
+                  -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+                if [ "$HTTP_CODE" = "200" ]; then
+                  PR_LABELS=$(jq -r '.labels[].name' /tmp/pr_response.json)
+                  if [ -n "$PR_LABELS" ]; then
+                    echo "PR #$PR_NUMBER labels: $PR_LABELS"
+                    LABELS="${LABELS}${PR_LABELS}\n"
+                  else
+                    echo "PR #$PR_NUMBER has no labels"
+                  fi
+                else
+                  echo "Warning: Could not fetch labels for PR #$PR_NUMBER (HTTP $HTTP_CODE)"
+                fi
+              done
+              LABELS=$(echo "$LABELS" | tr '\n' ' ' | xargs)
+            else
+              echo "No pull requests associated with commit $COMMIT_SHA"
+            fi
+          else
+            echo "Warning: Could not fetch pull requests for commit $COMMIT_SHA (HTTP $HTTP_CODE)"
+          fi
+
+          # Fallback: infer PR number from commit message
+          if [ -z "$LABELS" ]; then
+            echo "Attempting to infer PR number from commit message as fallback"
+            FALLBACK_PR=$(git log -1 --pretty=%B | grep -oE 'Merge pull request #[0-9]+' | grep -oE '[0-9]+' | head -1 || echo "")
+            if [ -n "$FALLBACK_PR" ]; then
+              echo "Fallback detected PR #$FALLBACK_PR"
+              HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/pr_response.json \
+                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${{ github.repository }}/pulls/$FALLBACK_PR")
+              if [ "$HTTP_CODE" = "200" ]; then
+                FALLBACK_LABELS=$(jq -r '.labels[].name' /tmp/pr_response.json)
+                if [ -n "$FALLBACK_LABELS" ]; then
+                  LABELS="$FALLBACK_LABELS"
+                  echo "Fallback PR labels: $LABELS"
+                else
+                  echo "Fallback PR #$FALLBACK_PR has no labels"
+                fi
+              else
+                echo "Warning: Could not fetch fallback PR #$FALLBACK_PR (HTTP $HTTP_CODE)"
+              fi
+            fi
+          fi
+
+          if echo "$LABELS" | grep -q "release_major"; then
+            MAJOR=$((MAJOR + 1)); MINOR=0; BUILD=0
+            echo "Incrementing MAJOR version"
+          elif echo "$LABELS" | grep -q "release_minor"; then
+            MINOR=$((MINOR + 1)); BUILD=0
+            echo "Incrementing MINOR version"
+          else
+            BUILD=$((BUILD + 1))
+            echo "Incrementing BUILD version"
+          fi
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${BUILD}"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW_VERSION"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 3 — build-push (matrix, 3 images in parallel)
+# ─────────────────────────────────────────────────────────────────────────────
+  build-push:
+    name: Build & Push (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: determine-version
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: single-container
+            dockerfile: Dockerfile
+            image: garrardkitchen/mcp-explorer-x
+          - name: api
+            dockerfile: Dockerfile.api
+            image: garrardkitchen/mcp-explorer-x-api
+          - name: frontend
+            dockerfile: Dockerfile.frontend
+            image: garrardkitchen/mcp-explorer-x-frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ./${{ matrix.dockerfile }}
+          build-args: |
+            APP_VERSION=${{ needs.determine-version.outputs.new_version }}
+          push: true
+          tags: |
+            ${{ matrix.image }}:${{ needs.determine-version.outputs.new_version }}
+            ${{ matrix.image }}:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 4 — release (runs after all 3 images are pushed)
+# Creates the git tag and updates DockerHub descriptions.
+# ─────────────────────────────────────────────────────────────────────────────
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [determine-version, build-push]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Create and push git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ needs.determine-version.outputs.new_version }}" \
+            -m "Release v${{ needs.determine-version.outputs.new_version }}"
+          git push origin "v${{ needs.determine-version.outputs.new_version }}"
+
+      - name: Update DockerHub description — single-container
+        uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae # v4.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: garrardkitchen/mcp-explorer-x
+          readme-filepath: ./DOCKER_README.md
+          short-description: "MCP Explorer — Vue + ASP.NET Core MCP server explorer with Azure Key Vault & Entra integration"
+
+      - name: Update DockerHub description — API
+        uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae # v4.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: garrardkitchen/mcp-explorer-x-api
+          readme-filepath: ./DOCKER_README.md
+          short-description: "MCP Explorer API — ASP.NET Core 10 backend for mcp-explorer-x (docker-compose deployment)"
+
+      - name: Update DockerHub description — frontend
+        uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae # v4.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: garrardkitchen/mcp-explorer-x-frontend
+          readme-filepath: ./DOCKER_README.md
+          short-description: "MCP Explorer Frontend — Vue 3 + Vite + PrimeVue UI for mcp-explorer-x (docker-compose deployment)"
