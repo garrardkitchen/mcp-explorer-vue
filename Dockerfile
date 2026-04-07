@@ -51,8 +51,19 @@ WORKDIR /app
 ARG APP_VERSION
 ENV AppMetadata__Version=${APP_VERSION}
 
-# Install supervisor to manage both processes
-RUN apt-get update && apt-get install -y --no-install-recommends supervisor \
+# Install supervisor + Azure CLI (AzureCliCredential calls `az account get-access-token`)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       supervisor ca-certificates curl apt-transport-https lsb-release gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -sLS https://packages.microsoft.com/keys/microsoft.asc \
+       | gpg --dearmor | tee /etc/apt/keyrings/microsoft.gpg > /dev/null \
+    && chmod go+r /etc/apt/keyrings/microsoft.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] \
+       https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" \
+       | tee /etc/apt/sources.list.d/azure-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends azure-cli \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=api-build     /app/api     ./api
