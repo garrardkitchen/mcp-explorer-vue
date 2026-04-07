@@ -21,13 +21,13 @@ The Connections page is your hub for all MCP server connections. From here you c
 
 <img src="/images/screenshots/02-connections-new-form.png" alt="New connection form with fields for name, URL, transport type, and optional headers" style="max-width:700px;border-radius:8px;border:1px solid #e2e8f0;" />
 
-*The connection form supports stdio, SSE, and HTTP transports, with optional custom headers and OAuth/Azure credentials.*
+*The connection form uses Streamable HTTP transport, with optional custom headers and OAuth/Azure credentials.*
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | **Name** | ✅ | A friendly display name |
-| **Endpoint URL** | ✅ | The MCP server URL (for SSE/HTTP) or command (for stdio) |
-| **Transport** | ✅ | `stdio`, `sse`, or `http` |
+| **Endpoint URL** | ✅ | The MCP server URL |
+| **Transport** | — | Streamable HTTP (the only supported transport) |
 | **Group** | ❌ | Assign to a named group for organisation |
 | **Description** | ❌ | Free-text notes |
 | **Headers** | ❌ | Custom HTTP headers (e.g. `Authorization: Bearer ...`) |
@@ -56,7 +56,13 @@ Click the **trash icon** and confirm the deletion dialog. This is permanent.
 
 ## Grouping Connections
 
-Assign connections to named groups to keep your list organised. Groups appear as collapsible sections in the connections list. Useful when working with many servers across different projects.
+Assign connections to named groups to keep your list organised. Groups appear as filter tabs above the connections list. Useful when working with many servers across different projects.
+
+Click the **+** icon next to the group tabs to create a new group — give it a name and optionally pick a colour:
+
+<img src="/images/screenshots/48-connections-add-group.png" alt="New Group dialog with name and colour picker" style="max-width:460px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.18);" />
+
+*The New Group dialog. Enter a name and pick an accent colour, then click **Create**. You can then assign connections to the group via the **Group** field in the connection form.*
 
 ---
 

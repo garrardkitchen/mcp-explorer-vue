@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased] - 2026-04-07 (latest)
+
+### Added
+- **Quick Start docs**: Rewrote quick start page with OS-tabbed `docker run` examples (macOS, Ubuntu, Windows), `.env` setup instructions, and full `docker-compose.yml` inline reference.
+- **Connections docs**: Added Add Group dialog screenshot (`48-connections-add-group.png`) to the Grouping Connections section.
+
+---
+
+## [Unreleased] - 2026-04-07
+
+### Fixed
+- **Transport type corrections**: MCP Explorer only supports Streamable HTTP transport. Removed all incorrect references to `stdio`, `SSE`, and multi-transport from: connections docs, architecture diagram, configuration docs, landing page quick-start, landing page feature card, README features list, README architecture diagram.
+
+---
+
 ## [Unreleased] - 2026-04-06 (latest)
 
 ### Changed

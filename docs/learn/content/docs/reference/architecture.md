@@ -24,13 +24,13 @@ flowchart TB
         FILE["/app/data/data.json\nConnections · Models · Workflows\nSettings · Chat History"]
     end
 
-    subgraph MCP["🔌 MCP Servers"]
-        S1["Server A (stdio)"]
-        S2["Server B (SSE)"]
-        S3["Server C (HTTP)"]
+    subgraph MCP["🔌 MCP Servers (Streamable HTTP)"]
+        S1["Server A"]
+        S2["Server B"]
+        S3["Server C"]
     end
 
-    BROWSER -->|HTTP/SSE| GW
+    BROWSER -->|REST + SSE| GW
     API -->|read/write| FILE
     API -->|MCP protocol| S1
     API -->|MCP protocol| S2

@@ -41,7 +41,7 @@ volumes:
 
 ## User-Agent Header
 
-When MCP Explorer connects to an MCP server over HTTP/SSE, it sends:
+When MCP Explorer connects to an MCP server over Streamable HTTP, it sends:
 
 ```
 User-Agent: <MCP_CLIENT_NAME>/<version> (<hostname>)
