@@ -112,6 +112,7 @@ jobs:
       pull-requests: read
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
+      last_tag: ${{ steps.get_latest_tag.outputs.latest_tag }}
 
     steps:
       - name: Checkout code
@@ -269,7 +270,8 @@ jobs:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JOB 4 — release (runs after all 3 images are pushed)
-# Creates the git tag and updates DockerHub descriptions.
+# Creates the git tag, GitHub release with conventional-commit notes,
+# and updates DockerHub descriptions.
 # ─────────────────────────────────────────────────────────────────────────────
   release:
     name: Release
@@ -293,6 +295,75 @@ jobs:
           git tag -a "v${{ needs.determine-version.outputs.new_version }}" \
             -m "Release v${{ needs.determine-version.outputs.new_version }}"
           git push origin "v${{ needs.determine-version.outputs.new_version }}"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          git fetch --tags --force
+
+          LAST_TAG="${{ needs.determine-version.outputs.last_tag }}"
+          NEXT_VERSION="${{ needs.determine-version.outputs.new_version }}"
+
+          BREAKING=""
+          FEATURES=""
+          FIXES=""
+          DOCS=""
+          PERF=""
+          REFACTORS=""
+          TESTS=""
+          CHORES=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            SUBJECT="${line%|||*}"
+            AUTHOR="${line##*|||}"
+            case "$SUBJECT" in Merge*) continue ;; esac
+            case "$SUBJECT" in
+              Fix/*|fix/*|Feat/*|feat/*|Feature/*|feature/*|Chore/*|chore/*|Docs/*|docs/*|Refactor/*|refactor/*|Test/*|test/*|Perf/*|perf/*) continue ;;
+            esac
+            case "$SUBJECT" in
+              "feat!:"*)    BREAKING="${BREAKING}- ${SUBJECT#feat!: } [${AUTHOR}]\n" ;;
+              "fix!:"*)     BREAKING="${BREAKING}- ${SUBJECT#fix!: } *(breaking)* [${AUTHOR}]\n" ;;
+              "feat:"*)     FEATURES="${FEATURES}- ${SUBJECT#feat: } [${AUTHOR}]\n" ;;
+              "fix:"*)      FIXES="${FIXES}- ${SUBJECT#fix: } [${AUTHOR}]\n" ;;
+              "docs:"*)     DOCS="${DOCS}- ${SUBJECT#docs: } [${AUTHOR}]\n" ;;
+              "perf:"*)     PERF="${PERF}- ${SUBJECT#perf: } [${AUTHOR}]\n" ;;
+              "refactor:"*) REFACTORS="${REFACTORS}- ${SUBJECT#refactor: } [${AUTHOR}]\n" ;;
+              "test:"*)     TESTS="${TESTS}- ${SUBJECT#test: } [${AUTHOR}]\n" ;;
+              "chore:"*)    CHORES="${CHORES}- ${SUBJECT#chore: } [${AUTHOR}]\n" ;;
+              *)            OTHER="${OTHER}- ${SUBJECT} [${AUTHOR}]\n" ;;
+            esac
+          done <<EOF
+          $(git log "${LAST_TAG}..HEAD" --no-merges --format="%s|||%an" 2>/dev/null || git log --no-merges --format="%s|||%an")
+          EOF
+
+          CHANGELOG=""
+          [ -n "$BREAKING" ]  && CHANGELOG="${CHANGELOG}## 💥 Breaking Changes\n${BREAKING}\n"
+          [ -n "$FEATURES" ]  && CHANGELOG="${CHANGELOG}## ✨ Features\n${FEATURES}\n"
+          [ -n "$FIXES" ]     && CHANGELOG="${CHANGELOG}## 🐛 Bug Fixes\n${FIXES}\n"
+          [ -n "$PERF" ]      && CHANGELOG="${CHANGELOG}## ⚡ Performance\n${PERF}\n"
+          [ -n "$REFACTORS" ] && CHANGELOG="${CHANGELOG}## ♻️ Refactoring\n${REFACTORS}\n"
+          [ -n "$DOCS" ]      && CHANGELOG="${CHANGELOG}## 📚 Documentation\n${DOCS}\n"
+          [ -n "$TESTS" ]     && CHANGELOG="${CHANGELOG}## 🧪 Tests\n${TESTS}\n"
+          [ -n "$CHORES" ]    && CHANGELOG="${CHANGELOG}## 🔧 Chores\n${CHORES}\n"
+          [ -n "$OTHER" ]     && CHANGELOG="${CHANGELOG}## 📝 Other Changes\n${OTHER}\n"
+          [ -z "$CHANGELOG" ] && CHANGELOG="No conventional commits found since ${LAST_TAG}.\n"
+
+          printf '## 📋 What'\''s Changed (since %s)\n\n%b\n---\n*Full diff: [%s...v%s](https://github.com/${{ github.repository }}/compare/%s...v%s)*' \
+            "$LAST_TAG" "$CHANGELOG" "$LAST_TAG" "$NEXT_VERSION" "$LAST_TAG" "$NEXT_VERSION" \
+            > release-notes.md
+
+          echo "Release notes:"
+          cat release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ needs.determine-version.outputs.new_version }}" \
+            --title "v${{ needs.determine-version.outputs.new_version }}" \
+            --notes-file release-notes.md
 
       - name: Update DockerHub description — single-container
         uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae # v4.0.0
