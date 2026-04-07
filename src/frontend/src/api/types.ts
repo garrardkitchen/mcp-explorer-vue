@@ -10,12 +10,20 @@ export interface ConnectionHeader {
   isAuthorization: boolean
 }
 
+export interface KeyVaultSecretReference {
+  vaultName: string
+  secretName: string
+}
+
 export interface AzureClientCredentialsOptions {
   tenantId: string
   clientId: string
   clientSecret: string
   scope: string
   authorityHost?: string
+  keyVaultSecretRef?: KeyVaultSecretReference
+  /** Azure subscription used for KV browsing in the UI — not used in auth flow */
+  subscriptionId?: string
 }
 
 export interface OAuthConnectionOptions {
@@ -24,6 +32,36 @@ export interface OAuthConnectionOptions {
   redirectUri: string
   scopes: string
   clientMetadataDocumentUri?: string
+  keyVaultSecretRef?: KeyVaultSecretReference
+}
+
+// ── Azure context types ──────────────────────────────────────────────────────
+
+export interface AzureAccountInfo {
+  tenantId: string
+  subscriptionId: string
+  subscriptionName: string
+  userPrincipalName: string
+  location?: string
+}
+
+export interface AzureSubscription {
+  id: string
+  name: string
+  tenantId: string
+  isDefault: boolean
+}
+
+export interface AzureAppRegistration {
+  appId: string
+  displayName: string
+  firstApiResourceId?: string
+}
+
+export interface AzureKeyVaultInfo {
+  name: string
+  resourceGroup?: string
+  location?: string
 }
 
 export interface ConnectionDefinition {

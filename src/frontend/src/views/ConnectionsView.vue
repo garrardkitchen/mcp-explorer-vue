@@ -17,7 +17,10 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { apiClient } from '@/api/client'
-import type { ConnectionDefinition, ConnectionGroup } from '@/api/types'
+import type { ConnectionDefinition, ConnectionGroup, AzureAccountInfo, AzureAppRegistration, AzureSubscription } from '@/api/types'
+import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
+import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
+import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -238,7 +241,9 @@ async function load() {
 
 function openCreate() {
   editMode.value = false; originalName.value = ''
-  form.value = blankForm(); showDialog.value = true
+  form.value = blankForm()
+  selectedSubscriptionId.value = undefined
+  showDialog.value = true
 }
 
 function openEdit(conn: ConnectionDefinition) {
@@ -252,6 +257,8 @@ function openEdit(conn: ConnectionDefinition) {
   if (form.value.authenticationMode === 'OAuth' && !form.value.oAuthOptions) {
     form.value.oAuthOptions = { clientId: '', redirectUri: '', scopes: '' }
   }
+  // Restore persisted subscription selection for KV browsing
+  selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
   showDialog.value = true
 }
 
@@ -265,14 +272,52 @@ function onAuthModeChange() {
   }
 }
 
+// ── Azure Assist ─────────────────────────────────────────────────────────────
+
+const selectedSubscriptionId = ref<string | undefined>(undefined)
+
+function onAzureAccountLoaded(account: AzureAccountInfo | null) {
+  if (!account) return
+  // Auto-populate Tenant ID if blank (only when no subscription has been selected yet)
+  if (form.value.azureCredentials && !form.value.azureCredentials.tenantId.trim()) {
+    form.value.azureCredentials = { ...form.value.azureCredentials, tenantId: account.tenantId }
+  }
+}
+
+function onSubscriptionChanged(subscription: AzureSubscription) {
+  selectedSubscriptionId.value = subscription.id
+  // Update tenant ID to match the selected subscription's tenant
+  if (form.value.azureCredentials) {
+    form.value.azureCredentials = { ...form.value.azureCredentials, tenantId: subscription.tenantId }
+  }
+}
+
+function onAppRegistrationSelected(app: AzureAppRegistration) {
+  if (form.value.azureCredentials) {
+    const scope = app.firstApiResourceId ? `api://${app.firstApiResourceId}/.default` : ''
+    form.value.azureCredentials = {
+      ...form.value.azureCredentials,
+      clientId: app.appId,
+      scope: scope || form.value.azureCredentials.scope
+    }
+  }
+}
+
+function onOAuthAppRegistrationSelected(app: AzureAppRegistration) {
+  if (form.value.oAuthOptions) {
+    form.value.oAuthOptions = { ...form.value.oAuthOptions, clientId: app.appId }
+  }
+}
+
 async function save() {
   if (!form.value.name?.trim() || !form.value.endpoint?.trim()) {
     toast.add({ severity: 'warn', summary: 'Validation', detail: 'Name and endpoint are required', life: 3000 }); return
   }
   if (form.value.authenticationMode === 'AzureClientCredentials') {
     const az = form.value.azureCredentials
-    if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.clientSecret?.trim() || !az?.scope?.trim()) {
-      toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret and Scope are required for Azure Client Credentials', life: 4000 }); return
+    const hasSecret = !!az?.clientSecret?.trim() || !!az?.keyVaultSecretRef
+    if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !hasSecret || !az?.scope?.trim()) {
+      toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret (or Key Vault reference) and Scope are required for Azure Client Credentials', life: 4000 }); return
     }
   }
   if (form.value.authenticationMode === 'OAuth') {
@@ -282,6 +327,10 @@ async function save() {
     }
   }
   saving.value = true
+  // Persist the selected subscription so it's restored on next edit
+  if (form.value.azureCredentials) {
+    form.value.azureCredentials = { ...form.value.azureCredentials, subscriptionId: selectedSubscriptionId.value }
+  }
   try {
     if (editMode.value) {
       await connectionsApi.update(originalName.value, form.value)
@@ -497,20 +546,45 @@ onMounted(load)
         <!-- Azure Client Credentials section -->
         <template v-if="form.authenticationMode === 'AzureClientCredentials'">
           <div class="section-divider full-width">Azure Client Credentials</div>
+          <!-- Azure Assist Banner (Design 2) -->
+          <div class="full-width">
+            <AzureContextBanner
+              :subscriptionId="selectedSubscriptionId"
+              @account-loaded="onAzureAccountLoaded"
+              @subscription-changed="onSubscriptionChanged"
+            />
+          </div>
           <div class="form-field">
-            <label>Tenant ID</label>
+            <div class="field-label-row">
+              <label>Tenant ID</label>
+              <span class="auto-populated-hint" v-if="form.azureCredentials!.tenantId">Auto-detected</span>
+            </div>
             <InputText v-model="form.azureCredentials!.tenantId" class="w-full" />
           </div>
           <div class="form-field">
             <label>Client ID</label>
             <InputText v-model="form.azureCredentials!.clientId" class="w-full" />
+            <AppRegistrationPicker :clientId="form.azureCredentials!.clientId" @selected="onAppRegistrationSelected" />
           </div>
           <div class="form-field">
             <label>Client Secret</label>
-            <InputText v-model="form.azureCredentials!.clientSecret" type="password" class="w-full" />
+            <Password
+              v-if="!form.azureCredentials!.keyVaultSecretRef"
+              v-model="form.azureCredentials!.clientSecret"
+              :feedback="false"
+              toggleMask
+              class="w-full"
+            />
+            <KeyVaultSecretPicker
+              v-model="form.azureCredentials!.keyVaultSecretRef"
+              :subscriptionId="selectedSubscriptionId"
+            />
           </div>
           <div class="form-field">
-            <label>Scope</label>
+            <div class="field-label-row">
+              <label>Scope</label>
+              <span class="auto-populated-hint" v-if="form.azureCredentials!.scope">Auto-filled from App Reg</span>
+            </div>
             <InputText v-model="form.azureCredentials!.scope" class="w-full" />
           </div>
           <div class="form-field full-width">
@@ -522,13 +596,32 @@ onMounted(load)
         <!-- OAuth section -->
         <template v-if="form.authenticationMode === 'OAuth'">
           <div class="section-divider full-width">OAuth Settings</div>
+          <!-- Azure Assist Banner for OAuth too -->
+          <div class="full-width">
+            <AzureContextBanner
+              :subscriptionId="selectedSubscriptionId"
+              @account-loaded="() => {}"
+              @subscription-changed="onSubscriptionChanged"
+            />
+          </div>
           <div class="form-field">
             <label>Client ID</label>
             <InputText v-model="form.oAuthOptions!.clientId" class="w-full" />
+            <AppRegistrationPicker :clientId="form.oAuthOptions!.clientId" @selected="onOAuthAppRegistrationSelected" />
           </div>
           <div class="form-field">
             <label>Client Secret <span class="optional">(optional)</span></label>
-            <InputText v-model="form.oAuthOptions!.clientSecret" type="password" class="w-full" />
+            <Password
+              v-if="!form.oAuthOptions!.keyVaultSecretRef"
+              v-model="form.oAuthOptions!.clientSecret!"
+              :feedback="false"
+              toggleMask
+              class="w-full"
+            />
+            <KeyVaultSecretPicker
+              v-model="form.oAuthOptions!.keyVaultSecretRef"
+              :subscriptionId="selectedSubscriptionId"
+            />
           </div>
           <div class="form-field">
             <label>Redirect URI</label>
@@ -742,11 +835,14 @@ onMounted(load)
 
 /* ── Dialog form ── */
 .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.form-field { display:flex; flex-direction:column; gap:6px; }
+.form-field { display:flex; flex-direction:column; gap:6px; min-width: 0; }
 .form-field label { font-size:12px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
 .optional { text-transform:none; font-weight:400; color:var(--text-muted); }
 .field-hint { color:var(--text-muted); font-size:11px; margin-top:4px; display:block; }
 .full-width { grid-column:1/-1; }
+.field-label-row { display:flex; align-items:center; justify-content:space-between; }
+.field-label-row label { margin-bottom:0 !important; }
+.auto-populated-hint { font-size:0.65rem; font-weight:600; background:#dcfce7; color:#166534; border:1px solid #bbf7d0; border-radius:10px; padding:1px 7px; text-transform:none; letter-spacing:0; }
 .w-full { width:100%; }
 
 .section-divider {

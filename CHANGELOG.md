@@ -1,10 +1,43 @@
 # Changelog
 
+## [Unreleased] - 2026-04-08
+
+### Added
+- **Docs — Azure Client Credentials screenshot**: Adds masked screenshot of the Edit Connection dialog (Azure Client Credentials mode) to `managing-connections.md`, with all sensitive fields (tenant ID, client ID, endpoint, scope, KV ref) redacted.
+- **Docs — Azure-Powered Authentication feature card**: Added new card 4 (`feature-card--highlight`) on the landing page showcasing Azure Key Vault + Entra App Registration credential browsing; existing cards 4–10 renumbered to 5–11. Section header updated to "11 Killer Features". Hero meta updated with `🔐 Azure KV` span.
+- **Docs — Authentication Modes reference**: `managing-connections.md` now documents all three auth modes (Custom Headers, Azure Client Credentials, OAuth) including the Azure Context Banner, Browse App Registrations picker, and Key Vault Secret Picker.
+- **Docs — Azure volume mount in quickstart**: `quickstart.md` docker-compose.yml block updated with `AZURE_CONFIG_DIR` env var, `HOST_AZURE_CONFIG_DIR` volume mount, and `azure-config-empty` fallback volume.
+- **Docs — Azure Integration environment variables**: `environment-variables.md` now includes a `### Azure Integration` subsection documenting `HOST_AZURE_CONFIG_DIR` and `AZURE_CONFIG_DIR`, plus a new `## Azure Integration Quick Reference` section at the end.
+
+- **Azure subscription picker**: Connections page now shows a subscription dropdown in the Azure Context Banner when multiple subscriptions are available; changing the selection propagates to `KeyVaultSecretPicker` so vaults are scoped to the chosen subscription. Backend exposes `GET /api/v1/azure/subscriptions` and `GET /api/v1/azure/keyvaults?subscriptionId=` accordingly.
+- **Subscription persistence**: The selected Azure subscription is now persisted in `AzureClientCredentialsOptions.SubscriptionId` alongside the connection — it is automatically restored when the connection is edited again.
+- **Azure CLI in Docker**: `Dockerfile.api` now installs `azure-cli` in the final stage so `AzureCliCredential` can call `az account get-access-token` inside the container.
+- **Azure credential log noise eliminated**: `AzureContextService` now routes `CredentialUnavailableException` to `Debug` instead of `Warning` — the full stack trace no longer appears in production logs when running without Azure credentials. `KeyVaultSecretResolver` does the same and wraps it in a clear user-facing message.
+
+### Fixed
+- **OAuth Key Vault secret not resolved** — `BuildOAuthOptions` was using the plaintext `ClientSecret` directly; refactored to `BuildOAuthOptionsAsync` so `KeyVaultSecretRef` is resolved via `IKeyVaultSecretResolver` before the OAuth flow begins.
+- **`KeyVaultSecretRef` dropped on save/load** — `PreferencesMapper` encrypt and decrypt paths now round-trip `KeyVaultSecretRef` for both `AzureClientCredentialsOptions` and `OAuthConnectionOptions` (the reference is never encrypted — it contains no secret value).
+- **SSRF / vault name injection** — Vault names are now validated against Azure naming rules (`^[a-zA-Z][a-zA-Z0-9\-]{1,22}[a-zA-Z0-9]$`) in both `AzureController.GetKeyVaultSecrets` and `KeyVaultSecretResolver.ResolveAsync` before the URI is constructed.
+- **`OperationCanceledException` swallowed** — `KeyVaultSecretResolver` now re-throws `OperationCanceledException` directly instead of wrapping it in `InvalidOperationException`.
+- **Key Vault picker blank on edit** — `KeyVaultSecretPicker.open()` now pre-selects the vault matching the current `modelValue`; `goToStep2` pre-selects the matching secret name after the list loads.
+
 ## [Unreleased] - 2026-04-07 (latest)
 
 ### Added
+- **Azure Key Vault integration**: Connection form now supports resolving client secrets from Azure Key Vault at runtime via `DefaultAzureCredential` (AzureCliCredential → EnvironmentCredential → VisualStudioCredential). Secrets are stored as vault/secret references — never persisted as plain text.
+- **Azure Assist (Design 2)**: Live Azure Context Banner on Azure Client Credentials and OAuth sections shows active account, subscription, and connection status. Includes Browse App Registrations picker (searchable, auto-fills Client ID + Scope) and two-step Key Vault Secret Picker (vault → secret).
+- **Tenant ID auto-population**: Tenant ID is auto-populated from `az account show` when the form opens; manual override is retained.
+- **Scope auto-population**: Selecting an App Registration automatically derives the scope as `api://<resourceAppId>/.default`.
+- **New backend API endpoints**: `GET /api/v1/azure/account`, `GET /api/v1/azure/app-registrations`, `GET /api/v1/azure/keyvaults`, `GET /api/v1/azure/keyvaults/{vaultName}/secrets`.
+- **New components**: `AzureContextBanner.vue`, `AppRegistrationPicker.vue`, `KeyVaultSecretPicker.vue`.
+- **New unit tests**: `KeyVaultSecretResolverTests`, `KeyVaultSecretReferenceTests`, `ConnectionOptionsKeyVaultTests` (15 tests added, total 147).
 - **Quick Start docs**: Rewrote quick start page with OS-tabbed `docker run` examples (macOS, Ubuntu, Windows), `.env` setup instructions, and full `docker-compose.yml` inline reference.
 - **Connections docs**: Added Add Group dialog screenshot (`48-connections-add-group.png`) to the Grouping Connections section.
+
+### Changed
+- `AzureClientCredentialsOptions`: Added `KeyVaultSecretRef` property (`KeyVaultSecretReference?`).
+- `OAuthConnectionOptions`: Added `KeyVaultSecretRef` property (`KeyVaultSecretReference?`).
+- `ConnectionService`: Injects `IKeyVaultSecretResolver`; resolves KV reference before acquiring Azure access token.
 
 ---
 

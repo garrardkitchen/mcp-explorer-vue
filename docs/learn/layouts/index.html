@@ -23,6 +23,7 @@
         <span>⚡ Vue 3 + ASP.NET Core</span>
         <span>🔌 MCP SDK 1.2</span>
         <span>🎨 10 Themes</span>
+        <span>🔐 Azure KV</span>
       </div>
     </div>
     <div class="hero-visual">
@@ -36,7 +37,7 @@
   <section class="killer-features">
     <div class="section-header">
       <div class="section-eyebrow">Why MCP Explorer?</div>
-      <h2>10 Killer Features</h2>
+      <h2>11 Killer Features</h2>
       <p>Everything a developer needs to explore, debug, and build on top of MCP servers.</p>
     </div>
     <div class="features-grid">
@@ -65,8 +66,16 @@
         <a href="{{ "/docs/settings/app-settings/" | relURL }}" class="feature-link">Learn more →</a>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card feature-card--highlight">
         <div class="feature-rank">4</div>
+        <div class="feature-icon">🔐</div>
+        <h3>Azure-Powered Authentication</h3>
+        <p>Pick client secrets directly from Azure Key Vault and client IDs from Entra App Registrations — all via a searchable UI. Tenant ID and scope are auto-populated. No copy-pasting credentials ever.</p>
+        <a href="{{ "/docs/connections/managing-connections/" | relURL }}" class="feature-link">Learn more →</a>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-rank">5</div>
         <div class="feature-icon">🔌</div>
         <h3>MCP Connections</h3>
         <p>Connect to MCP servers over Streamable HTTP with custom headers, OAuth credentials, and Azure auth. Import/export encrypted connection sets to share with your team.</p>
@@ -74,7 +83,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-rank">5</div>
+        <div class="feature-rank">6</div>
         <div class="feature-icon">🎨</div>
         <h3>10 Persisted Themes</h3>
         <p>Command Dark/Light, Nord, Dracula, Catppuccin Mocha, Solarized Light, GitHub Dark/Light, Material Dark/Light — each persisted per user. Switch with zero friction.</p>
@@ -82,7 +91,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-rank">6</div>
+        <div class="feature-rank">7</div>
         <div class="feature-icon">⌨️</div>
         <h3>Command Palette + Slash Commands</h3>
         <p>⌘K / Ctrl+K command palette for instant keyboard-first navigation. Slash commands in chat for quick actions — /prompt, /clear, /help. Designed for developer speed.</p>
@@ -90,7 +99,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-rank">7</div>
+        <div class="feature-rank">8</div>
         <div class="feature-icon">🤖</div>
         <h3>Multi-Provider LLM Support</h3>
         <p>OpenAI, Azure OpenAI, Azure AI Foundry, Ollama, LM Studio, and any OpenAI-compatible endpoint. API keys are masked with show/hide toggle. Switch models per conversation.</p>
@@ -98,7 +107,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-rank">8</div>
+        <div class="feature-rank">9</div>
         <div class="feature-icon">📋</div>
         <h3>Dynamic Tool Parameter Forms</h3>
         <p>Tool parameter forms are generated from JSON Schema automatically — strings, numbers, booleans, enums (radio or dropdown), objects, and arrays all have native controls. No manual form building.</p>
@@ -106,7 +115,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-rank">9</div>
+        <div class="feature-rank">10</div>
         <div class="feature-icon">💬</div>
         <h3>Prompts with LLM Pipeline</h3>
         <p>Execute MCP prompts with dynamic arguments and pipe results directly into Chat — enabling prompt → LLM analysis pipelines in two clicks. Favourites persist across sessions.</p>
@@ -114,7 +123,7 @@
       </div>
 
       <div class="feature-card">
-        <div class="feature-rank">10</div>
+        <div class="feature-rank">11</div>
         <div class="feature-icon">🐳</div>
         <h3>Single-Container, Zero Dependencies</h3>
         <p>One Docker image, one volume mount, done. No database, no external services. Also supports docker compose for separate frontend/backend deployment. Runs anywhere Docker runs.</p>

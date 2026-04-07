@@ -181,8 +181,15 @@ services:
       - Elicitation__TimeoutSeconds=${Elicitation__TimeoutSeconds:-0}
       - MCP_CLIENT_NAME=${MCP_CLIENT_NAME:-mcp-explorer}
       - PREFERENCES__StoragePath=${PREFERENCES__StoragePath:-/data/settings.json}
+      # Fixed inside the container — do not override
+      - AZURE_CONFIG_DIR=/root/.azure
     volumes:
       - ${MCP_DATA_PATH:-mcp-data}:/data
+      # Optional: mount your host ~/.azure so Azure Key Vault & app-registration
+      # lookups work inside the container. Set HOST_AZURE_CONFIG_DIR in .env:
+      #   macOS/Linux: HOST_AZURE_CONFIG_DIR=~/.azure
+      #   Windows:     HOST_AZURE_CONFIG_DIR=%USERPROFILE%\.azure
+      - ${HOST_AZURE_CONFIG_DIR:-azure-config-empty}:/root/.azure
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:5000/healthz"]
       interval: 10s
@@ -209,6 +216,9 @@ services:
 
 volumes:
   mcp-data:
+    driver: local
+  # Empty fallback — used when HOST_AZURE_CONFIG_DIR is not set in .env
+  azure-config-empty:
     driver: local
 
 networks:

@@ -37,6 +37,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
     private readonly IConfiguration _configuration;
     private readonly ElicitationService? _elicitationService;
     private readonly OAuthCallbackService _oAuthCallbackService;
+    private readonly IKeyVaultSecretResolver _keyVaultSecretResolver;
     private readonly ConcurrentDictionary<string, ActiveConnection> _connections = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ConnectionDefinition> _definitions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _reconnectGates = new(StringComparer.OrdinalIgnoreCase);
@@ -47,10 +48,12 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         ILogger<ConnectionService> logger,
         IConfiguration configuration,
         IElicitationService elicitationService,
-        OAuthCallbackService oAuthCallbackService)
+        OAuthCallbackService oAuthCallbackService,
+        IKeyVaultSecretResolver keyVaultSecretResolver)
     {
         _logger = logger;
         _configuration = configuration;
+        _keyVaultSecretResolver = keyVaultSecretResolver;
         _clientName = configuration.GetValue<string>("MCP_CLIENT_NAME")?.Trim() is { Length: > 0 } name
             ? name
             : DefaultClientName;
@@ -90,7 +93,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             if (definition.AuthenticationMode == ConnectionAuthenticationMode.OAuth
                 && definition.OAuthOptions is not null)
             {
-                transportOptions.OAuth = BuildOAuthOptions(definition.OAuthOptions);
+                transportOptions.OAuth = await BuildOAuthOptionsAsync(definition.OAuthOptions, cancellationToken).ConfigureAwait(false);
             }
 
             LogAuthDiagnostics("[MCP Connect]", definition.Name, transportOptions.AdditionalHeaders);
@@ -417,7 +420,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 if (existing.Context.AuthenticationMode == ConnectionAuthenticationMode.OAuth
                     && existing.Context.OAuthOptions is not null)
                 {
-                    transportOptions.OAuth = BuildOAuthOptions(existing.Context.OAuthOptions);
+                    transportOptions.OAuth = await BuildOAuthOptionsAsync(existing.Context.OAuthOptions, cancellationToken).ConfigureAwait(false);
                 }
 
                 LogAuthDiagnostics("[MCP Sampling]", name, transportOptions.AdditionalHeaders);
@@ -630,7 +633,10 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             scopes = [DefaultAzureManagementScope];
         }
 
-        var cacheKey = string.Join("|", tenantId, clientId, authorityHost, string.Join(' ', scopes));
+        // Include the KV reference identity in the cache key so a change of secret reference
+        // produces a distinct cache entry, while avoiding embedding the secret value itself.
+        var kvSuffix = credentials.KeyVaultSecretRef is { } kvRef ? kvRef.ToString() : string.Empty;
+        var cacheKey = string.Join("|", tenantId, clientId, authorityHost, string.Join(' ', scopes), kvSuffix);
 
         if (_azureTokenCache.TryGetValue(cacheKey, out var cached)
             && cached.Token.ExpiresOn > DateTimeOffset.UtcNow.AddMinutes(2))
@@ -647,6 +653,12 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 return cached.Token.Token;
             }
 
+            // Resolve the client secret only when a cache miss requires a fresh token.
+            // This avoids a Key Vault round-trip on every call when a valid token is cached.
+            var clientSecret = credentials.KeyVaultSecretRef is not null
+                ? await _keyVaultSecretResolver.ResolveAsync(credentials.KeyVaultSecretRef, cancellationToken).ConfigureAwait(false)
+                : credentials.ClientSecret;
+
             var credentialOptions = new ClientSecretCredentialOptions();
             if (!string.IsNullOrWhiteSpace(credentials.AuthorityHost))
             {
@@ -658,7 +670,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 credentialOptions.AuthorityHost = authorityUri;
             }
 
-            var credential = new ClientSecretCredential(tenantId, clientId, credentials.ClientSecret, credentialOptions);
+            var credential = new ClientSecretCredential(tenantId, clientId, clientSecret, credentialOptions);
             var tokenContext = new TokenRequestContext(scopes);
             var token = await credential.GetTokenAsync(tokenContext, cancellationToken).ConfigureAwait(false);
 
@@ -678,7 +690,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
     /// Builds <see cref="ClientOAuthOptions"/> from the stored OAuth connection options,
     /// wiring the <see cref="OAuthCallbackService"/> as the authorization redirect handler.
     /// </summary>
-    private ClientOAuthOptions BuildOAuthOptions(OAuthConnectionOptions opts)
+    private async Task<ClientOAuthOptions> BuildOAuthOptionsAsync(OAuthConnectionOptions opts, CancellationToken cancellationToken)
     {
         var scopes = opts.Scopes
             .Split([' ', ',', ';', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
@@ -686,10 +698,16 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             .Where(static s => !string.IsNullOrEmpty(s))
             .ToArray();
 
+        // Resolve the client secret from Key Vault if a reference is configured, otherwise use
+        // the plaintext value.  Resolution is async so this method must be awaited by callers.
+        string? clientSecret = opts.KeyVaultSecretRef is { } kvRef
+            ? await _keyVaultSecretResolver.ResolveAsync(kvRef, cancellationToken).ConfigureAwait(false)
+            : (string.IsNullOrWhiteSpace(opts.ClientSecret) ? null : opts.ClientSecret);
+
         return new ClientOAuthOptions
         {
             ClientId = opts.ClientId,
-            ClientSecret = string.IsNullOrWhiteSpace(opts.ClientSecret) ? null : opts.ClientSecret,
+            ClientSecret = clientSecret,
             Scopes = scopes.Length > 0 ? scopes : null,
             RedirectUri = string.IsNullOrWhiteSpace(opts.RedirectUri)
                 ? null!

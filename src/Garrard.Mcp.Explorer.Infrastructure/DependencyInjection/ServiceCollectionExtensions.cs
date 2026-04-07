@@ -1,4 +1,5 @@
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Garrard.Mcp.Explorer.Infrastructure.Azure;
 using Garrard.Mcp.Explorer.Infrastructure.Connections;
 using Garrard.Mcp.Explorer.Infrastructure.Elicitation;
 using Garrard.Mcp.Explorer.Infrastructure.LlmProviders;
@@ -36,6 +37,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConnectionExportService, ConnectionExportService>();
         services.AddSingleton<ElicitationService>();
         services.AddSingleton<IElicitationService>(sp => sp.GetRequiredService<ElicitationService>());
+
+        // Azure context & Key Vault
+        services.AddSingleton<IKeyVaultSecretResolver, KeyVaultSecretResolver>();
+        services.AddSingleton<IAzureContextService, AzureContextService>();
+
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<IConnectionService>(sp => sp.GetRequiredService<ConnectionService>());
         services.AddHostedService<ConnectionUpdateService>();

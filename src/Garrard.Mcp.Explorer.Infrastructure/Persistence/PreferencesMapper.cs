@@ -53,7 +53,10 @@ internal static class PreferencesMapper
                     ? c.AzureCredentials.ClientSecret
                     : p.Encrypt(c.AzureCredentials.ClientSecret),
                 Scope = c.AzureCredentials.Scope,
-                AuthorityHost = c.AzureCredentials.AuthorityHost
+                AuthorityHost = c.AzureCredentials.AuthorityHost,
+                // KV reference is never encrypted — it contains no secret value
+                KeyVaultSecretRef = c.AzureCredentials.KeyVaultSecretRef,
+                SubscriptionId = c.AzureCredentials.SubscriptionId
             };
         }
 
@@ -68,7 +71,8 @@ internal static class PreferencesMapper
                     : p.Encrypt(c.OAuthOptions.ClientSecret),
                 RedirectUri = c.OAuthOptions.RedirectUri,
                 Scopes = c.OAuthOptions.Scopes,
-                ClientMetadataDocumentUri = c.OAuthOptions.ClientMetadataDocumentUri
+                ClientMetadataDocumentUri = c.OAuthOptions.ClientMetadataDocumentUri,
+                KeyVaultSecretRef = c.OAuthOptions.KeyVaultSecretRef
             };
         }
 
@@ -107,7 +111,9 @@ internal static class PreferencesMapper
                     ? c.AzureCredentials.ClientSecret
                     : p.Decrypt(c.AzureCredentials.ClientSecret),
                 Scope = c.AzureCredentials.Scope,
-                AuthorityHost = c.AzureCredentials.AuthorityHost
+                AuthorityHost = c.AzureCredentials.AuthorityHost,
+                KeyVaultSecretRef = c.AzureCredentials.KeyVaultSecretRef,
+                SubscriptionId = c.AzureCredentials.SubscriptionId
             };
         }
 
@@ -122,7 +128,8 @@ internal static class PreferencesMapper
                     : p.Decrypt(c.OAuthOptions.ClientSecret),
                 RedirectUri = c.OAuthOptions.RedirectUri,
                 Scopes = c.OAuthOptions.Scopes,
-                ClientMetadataDocumentUri = c.OAuthOptions.ClientMetadataDocumentUri
+                ClientMetadataDocumentUri = c.OAuthOptions.ClientMetadataDocumentUri,
+                KeyVaultSecretRef = c.OAuthOptions.KeyVaultSecretRef
             };
         }
 

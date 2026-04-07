@@ -63,6 +63,25 @@ These apply to the `api` service (`Garrard.Mcp.Explorer.Api`).
 | Linux | `/home/<you>/.local/share/McpExplorer` |
 | Windows | `C:\Users\<you>\AppData\Local\McpExplorer` |
 
+### Azure Integration
+
+MCP Explorer can use Azure Key Vault secrets and Entra App Registrations to populate connection credentials. The API container uses `DefaultAzureCredential` (Azure CLI → environment → managed identity) to authenticate with Azure.
+
+| Variable | Default | Description |
+|---|---|---|
+| `HOST_AZURE_CONFIG_DIR` | *(empty)* | **Host** path to your `.azure` directory (e.g. `~/.azure`). When set, Docker Compose mounts this directory into the container at `/root/.azure` so the Azure CLI credential (`az login` session) is available inside Docker. Leave empty to skip — Azure features show "not connected" but all other functionality continues. |
+| `AZURE_CONFIG_DIR` | `/root/.azure` | Path to the `.azure` directory **inside the container**. Set automatically to `/root/.azure` in `docker-compose.yml` — do not override this unless you are customising the volume mount target. |
+
+**Per-OS values for `HOST_AZURE_CONFIG_DIR`:**
+
+| Platform | Value |
+|---|---|
+| macOS | `HOST_AZURE_CONFIG_DIR=~/.azure` |
+| Linux | `HOST_AZURE_CONFIG_DIR=~/.azure` |
+| Windows | `HOST_AZURE_CONFIG_DIR=%USERPROFILE%\.azure` |
+
+> **tip:** The volume is mounted **read-write** (not read-only) because the Azure CLI refreshes expired access tokens by writing back to `msal_token_cache.json`. A read-only mount silently blocks token refresh and causes authentication failures.
+
 ### LLM Service
 
 | Variable | Default | Description |
@@ -144,3 +163,24 @@ docker run -p 8090:8080 \
 # docker compose — copy .env.example to .env, edit, then:
 docker compose up -d
 ```
+
+---
+
+## Azure Integration Quick Reference
+
+```bash
+# .env — enable Azure Key Vault & App Registration browsing in Docker
+HOST_AZURE_CONFIG_DIR=~/.azure          # macOS / Linux
+# HOST_AZURE_CONFIG_DIR=%USERPROFILE%\.azure  # Windows
+
+# AZURE_CONFIG_DIR is set automatically inside the container
+# Do NOT put AZURE_CONFIG_DIR in your .env
+```
+
+Then run:
+
+```bash
+docker compose up --build
+```
+
+MCP Explorer will pick up your `az login` session and show "Connected" in the Azure Context Banner on the Connections page.
