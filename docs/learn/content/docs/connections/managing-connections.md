@@ -56,7 +56,13 @@ Click the **trash icon** and confirm the deletion dialog. This is permanent.
 
 ## Grouping Connections
 
-Assign connections to named groups to keep your list organised. Groups appear as collapsible sections in the connections list. Useful when working with many servers across different projects.
+Assign connections to named groups to keep your list organised. Groups appear as filter tabs above the connections list. Useful when working with many servers across different projects.
+
+Click the **+** icon next to the group tabs to create a new group — give it a name and optionally pick a colour:
+
+<img src="/images/screenshots/48-connections-add-group.png" alt="New Group dialog with name and colour picker" style="max-width:460px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.18);" />
+
+*The New Group dialog. Enter a name and pick an accent colour, then click **Create**. You can then assign connections to the group via the **Group** field in the connection form.*
 
 ---
 
