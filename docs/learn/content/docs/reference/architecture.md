@@ -111,7 +111,7 @@ sequenceDiagram
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Vue 3, Vite, PrimeVue 4, TypeScript |
-| Backend | ASP.NET Core 9, C# |
+| Backend | ASP.NET Core 10, C# |
 | MCP SDK | ModelContextProtocol 1.2.0 |
 | Gateway | YARP reverse proxy |
 | Persistence | JSON file (single file, no database) |

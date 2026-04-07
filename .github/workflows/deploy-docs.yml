@@ -74,7 +74,7 @@ jobs:
             --minify \
             --baseURL "${TARGET_BASE_URL}"
 
-      - name: Deploy to gif-creator-docs repository
+      - name: Deploy to mcp-explorer-x-docs repository
         uses: peaceiris/actions-gh-pages@v4
         with:
           personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
