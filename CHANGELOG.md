@@ -3,6 +3,11 @@
 ## [Unreleased] - 2026-04-08
 
 ### Added
+- **Docs — Azure-Powered Authentication feature card**: Added new card 4 (`feature-card--highlight`) on the landing page showcasing Azure Key Vault + Entra App Registration credential browsing; existing cards 4–10 renumbered to 5–11. Section header updated to "11 Killer Features". Hero meta updated with `🔐 Azure KV` span.
+- **Docs — Authentication Modes reference**: `managing-connections.md` now documents all three auth modes (Custom Headers, Azure Client Credentials, OAuth) including the Azure Context Banner, Browse App Registrations picker, and Key Vault Secret Picker.
+- **Docs — Azure volume mount in quickstart**: `quickstart.md` docker-compose.yml block updated with `AZURE_CONFIG_DIR` env var, `HOST_AZURE_CONFIG_DIR` volume mount, and `azure-config-empty` fallback volume.
+- **Docs — Azure Integration environment variables**: `environment-variables.md` now includes a `### Azure Integration` subsection documenting `HOST_AZURE_CONFIG_DIR` and `AZURE_CONFIG_DIR`, plus a new `## Azure Integration Quick Reference` section at the end.
+
 - **Azure subscription picker**: Connections page now shows a subscription dropdown in the Azure Context Banner when multiple subscriptions are available; changing the selection propagates to `KeyVaultSecretPicker` so vaults are scoped to the chosen subscription. Backend exposes `GET /api/v1/azure/subscriptions` and `GET /api/v1/azure/keyvaults?subscriptionId=` accordingly.
 - **Subscription persistence**: The selected Azure subscription is now persisted in `AzureClientCredentialsOptions.SubscriptionId` alongside the connection — it is automatically restored when the connection is edited again.
 - **Azure CLI in Docker**: `Dockerfile.api` now installs `azure-cli` in the final stage so `AzureCliCredential` can call `az account get-access-token` inside the container.
