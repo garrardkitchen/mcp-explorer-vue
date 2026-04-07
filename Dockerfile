@@ -5,6 +5,7 @@
 ARG APP_VERSION=0.5.0
 ARG DOTNET_VERSION=10.0
 ARG NODE_VERSION=22
+ARG VITE_API_BASE_URL=
 
 # ─── Stage 1: Build Vue frontend ──────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS frontend-build
@@ -12,7 +13,9 @@ WORKDIR /app/frontend
 COPY src/frontend/package*.json ./
 RUN npm ci
 COPY src/frontend/ .
-RUN npm run build
+ARG APP_VERSION
+ARG VITE_API_BASE_URL
+RUN VITE_APP_VERSION=${APP_VERSION} VITE_API_BASE_URL=${VITE_API_BASE_URL} npm run build
 # Output: /app/frontend/dist
 
 # ─── Stage 2: Restore .NET dependencies ───────────────────────────────────────

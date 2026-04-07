@@ -2,6 +2,7 @@
 # Standalone API image (for docker-compose separate-services deployment)
 
 ARG DOTNET_VERSION=10.0
+ARG APP_VERSION=0.0.0
 
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 WORKDIR /src
@@ -16,6 +17,8 @@ RUN dotnet publish Garrard.Mcp.Explorer.Api/Garrard.Mcp.Explorer.Api.csproj \
     -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS final
+ARG APP_VERSION
+ENV AppMetadata__Version=${APP_VERSION}
 # Install Azure CLI so AzureCliCredential can call `az account get-access-token`.
 # Mount ~/.azure from the host to /root/.azure to use existing az login sessions.
 RUN apt-get update \
