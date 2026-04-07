@@ -24,11 +24,16 @@ dataRoot="$HOME/Library/Application Support/McpExplorerX-docker"
 mkdir -p "${dataRoot}"
 
 docker run --rm -it \
-  -p 8090:8080 \
+  -p 8091:8080 \
   -v "${dataRoot}:/root/.local/share/McpExplorer" \
+  -v ~/.azure:/root/.azure \
+  -e AZURE_CONFIG_DIR=/root/.azure \
+  -e HOST_AZURE_CONFIG_DIR=${HOME}/.azure \
+  -e PREFERENCES__StoragePath=/data/settings.json \
+  -e ASPNETCORE_ENVIRONMENT=Production \
   garrardkitchen/mcp-explorer-x:latest
 
-open -a "Google Chrome" "http://localhost:8090"
+open -a "Google Chrome" "http://localhost:8091"
 ```
 
 {{% /tab %}}
@@ -40,11 +45,16 @@ dataRoot="$HOME/.config/McpExplorerX-docker"
 mkdir -p "${dataRoot}"
 
 docker run --rm -it \
-  -p 8090:8080 \
+  -p 8091:8080 \
   -v "${dataRoot}:/root/.local/share/McpExplorer" \
+  -v ~/.azure:/root/.azure \
+  -e AZURE_CONFIG_DIR=/root/.azure \
+  -e HOST_AZURE_CONFIG_DIR=${HOME}/.azure \
+  -e PREFERENCES__StoragePath=/data/settings.json \
+  -e ASPNETCORE_ENVIRONMENT=Production \
   garrardkitchen/mcp-explorer-x:latest
 
-xdg-open "http://localhost:8090"
+xdg-open "http://localhost:8091"
 ```
 
 {{% /tab %}}
@@ -56,11 +66,16 @@ $dataRoot="$HOME\AppData\Local\McpExplorerX-docker"
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
 docker run --rm -it `
-  -p 8090:8080 `
+  -p 8091:8080 `
   -v "${dataRoot}:/root/.local/share/McpExplorer" `
+  -v ~/.azure:/root/.azure `
+  -e AZURE_CONFIG_DIR=/root/.azure `
+  -e HOST_AZURE_CONFIG_DIR=${HOME}/.azure `
+  -e PREFERENCES__StoragePath=/data/settings.json `
+  -e ASPNETCORE_ENVIRONMENT=Production `
   garrardkitchen/mcp-explorer-x:latest
 
-Start-Process "http://localhost:8090"
+Start-Process "http://localhost:8091"
 ```
 
 {{% /tab %}}
@@ -69,9 +84,14 @@ Start-Process "http://localhost:8090"
 
 | Flag | Purpose |
 |------|---------|
-| `-p 8090:8080` | Expose the app on host port 8090 |
+| `--rm -it` | Automatically remove the container when it stops; attach an interactive terminal |
+| `-p 8091:8080` | Expose the app on host port **8091** (container listens on 8080) |
 | `-v <dataRoot>:/root/.local/share/McpExplorer` | Persist connections and settings across restarts |
-| `--rm` | Automatically remove the container when it stops |
+| `-v ~/.azure:/root/.azure` | Mount your host Azure CLI config so `AzureCliCredential` can authenticate |
+| `-e AZURE_CONFIG_DIR=/root/.azure` | Tell the Azure SDK where to find the CLI config inside the container |
+| `-e HOST_AZURE_CONFIG_DIR=...` | Used by docker-compose to conditionally mount your `.azure` directory |
+| `-e PREFERENCES__StoragePath=/data/settings.json` | Override the settings path to match the `/data` volume mount |
+| `-e ASPNETCORE_ENVIRONMENT=Production` | Set the runtime environment (controls logging verbosity and error detail) |
 
 ---
 
@@ -268,7 +288,7 @@ docker run --rm -it \
 docker run --rm -it \
   -p 8090:8080 \
   -v "$HOME/Library/Application Support/McpExplorerX":/data \
-  -v "$HOME/.azure":/root/.azure:ro \
+  -v "$HOME/.azure":/root/.azure \
   \
   -e ASPNETCORE_ENVIRONMENT=Production \
   -e ASPNETCORE_URLS=http://+:5000 \
@@ -323,7 +343,7 @@ docker run --rm -it `
 docker run --rm -it `
   -p 8090:8080 `
   -v "$HOME\AppData\Local\McpExplorerX:/data" `
-  -v "$HOME\.azure:/root/.azure:ro" `
+  -v "$HOME\.azure:/root/.azure" `
   `
   -e ASPNETCORE_ENVIRONMENT=Production `
   -e ASPNETCORE_URLS=http://+:5000 `

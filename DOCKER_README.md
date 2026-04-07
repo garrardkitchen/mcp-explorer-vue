@@ -19,23 +19,29 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 ## Quick Start — Single Container
 
 ```bash
+dataRoot="$HOME/.config/McpExplorerX-docker"
 docker run -d \
-  -p 8080:8080 \
-  -v mcp-data:/data \
-  -e MCP_DATA_PATH=/data \
+  -p 8091:8080 \
+  -v "${dataRoot}:/root/.local/share/McpExplorer" \
+  -e PREFERENCES__StoragePath=/data/settings.json \
+  -e ASPNETCORE_ENVIRONMENT=Production \
   garrardkitchen/mcp-explorer-x:latest
 ```
 
-Open **http://localhost:8080** in your browser.
+Open **http://localhost:8091** in your browser.
 
 ### Mount your Azure credentials (optional — for Key Vault and Entra features)
 
 ```bash
+dataRoot="$HOME/.config/McpExplorerX-docker"
 docker run -d \
-  -p 8080:8080 \
-  -v mcp-data:/data \
-  -v ~/.azure:/root/.azure:ro \
+  -p 8091:8080 \
+  -v "${dataRoot}:/root/.local/share/McpExplorer" \
+  -v ~/.azure:/root/.azure \
   -e AZURE_CONFIG_DIR=/root/.azure \
+  -e HOST_AZURE_CONFIG_DIR=${HOME}/.azure \
+  -e PREFERENCES__StoragePath=/data/settings.json \
+  -e ASPNETCORE_ENVIRONMENT=Production \
   garrardkitchen/mcp-explorer-x:latest
 ```
 
@@ -67,7 +73,7 @@ services:
       - AZURE_CONFIG_DIR=/root/.azure
     volumes:
       - ${MCP_DATA_PATH:-mcp-data}:/data
-      - ${HOST_AZURE_CONFIG_DIR:-azure-config-empty}:/root/.azure:ro
+      - ${HOST_AZURE_CONFIG_DIR:-azure-config-empty}:/root/.azure
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:5000/healthz"]
       interval: 10s
