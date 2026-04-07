@@ -34,11 +34,20 @@ services:
       # Point to an existing settings.json (e.g. from the original MCP Explorer)
       # Leave empty to use the default path inside the container (/data/settings.json)
       - PREFERENCES__StoragePath=${PREFERENCES__StoragePath:-/data/settings.json}
+      # Always tell az CLI (and Azure SDK) to look in /root/.azure inside the container.
+      # The host directory is mounted there via the HOST_AZURE_CONFIG_DIR volume below.
+      - AZURE_CONFIG_DIR=/root/.azure
     volumes:
       # Mount host settings directory into the container.
       # Set MCP_DATA_PATH in .env to your existing settings folder, e.g.:
       #   MCP_DATA_PATH=/Users/you/Library/Application Support/McpExplorer
       - ${MCP_DATA_PATH:-mcp-data}:/data
+      # Optional: mount the host ~/.azure directory so AzureCliCredential can use
+      # your existing `az login` session for Key Vault / app-registration lookups.
+      # Set HOST_AZURE_CONFIG_DIR in .env to your host ~/.azure path to enable.
+      # Leave empty (default) to skip the mount — Azure features will be unavailable.
+      # NOTE: Must be rw (not ro) so az can write back refreshed tokens to the cache.
+      - ${HOST_AZURE_CONFIG_DIR:-azure-config-empty}:/root/.azure
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:5000/healthz"]
       interval: 10s
@@ -66,6 +75,10 @@ services:
 volumes:
   # Only used when MCP_DATA_PATH is not set in .env (anonymous fallback volume)
   mcp-data:
+    driver: local
+  # Empty placeholder used when AZURE_CONFIG_DIR is not set.
+  # When AZURE_CONFIG_DIR is set to a host path, this volume is never used.
+  azure-config-empty:
     driver: local
 
 networks:
