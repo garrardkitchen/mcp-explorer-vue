@@ -105,6 +105,8 @@ Add any HTTP headers to every request — useful for static bearer tokens, API k
 
 Authenticate using an Entra ID (Azure AD) app registration. MCP Explorer obtains an OAuth 2.0 client-credentials token and attaches it to every request.
 
+{{< figure src="/images/screenshots/azure-client-credentials-edit.png" alt="Edit Connection dialog showing Azure Client Credentials auth mode with the Azure Context Banner, Tenant ID (auto-detected), Client ID, Key Vault secret reference, and auto-filled Scope fields" class="screenshot" >}}
+
 | Field | Description |
 |-------|-------------|
 | **Tenant ID** | Your Entra tenant. Auto-populated from `az account show` when Azure is connected. Changes automatically when you switch subscription. |
