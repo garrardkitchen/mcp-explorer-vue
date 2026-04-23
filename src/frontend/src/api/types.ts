@@ -92,6 +92,58 @@ export interface ActiveConnection {
   toolCount: number
 }
 
+export type TunnelAccess = 'Anonymous' | 'Authenticated'
+export type TunnelStatus = 'Stopped' | 'Starting' | 'Running' | 'LoginRequired' | 'Error'
+
+export interface DevTunnel {
+  id: string
+  name: string
+  access: TunnelAccess
+  status: TunnelStatus
+  tunnelUri?: string | null
+  webhookUri?: string | null
+  createdAtUtc: string
+  lastStartedAtUtc?: string | null
+  lastStoppedAtUtc?: string | null
+  lastError?: string | null
+  deleteOnExit: boolean
+  restartCount: number
+}
+
+export interface DevTunnelUserState {
+  isLoggedIn: boolean
+  userName?: string | null
+  provider?: string | null
+  isAvailable?: boolean
+  detail?: string | null
+}
+
+export interface WebhookEvent {
+  id: string
+  tunnelId: string
+  receivedAtUtc: string
+  method: string
+  path: string
+  queryString: string
+  headers: Record<string, string>
+  contentType?: string | null
+  bodySize: number
+  bodyText?: string | null
+  bodyBase64?: string | null
+  contentEncoding?: string | null
+  remoteIp?: string | null
+  truncated: boolean
+}
+
+export interface ReplayWebhookResult {
+  statusCode: number
+  reasonPhrase?: string | null
+  headers: Record<string, string>
+  bodyText?: string | null
+  bodySize: number
+  duration: string
+}
+
 export interface ToolAnnotations {
   title?: string | null
   readOnlyHint?: boolean | null

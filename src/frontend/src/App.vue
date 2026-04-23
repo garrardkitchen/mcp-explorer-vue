@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
+import { useToast } from 'primevue/usetoast'
 import { useThemeStore } from '@/stores/themes'
 import { useConnectionsStore } from '@/stores/connections'
+import { useDevTunnelsStore } from '@/stores/devTunnels'
 import CommandPalette from '@/components/common/CommandPalette.vue'
 import ThemeSwitcher from '@/components/common/ThemeSwitcher.vue'
 import { systemApi } from '@/api/system'
 
 const route = useRoute()
+const toast = useToast()
 useThemeStore()  // ensure theme is initialised
 const connectionsStore = useConnectionsStore()
+const devTunnelsStore = useDevTunnelsStore()
 
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
@@ -20,6 +24,10 @@ const showCommandPalette = ref(false)
 const apiVersion = ref<string | null>(null)
 const dotnetVersion = ref<string | null>(null)
 const frontendVersion = __APP_VERSION__
+const tunnelWorkspaceVisibility = computed(() => ({
+  dashboardVisible: route.name === 'dev-tunnels',
+  inspectorTunnelId: route.name === 'dev-tunnel-inspector' ? String(route.params.id ?? '') : null,
+}))
 
 const navGroups = [
   {
@@ -27,6 +35,13 @@ const navGroups = [
     accent: 'blue',
     items: [
       { name: 'connections', label: 'Connections', icon: 'pi-server' },
+    ],
+  },
+  {
+    label: 'Dev Tunnels',
+    accent: 'cyan',
+    items: [
+      { name: 'dev-tunnels', label: 'Dev Tunnels', icon: 'pi-globe' },
     ],
   },
   {
@@ -68,21 +83,39 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') showCommandPalette.value = false
 }
 
+watch(tunnelWorkspaceVisibility, (visibility) => {
+  devTunnelsStore.setWorkspaceVisibility(visibility)
+}, { immediate: true })
+
+watch(() => devTunnelsStore.pendingNotifications.length, () => {
+  const notifications = devTunnelsStore.consumePendingNotifications()
+  for (const notification of notifications) {
+    toast.add({
+      severity: 'info',
+      summary: `${notification.tunnelName} · ${notification.method}`,
+      detail: notification.path,
+      life: 4200,
+    })
+  }
+})
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   await Promise.all([
     connectionsStore.loadSaved(),
     connectionsStore.loadActive(),
-    systemApi.getInfo().then(info => {
+    systemApi.getInfo().then((info) => {
       apiVersion.value = info.apiVersion
       dotnetVersion.value = info.dotnetVersion
     }).catch(() => { /* non-fatal */ }),
   ])
   connectionsStore.initialized = true
+  void devTunnelsStore.loadAll().catch(() => undefined)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  devTunnelsStore.disconnectAllStreams()
 })
 </script>
 
@@ -142,6 +175,34 @@ onUnmounted(() => {
           <i class="pi pi-circle-fill status-dot" />
           {{ connectionsStore.activeConnections.length }}
         </span>
+        <span
+          v-if="devTunnelsStore.runningCount"
+          class="conn-badge tunnel-badge"
+          v-tooltip="`${devTunnelsStore.runningCount} live dev tunnel(s)`"
+        >
+          <i class="pi pi-send tunnel-dot" />
+          {{ devTunnelsStore.runningCount }}
+        </span>
+        <span
+          v-if="devTunnelsStore.unseenTotalCount"
+          class="conn-badge tunnel-unseen-badge"
+          v-tooltip="`${devTunnelsStore.unseenTotalCount} tunnel event(s) arrived while you were away`"
+        >
+          <i class="pi pi-wave-pulse tunnel-dot" />
+          {{ devTunnelsStore.unseenTotalCount }}
+        </span>
+        <button
+          class="topbar-btn tunnel-notifications-btn"
+          :class="{ paused: devTunnelsStore.notificationPaused }"
+          :aria-pressed="devTunnelsStore.notificationPaused"
+          @click="devTunnelsStore.toggleNotificationPaused()"
+          v-tooltip="devTunnelsStore.notificationPaused ? 'Resume dev tunnel toasts' : 'Pause dev tunnel toasts'"
+        >
+          <i :class="`pi ${devTunnelsStore.notificationPaused ? 'pi-bell-slash' : 'pi-bell'}`" />
+          <span class="tunnel-notification-label">
+            {{ devTunnelsStore.notificationPaused ? 'Tunnel toasts paused' : 'Tunnel toasts live' }}
+          </span>
+        </button>
 
         <!-- Author credit -->
         <a
@@ -190,11 +251,15 @@ onUnmounted(() => {
 
       <!-- Main content area -->
       <main class="main-content">
-        <RouterView v-slot="{ Component }">
-          <Transition name="page">
-            <component :is="Component" :key="route.name" />
-          </Transition>
-        </RouterView>
+        <div class="page-host">
+          <div class="page-content">
+            <RouterView v-slot="{ Component }">
+              <Transition name="page">
+                <component :is="Component" :key="route.name" />
+              </Transition>
+            </RouterView>
+          </div>
+        </div>
       </main>
     </div>
 
@@ -243,6 +308,20 @@ onUnmounted(() => {
   flex: 1;
   justify-content: center;
   overflow: hidden;
+}
+
+.tunnel-badge {
+  background: color-mix(in srgb, var(--info) 20%, transparent);
+  color: var(--text-primary);
+}
+
+.tunnel-unseen-badge {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--text-primary);
+}
+
+.tunnel-dot {
+  color: var(--info);
 }
 
 /* Version pills */
@@ -339,6 +418,23 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
+.tunnel-notifications-btn {
+  border: 1px solid color-mix(in srgb, var(--info) 24%, transparent);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.tunnel-notifications-btn.paused {
+  border-color: color-mix(in srgb, var(--warning) 26%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+}
+
+.tunnel-notification-label {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .brand { display: flex; align-items: center; gap: 6px; }
 .brand-icon { color: var(--accent); font-size: 18px; }
 .brand-text { font-weight: 600; font-size: 15px; color: var(--text-primary); letter-spacing: -0.01em; }
@@ -366,6 +462,12 @@ onUnmounted(() => {
   cursor: default;
 }
 .status-dot { font-size: 8px; color: var(--success); }
+
+@media (max-width: 1260px) {
+  .tunnel-notification-label {
+    display: none;
+  }
+}
 
 /* ── Body ── */
 .app-body {
@@ -419,6 +521,7 @@ onUnmounted(() => {
 
 /* accent colours on group headers */
 .nav-group-header.accent-blue   { color: var(--nav-accent-blue); opacity: 0.85; }
+.nav-group-header.accent-cyan   { color: var(--info); opacity: 0.9; }
 .nav-group-header.accent-amber  { color: var(--nav-accent-amber); opacity: 0.85; }
 .nav-group-header.accent-teal   { color: var(--nav-accent-teal); opacity: 0.85; }
 .nav-group-header.accent-violet { color: var(--nav-accent-violet); opacity: 0.85; }
@@ -459,6 +562,12 @@ onUnmounted(() => {
 }
 .nav-item.active.accent-blue .nav-icon { color: var(--nav-accent-blue); }
 
+.nav-item.active.accent-cyan {
+  background: color-mix(in srgb, var(--info) 13%, transparent);
+  border-left-color: var(--info);
+}
+.nav-item.active.accent-cyan .nav-icon { color: var(--info); }
+
 .nav-item.active.accent-amber {
   background: color-mix(in srgb, var(--nav-accent-amber) 11%, transparent);
   border-left-color: var(--nav-accent-amber);
@@ -483,10 +592,33 @@ onUnmounted(() => {
 /* ── Main content ── */
 .main-content {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-base);
+}
+
+.page-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.page-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.page-content > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* ── Page transitions ── */

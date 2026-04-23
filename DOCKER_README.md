@@ -111,6 +111,16 @@ docker compose up -d
 
 Open **http://localhost:8090** in your browser.
 
+### One-time Dev Tunnels sign-in (optional)
+
+If you plan to use the **Dev Tunnels** feature to expose webhook callbacks publicly, sign the API container into Microsoft Dev Tunnels **once**. The credential persists in the `devtunnels-cli` Docker volume, so every future tunnel you create from the UI will start with zero friction — no device-code dialog.
+
+```bash
+./scripts/devtunnel-login.sh
+```
+
+The script runs `devtunnel user login --use-device-code-auth` inside the `api` container: open the URL it prints, enter the code, and you're done. Skipping this step is fine — the app will fall back to showing an in-app login dialog the first time you click **Start** on a tunnel.
+
 ---
 
 ## Features

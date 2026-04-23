@@ -15,7 +15,9 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import JsonViewer from '@/components/common/JsonViewer.vue'
 import ToolDocsDialog from '@/components/common/ToolDocsDialog.vue'
 import ElicitationDialog from '@/components/common/ElicitationDialog.vue'
+import WebhookUrlChip from '@/components/devtunnels/WebhookUrlChip.vue'
 import { useConnectionsStore } from '@/stores/connections'
+import { useDevTunnelsStore } from '@/stores/devTunnels'
 import { connectionsApi } from '@/api/connections'
 import { preferencesApi } from '@/api/preferences'
 import { extractApiError } from '@/api/client'
@@ -25,6 +27,7 @@ import type { ActiveTool } from '@/api/types'
 const toast = useToast()
 const confirm = useConfirm()
 const store = useConnectionsStore()
+const devTunnelsStore = useDevTunnelsStore()
 
 // ── Connection selection ───────────────────────────────────────────────
 const selectedConnName = ref<string | null>(null)
@@ -283,6 +286,14 @@ function setParamValue(key: string, val: string) {
   }
 }
 
+function isWebhookishField(name: string) {
+  const normalized = name.toLowerCase().replace(/[^a-z]/g, '')
+  return normalized.includes('webhookurl')
+    || normalized.includes('callbackurl')
+    || normalized === 'webhook'
+    || normalized === 'callback'
+}
+
 function openFieldHistory(event: Event, fieldName: string) {
   const runs = paramHistory.value
   const seen = new Set<string>()
@@ -477,6 +488,11 @@ watch(() => store.initialized, async (ready, wasReady) => {
                 </select>
                 <InputText v-else :modelValue="getParamValue(p.name)" @update:modelValue="setParamValue(p.name, String($event))"
                            :placeholder="p.description || p.name" class="w-full" :class="{ 'p-invalid': paramErrors.has(p.name) }" />
+                <WebhookUrlChip
+                  v-if="isWebhookishField(p.name)"
+                  :tunnels="devTunnelsStore.activeWebhookTunnels"
+                  @select="setParamValue(p.name, $event)"
+                />
                 <p v-if="p.description" class="param-desc">{{ p.description }}</p>
               </div>
             </div>

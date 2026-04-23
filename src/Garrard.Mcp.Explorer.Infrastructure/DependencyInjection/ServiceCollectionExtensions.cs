@@ -1,6 +1,7 @@
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Garrard.Mcp.Explorer.Infrastructure.Azure;
 using Garrard.Mcp.Explorer.Infrastructure.Connections;
+using Garrard.Mcp.Explorer.Infrastructure.DevTunnels;
 using Garrard.Mcp.Explorer.Infrastructure.Elicitation;
 using Garrard.Mcp.Explorer.Infrastructure.LlmProviders;
 using Garrard.Mcp.Explorer.Infrastructure.Mcp;
@@ -37,6 +38,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConnectionExportService, ConnectionExportService>();
         services.AddSingleton<ElicitationService>();
         services.AddSingleton<IElicitationService>(sp => sp.GetRequiredService<ElicitationService>());
+        services.AddHttpClient();
+        services.AddHttpClient("DevTunnelReplay", client => client.Timeout = TimeSpan.FromSeconds(30));
+
+        services.AddSingleton<IDevTunnelCli, DevTunnelCli>();
+        services.AddSingleton<IWebhookEventStore, JsonlWebhookEventStore>();
+        services.AddSingleton<DevTunnelService>();
+        services.AddSingleton<IDevTunnelService>(sp => sp.GetRequiredService<DevTunnelService>());
+        services.AddHostedService<TunnelSupervisor>();
 
         // Azure context & Key Vault
         services.AddSingleton<IKeyVaultSecretResolver, KeyVaultSecretResolver>();
@@ -57,4 +66,3 @@ public static class ServiceCollectionExtensions
         return services;
     }
 }
-
