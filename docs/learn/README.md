@@ -44,6 +44,7 @@ content/
     ├── workflows/                     # Building workflows
     ├── models/                        # Configuring models
     ├── settings/                      # App settings & themes
+    ├── dev-tunnels/                   # Dev Tunnels webhook ingress
     └── reference/                     # Keyboard shortcuts + Architecture
 ```
 
@@ -51,3 +52,6 @@ content/
 
 App screenshots live in `static/images/screenshots/` and are referenced in content pages.
 To refresh screenshots, run the app on `http://localhost:8090` and use Playwright to recapture them.
+
+Dev Tunnels screenshots follow the `dt-NN-description.png` naming convention (e.g. `dt-01-signal-deck.png`).
+These must be captured manually with the `devtunnel` CLI installed and at least one tunnel running.

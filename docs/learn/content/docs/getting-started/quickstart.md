@@ -152,6 +152,12 @@ MCP_DATA_PATH=
 
 # Host port the app is exposed on (default: 8090)
 GATEWAY_PORT=8090
+
+# Optional: reuse your host devtunnel login so the container skips device-code auth
+# macOS:   HOST_DEVTUNNELS_DIR=/Users/<you>/Library/Application Support/DevTunnels
+# Linux:   HOST_DEVTUNNELS_DIR=/home/<you>/.devtunnels
+# Windows: HOST_DEVTUNNELS_DIR=C:\Users\<you>\AppData\Local\DevTunnels
+HOST_DEVTUNNELS_DIR=
 ```
 
 See the [Environment Variables](../../reference/environment-variables/) reference for the full list.
@@ -205,6 +211,9 @@ services:
       - AZURE_CONFIG_DIR=/root/.azure
     volumes:
       - ${MCP_DATA_PATH:-mcp-data}:/data
+      # Persist devtunnel CLI login across restarts. Mount your host credentials
+      # dir via HOST_DEVTUNNELS_DIR in .env to skip device-code auth entirely.
+      - ${HOST_DEVTUNNELS_DIR:-devtunnels-cli}:/root/.local/share/DevTunnels
       # Optional: mount your host ~/.azure so Azure Key Vault & app-registration
       # lookups work inside the container. Set HOST_AZURE_CONFIG_DIR in .env:
       #   macOS/Linux: HOST_AZURE_CONFIG_DIR=~/.azure
@@ -236,6 +245,9 @@ services:
 
 volumes:
   mcp-data:
+    driver: local
+  # Persists devtunnel login state across restarts (used when HOST_DEVTUNNELS_DIR is not set)
+  devtunnels-cli:
     driver: local
   # Empty fallback — used when HOST_AZURE_CONFIG_DIR is not set in .env
   azure-config-empty:

@@ -2,6 +2,15 @@
 
 ## [Unreleased] - 2026-04-23
 
+### Added
+- **Docs — Dev Tunnels section**: Added new `dev-tunnels/` documentation section with `_index.md` landing page and a full `using-dev-tunnels.md` page covering tunnel management, Signal Deck dashboard, live event inspection, webhook replay, CLI unavailable state, and tool smart-fill integration. Includes 12 Playwright-captured screenshots (`dt-01` through `dt-09`, plus copy-URL toasts and webhook chip popover) covering the full feature workflow.
+- **Docs — Dev Tunnels killer feature**: Added Dev Tunnels as feature #12 ("Webhook Signal Deck") on the documentation homepage, updated the section title from "11 Killer Features" to "12 Killer Features", added a 🚇 Dev Tunnels hero-meta badge, and highlighted the card with a "NEW" badge and green accent styling.
+- **Docs — `HOST_DEVTUNNELS_DIR` environment variable**: Added documentation for the `HOST_DEVTUNNELS_DIR` variable to `reference/environment-variables.md` (new "Dev Tunnels" subsection with per-OS paths and a Quick Reference snippet), `getting-started/quickstart.md` (Option 2 `.env` snippet and embedded `docker-compose.yml` updated with missing `devtunnels-cli` volume mount), and `dev-tunnels/using-dev-tunnels.md` (tip in the "Login Required" section linking to the new reference).
+
+### Fixed
+- **Docs — Dev Tunnels accuracy**: Corrected device-code login dialog description (auto-starts on open; no manual button click required); updated smart-fill picker to state Running *or* Starting tunnels are eligible; expanded SSRF blocklist to include `0.x.x.x` unspecified addresses and IPv6 ULA (`fc00::/7`). Also corrected smart-fill field patterns to document all four matches: `webhookUrl`, `callbackUrl`, `webhook`, `callback`.
+- **Docs — Homepage Quick Start layout**: Changed steps grid from `auto-fill` to `auto-fit` so the four step cards always expand to fill the full section width at all viewport sizes, eliminating the ghost column that caused cards to left-align on wider screens.
+
 ### Fixed
 - **Dev Tunnels — inspector card grid placement**: The inspector `Card` was silently placed in the grid's `auto` row whenever `tunnel.lastError` was falsy and the error `<Message>` was not rendered, causing the card to collapse to content height and hide the Traffic/Archive tabs. Fixed by pinning `.inspector-shell` to `grid-row: 3` so it always occupies the `minmax(0, 1fr)` row regardless of whether the error banner is present.
 

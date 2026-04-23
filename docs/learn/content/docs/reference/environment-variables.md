@@ -63,6 +63,24 @@ These apply to the `api` service (`Garrard.Mcp.Explorer.Api`).
 | Linux | `/home/<you>/.local/share/McpExplorer` |
 | Windows | `C:\Users\<you>\AppData\Local\McpExplorer` |
 
+### Dev Tunnels
+
+`HOST_DEVTUNNELS_DIR` lets the container inherit your host machine's existing `devtunnel user login` session, so you never have to go through the device-code flow inside Docker.
+
+| Variable | Default | Description |
+|---|---|---|
+| `HOST_DEVTUNNELS_DIR` | *(empty)* | **Host** path to the DevTunnels credentials directory. When set, Docker Compose mounts this into the container at `/root/.local/share/DevTunnels` so the `devtunnel` CLI reuses your existing login. Leave empty to fall back to a named Docker volume (`devtunnels-cli`) — credentials persist across `docker compose down` but you will still need to complete a one-time device-code login from the MCP Explorer UI. |
+
+**Per-OS values for `HOST_DEVTUNNELS_DIR`:**
+
+| Platform | Value |
+|---|---|
+| macOS | `HOST_DEVTUNNELS_DIR=/Users/<you>/Library/Application Support/DevTunnels` |
+| Linux | `HOST_DEVTUNNELS_DIR=/home/<you>/.devtunnels` |
+| Windows | `HOST_DEVTUNNELS_DIR=C:\Users\<you>\AppData\Local\DevTunnels` |
+
+> **tip:** If you have never run `devtunnel user login` on your host, leave this empty and complete the one-time device-code login from the **Device Code Login** dialog in MCP Explorer. Credentials are written to the `devtunnels-cli` named volume and will survive `docker compose down` (but not `docker compose down -v`).
+
 ### Azure Integration
 
 MCP Explorer can use Azure Key Vault secrets and Entra App Registrations to populate connection credentials. The API container uses `DefaultAzureCredential` (Azure CLI → environment → managed identity) to authenticate with Azure.
@@ -184,3 +202,25 @@ docker compose up --build
 ```
 
 MCP Explorer will pick up your `az login` session and show "Connected" in the Azure Context Banner on the Connections page.
+
+---
+
+## Dev Tunnels Quick Reference
+
+```bash
+# .env — reuse your host devtunnel login inside Docker
+# macOS:
+HOST_DEVTUNNELS_DIR=/Users/<you>/Library/Application\ Support/DevTunnels
+# Linux:
+# HOST_DEVTUNNELS_DIR=/home/<you>/.devtunnels
+# Windows:
+# HOST_DEVTUNNELS_DIR=C:\Users\<you>\AppData\Local\DevTunnels
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+MCP Explorer will inherit your host `devtunnel user login` session and start tunnels without prompting for device-code authentication.
