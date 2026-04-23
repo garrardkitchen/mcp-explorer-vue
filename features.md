@@ -17,6 +17,33 @@ Features grouped by navigation section and menu item.
   - Material Dark, Material Light
 - **Version pills** — topbar shows live .NET runtime version, frontend version, and API version
 - **Active connections badge** — topbar indicator showing how many MCP connections are currently live
+- **Active dev tunnels badge** — topbar indicator showing how many Dev Tunnels are currently online
+
+---
+
+## 🚇 Dev Tunnels
+
+### Tunnel Management
+- **Create / start / stop / delete** Dev Tunnels from the UI with named configurations and access mode selection
+- **Anonymous caller access** — anonymous tunnels use the `devtunnel host -p <port> -a` flow so external services (Stripe, GitHub, your MCP tool) can POST without a token; the CLI host itself still signs in once
+- **Device-code login dialog** — trigger `devtunnel` CLI authentication from the UI and stream login instructions live
+- **CLI availability state** — if the CLI is missing or misconfigured, the UI shows a clear unavailable state instead of failing with a generic server error
+- **Multiple tunnel support** — manage several named tunnels at once
+- **Copy webhook URL** — one-click copy of the public callback endpoint
+
+### Live Inspection
+- **SSE-powered event tape** — incoming webhook events animate into the inspector in real time
+- **Per-tunnel stream state** — connected / connecting / disconnected indicator for live capture
+- **Event detail panels** — inspect parsed JSON body, raw payload, and captured headers
+- **Sensitive header masking** — `Authorization`, cookies, and API-key-style headers are redacted before display
+
+### Time Travel
+- **Persisted event history** — captured events are stored per tunnel and survive restarts
+- **Timeline scrubber** — jump back through event history with a histogram-backed playback rail
+- **Replay captured webhook** — resend a stored request to any target URL and inspect the downstream response
+
+### Tool Integration
+- **Webhook URL smart-fill** — tool parameters named like `webhookUrl` / `callbackUrl` can be populated from an active tunnel directly in the Tools view
 
 ---
 

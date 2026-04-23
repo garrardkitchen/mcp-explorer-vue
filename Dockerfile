@@ -6,6 +6,7 @@ ARG APP_VERSION=0.5.0
 ARG DOTNET_VERSION=10.0
 ARG NODE_VERSION=22
 ARG VITE_API_BASE_URL=
+ARG TARGETARCH
 
 # ─── Stage 1: Build Vue frontend ──────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS frontend-build
@@ -49,7 +50,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS final
 WORKDIR /app
 
 ARG APP_VERSION
+ARG TARGETARCH
 ENV AppMetadata__Version=${APP_VERSION}
+ENV DEVTUNNELS__ExecutablePath=/usr/local/bin/devtunnel
 
 # Install supervisor + Azure CLI (AzureCliCredential calls `az account get-access-token`)
 RUN apt-get update \
@@ -64,6 +67,17 @@ RUN apt-get update \
        | tee /etc/apt/sources.list.d/azure-cli.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends azure-cli \
+    && runtime_arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "${runtime_arch}" in \
+         amd64) devtunnel_arch=linux-x64 ;; \
+         x86_64) devtunnel_arch=linux-x64 ;; \
+         arm64) devtunnel_arch=linux-arm64 ;; \
+         aarch64) devtunnel_arch=linux-arm64 ;; \
+         *) echo "Unsupported runtime architecture: ${runtime_arch}" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://aka.ms/TunnelsCliDownload/${devtunnel_arch}" -o /usr/local/bin/devtunnel \
+    && chmod +x /usr/local/bin/devtunnel \
+    && /usr/local/bin/devtunnel --version \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=api-build     /app/api     ./api

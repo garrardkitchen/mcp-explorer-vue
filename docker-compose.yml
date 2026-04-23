@@ -42,6 +42,16 @@ services:
       # Set MCP_DATA_PATH in .env to your existing settings folder, e.g.:
       #   MCP_DATA_PATH=/Users/you/Library/Application Support/McpExplorer
       - ${MCP_DATA_PATH:-mcp-data}:/data
+      # Persist the `devtunnel` CLI login token across container restarts.
+      # The devtunnel CLI stores its credentials at /root/.local/share/DevTunnels
+      # (NOT /root/.devtunnels — that directory is only used for legacy configs).
+      # Without this volume, you would have to re-run device-code login every time
+      # `docker compose down -v` is executed.
+      #
+      # If HOST_DEVTUNNELS_DIR is set in .env (e.g. HOST_DEVTUNNELS_DIR=/Users/you/.local/share/DevTunnels),
+      # the container will reuse your existing host login and you'll skip the device-code
+      # step entirely. Otherwise the named `devtunnels-cli` volume is used.
+      - ${HOST_DEVTUNNELS_DIR:-devtunnels-cli}:/root/.local/share/DevTunnels
       # Optional: mount the host ~/.azure directory so AzureCliCredential can use
       # your existing `az login` session for Key Vault / app-registration lookups.
       # Set HOST_AZURE_CONFIG_DIR in .env to your host ~/.azure path to enable.
@@ -75,6 +85,9 @@ services:
 volumes:
   # Only used when MCP_DATA_PATH is not set in .env (anonymous fallback volume)
   mcp-data:
+    driver: local
+  # Persists `devtunnel user login` state across container restarts.
+  devtunnels-cli:
     driver: local
   # Empty placeholder used when AZURE_CONFIG_DIR is not set.
   # When AZURE_CONFIG_DIR is set to a host path, this volume is never used.

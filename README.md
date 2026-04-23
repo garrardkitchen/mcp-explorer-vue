@@ -17,6 +17,7 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 - 🔐 **Azure Key Vault Integration** — resolve connection secrets (client secrets, API keys) directly from Key Vault references; no plaintext secrets stored on disk
 - 🏢 **Azure Entra App Registrations** — browse and select app registrations from your tenant via Microsoft Graph; auto-populates client ID and tenant fields
 - 🛠️ **Tools** — browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
+- 🚇 **Dev Tunnels** — create public DevTunnels for webhook callbacks, inspect live payloads over SSE, scrub event history, and replay captured requests
 - 💬 **Prompts** — list, execute, and evaluate prompts; pipe results directly to an LLM
 - 📄 **Resources & Templates** — browse MCP resources; expand templates with runtime parameters
 - 🤖 **Chat** — SSE-streamed AI chat with automatic MCP tool calling; shows token usage and active tool badges
@@ -55,6 +56,10 @@ flowchart LR
   Backend --> LLMAPIs["☁️ LLM APIs"]
   Backend --> Azure["🔐 Azure\nKey Vault · Entra ID"]
   Backend --> Storage[("💾 settings.json\n/data volume")]
+  Backend -->|"spawns devtunnel CLI"| DevTunnel["🚇 Dev Tunnel\nPublic webhook endpoint"]
+  MCPServers -->|"webhook POST"| DevTunnel
+  DevTunnel -->|"forwards payload"| Backend
+  Backend -->|"SSE stream"| Browser
 
   classDef browser   fill:#312e81,stroke:#6366f1,color:#e0e7ff
   classDef deploy    fill:#164e63,stroke:#22d3ee,color:#cffafe
@@ -62,6 +67,7 @@ flowchart LR
   classDef external  fill:#1c1917,stroke:#f59e0b,color:#fef3c7
   classDef azure     fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff
   classDef data      fill:#292524,stroke:#a78bfa,color:#ede9fe
+  classDef tunnel    fill:#064e3b,stroke:#10b981,color:#d1fae5
 
   class Browser browser
   class Deployment deploy
@@ -69,6 +75,7 @@ flowchart LR
   class MCPServers,LLMAPIs external
   class Azure azure
   class Storage data
+  class DevTunnel tunnel
 ```
 
 ### Deployment Modes
@@ -258,6 +265,62 @@ flowchart LR
   class EL_FORM form
 ```
 
+### Dev Tunnels Flow
+
+```mermaid
+%%{ init: { "theme": "base", "themeVariables": {
+  "primaryColor":        "#6366f1",
+  "primaryTextColor":    "#ffffff",
+  "primaryBorderColor":  "#4f46e5",
+  "lineColor":           "#94a3b8",
+  "secondaryColor":      "#0f172a",
+  "tertiaryColor":       "#1e293b",
+  "background":          "#0f172a",
+  "mainBkg":             "#1e293b",
+  "nodeBorder":          "#334155",
+  "clusterBkg":          "#1e293b",
+  "titleColor":          "#f8fafc",
+  "edgeLabelBackground": "#1e293b",
+  "fontFamily":          "ui-monospace, monospace"
+} } }%%
+
+flowchart LR
+  DT_BROWSER["🌐 Browser\nDev Tunnels dashboard"]
+  DT_API["🏗️ API\n/api/v1/devtunnels"]
+  DT_CLI["⚙️ devtunnel CLI\n(managed child process)"]
+  DT_CLOUD["🚇 DevTunnel Cloud\nPublic HTTPS endpoint"]
+  DT_MCPTOOL["🖥️ MCP Tool\nsends webhook POST"]
+  DT_WEBHOOK["📨 POST\n/api/v1/devtunnels/{name}/webhook"]
+  DT_BUFFER["💾 Event Buffer\nin-memory ring (per tunnel)"]
+  DT_SSE["📡 SSE Stream\n/api/v1/devtunnels/{name}/events"]
+  DT_INSPECTOR["🔍 Inspector\nTraffic · Archive tabs\nScrub · Replay · Time-travel"]
+
+  DT_BROWSER -->|"create / start / stop"| DT_API
+  DT_API -->|"spawn & manage"| DT_CLI
+  DT_CLI -->|"public URL"| DT_CLOUD
+  DT_CLOUD -->|"public webhook URL →\nshare with MCP tool"| DT_MCPTOOL
+  DT_MCPTOOL -->|"JSON payload POST"| DT_CLOUD
+  DT_CLOUD -->|"tunnel forward"| DT_WEBHOOK
+  DT_WEBHOOK --> DT_BUFFER
+  DT_BUFFER -->|"push event"| DT_SSE
+  DT_SSE -->|"live SSE update"| DT_INSPECTOR
+
+  classDef browser  fill:#312e81,stroke:#6366f1,color:#e0e7ff
+  classDef api      fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+  classDef cli      fill:#292524,stroke:#a78bfa,color:#ede9fe
+  classDef tunnel   fill:#064e3b,stroke:#10b981,color:#d1fae5
+  classDef server   fill:#1c1917,stroke:#f59e0b,color:#fef3c7
+  classDef sse      fill:#0c4a6e,stroke:#38bdf8,color:#e0f2fe
+  classDef ui       fill:#312e81,stroke:#6366f1,color:#e0e7ff
+
+  class DT_BROWSER,DT_INSPECTOR browser
+  class DT_API,DT_WEBHOOK,DT_BUFFER api
+  class DT_CLI cli
+  class DT_CLOUD tunnel
+  class DT_MCPTOOL server
+  class DT_SSE sse
+```
+
 ### Security & Data Protection
 
 ```mermaid
@@ -378,6 +441,8 @@ dotnet out/gateway/Garrard.Mcp.Explorer.Gateway.dll
 
 ### Single Container (recommended for simple deployments)
 
+The runtime image now installs the `devtunnel` CLI alongside `azure-cli`, so Dev Tunnel creation and device-code login work inside the container without extra manual setup.
+
 ```bash
 # Build
 docker build --build-arg APP_VERSION=2.0.0 -t mcp-explorer:2.0.0 .
@@ -409,6 +474,8 @@ docker compose up --build
 ```
 
 Services: `api` on `:5000` (internal), `gateway` on `:8080` (external).
+
+The `api` image includes the `devtunnel` CLI by default. If you need a custom location, set `DEVTUNNELS__ExecutablePath`.
 
 ## Azure Setup
 
