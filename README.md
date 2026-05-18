@@ -13,7 +13,7 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 
 ## Features
 
-- 🔌 **MCP Connections** — Streamable HTTP transport; custom headers including raw/Bearer/Basic Authorization values; per-connection auth modes (Custom Headers, Azure Client Credentials, OAuth)
+- 🔌 **MCP Connections** — Streamable HTTP transport; duplicate saved configurations; custom headers including raw/Bearer/Basic Authorization values; per-connection auth modes (Custom Headers, Azure Client Credentials, OAuth)
 - 🔐 **Azure Key Vault Integration** — resolve connection secrets (client secrets, API keys) directly from Key Vault references; no plaintext secrets stored on disk
 - 🏢 **Azure Entra App Registrations** — browse and select app registrations from your tenant via Microsoft Graph; auto-populates client ID and tenant fields
 - 🛠️ **Tools** — browse and invoke tools with dynamic parameter forms; inspect JSON responses inline

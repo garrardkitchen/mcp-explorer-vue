@@ -257,6 +257,37 @@ function openEdit(conn: ConnectionDefinition) {
   // Deep clone so edits don't mutate the store until saved
   form.value = JSON.parse(JSON.stringify(conn))
   normalizeAuthorizationHeaders(form.value.headers)
+  ensureAuthOptionModels()
+  // Restore persisted subscription selection for KV browsing
+  selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
+  showDialog.value = true
+}
+
+function openDuplicate(conn: ConnectionDefinition) {
+  editMode.value = false; originalName.value = ''
+  const duplicate = JSON.parse(JSON.stringify(conn)) as Partial<ConnectionDefinition>
+  duplicate.name = duplicateConnectionName(conn.name)
+  delete duplicate.createdAt
+  delete duplicate.lastUpdatedAt
+  delete duplicate.lastUsedAt
+  form.value = duplicate
+  normalizeAuthorizationHeaders(form.value.headers)
+  ensureAuthOptionModels()
+  selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
+  showDialog.value = true
+}
+
+function duplicateConnectionName(name: string) {
+  const names = new Set(store.savedConnections.map(c => c.name))
+  const baseName = `Copy of ${name}`
+  if (!names.has(baseName)) return baseName
+
+  let copyNumber = 2
+  while (names.has(`Copy ${copyNumber} of ${name}`)) copyNumber += 1
+  return `Copy ${copyNumber} of ${name}`
+}
+
+function ensureAuthOptionModels() {
   // Ensure nested credential objects exist so v-model doesn't crash
   if (form.value.authenticationMode === 'AzureClientCredentials' && !form.value.azureCredentials) {
     form.value.azureCredentials = { tenantId: '', clientId: '', clientSecret: '', scope: '' }
@@ -264,19 +295,11 @@ function openEdit(conn: ConnectionDefinition) {
   if (form.value.authenticationMode === 'OAuth' && !form.value.oAuthOptions) {
     form.value.oAuthOptions = { clientId: '', redirectUri: '', scopes: '' }
   }
-  // Restore persisted subscription selection for KV browsing
-  selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
-  showDialog.value = true
 }
 
 function onAuthModeChange() {
   // Initialise credential objects when the user switches mode so v-model bindings are safe
-  if (form.value.authenticationMode === 'AzureClientCredentials' && !form.value.azureCredentials) {
-    form.value.azureCredentials = { tenantId: '', clientId: '', clientSecret: '', scope: '' }
-  }
-  if (form.value.authenticationMode === 'OAuth' && !form.value.oAuthOptions) {
-    form.value.oAuthOptions = { clientId: '', redirectUri: '', scopes: '' }
-  }
+  ensureAuthOptionModels()
 }
 
 // ── Azure Assist ─────────────────────────────────────────────────────────────
@@ -543,6 +566,7 @@ onMounted(load)
                       :icon="connectedNames.has(data.name) ? 'pi pi-times' : 'pi pi-link'"
                       :severity="connectedNames.has(data.name) ? 'secondary' : 'success'"
                       size="small" text @click="toggleConnect(data)" />
+              <Button label="📋" aria-label="Duplicate" text size="small" v-tooltip="'Duplicate'" @click="openDuplicate(data)" />
               <Button icon="pi pi-pencil" text size="small" v-tooltip="'Edit'" @click="openEdit(data)" />
               <Button icon="pi pi-trash" text size="small" severity="danger" v-tooltip="'Delete'" @click="confirmDelete(data)" />
             </div>
