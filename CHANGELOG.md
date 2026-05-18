@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] - 2026-05-18
+
+### Added
+- **Connections — duplicate action**: Added a copy action that opens the new connection dialog with the selected connection's configuration and a unique `Copy of ...` name.
+
+### Fixed
+- **Connections — Basic Authorization headers**: Treat raw Authorization headers as exact values when the UI stores `authorizationType: "None"`, avoid double-prefixing values that already include `Basic` or `Bearer`, and expose Raw/Bearer/Basic choices in the connection header form.
+
 ## [Unreleased] - 2026-04-23
 
 ### Added

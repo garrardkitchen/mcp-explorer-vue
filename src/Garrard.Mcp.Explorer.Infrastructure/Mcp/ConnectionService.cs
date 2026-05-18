@@ -631,6 +631,13 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         if (scopes.Length == 0)
         {
             scopes = [DefaultAzureManagementScope];
+            _logger.LogWarning("[AzureToken] No scope configured for clientId={ClientId} — falling back to default scope '{DefaultScope}'. " +
+                               "Set the Scope field on the connection to the target API's scope (e.g. api://<app-id>/.default).",
+                clientId, DefaultAzureManagementScope);
+        }
+        else
+        {
+            _logger.LogInformation("[AzureToken] Acquiring token for clientId={ClientId} with scope(s): {Scopes}", clientId, string.Join(' ', scopes));
         }
 
         // Include the KV reference identity in the cache key so a change of secret reference
@@ -673,6 +680,8 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             var credential = new ClientSecretCredential(tenantId, clientId, clientSecret, credentialOptions);
             var tokenContext = new TokenRequestContext(scopes);
             var token = await credential.GetTokenAsync(tokenContext, cancellationToken).ConfigureAwait(false);
+
+            LogTokenAudience(token.Token, clientId);
 
             _azureTokenCache[cacheKey] = new AzureTokenCacheEntry(token);
             return token.Token;
@@ -768,6 +777,27 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
             "{Prefix} Headers for {ConnectionName}: Authorization present={HasAuth}, scheme={Scheme}, keys=[{Keys}]",
             prefix, connectionName, hasAuth, scheme ?? "(none)",
             string.Join(", ", headers?.Keys ?? []));
+    }
+
+    private void LogTokenAudience(string jwtToken, string clientId)
+    {
+        try
+        {
+            var parts = jwtToken.Split('.');
+            if (parts.Length < 2) return;
+            var payload = parts[1];
+            // Add padding if needed
+            payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var aud = doc.RootElement.TryGetProperty("aud", out var audProp) ? audProp.ToString() : "(missing)";
+            var ver = doc.RootElement.TryGetProperty("ver", out var verProp) ? verProp.ToString() : "(missing)";
+            _logger.LogInformation("[AzureToken] clientId={ClientId} token aud='{Aud}' ver={Ver}", clientId, aud, ver);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[AzureToken] Failed to decode JWT payload for diagnostics.");
+        }
     }
 
     private sealed record AzureTokenCacheEntry(AccessToken Token);
