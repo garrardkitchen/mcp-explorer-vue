@@ -6,7 +6,7 @@ export type ConnectionAuthenticationMode = 'CustomHeaders' | 'AzureClientCredent
 export interface ConnectionHeader {
   name: string
   value: string
-  authorizationType: string
+  authorizationType?: string
   isAuthorization: boolean
 }
 

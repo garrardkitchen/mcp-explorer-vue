@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased] - 2026-05-18
+
+### Fixed
+- **Connections — Basic Authorization headers**: Treat raw Authorization headers as exact values when the UI stores `authorizationType: "None"`, avoid double-prefixing values that already include `Basic` or `Bearer`, and expose Raw/Bearer/Basic choices in the connection header form.
+
 ## [Unreleased] - 2026-04-23
 
 ### Added

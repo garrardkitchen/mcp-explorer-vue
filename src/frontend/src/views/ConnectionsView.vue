@@ -17,7 +17,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { apiClient } from '@/api/client'
-import type { ConnectionDefinition, ConnectionGroup, AzureAccountInfo, AzureAppRegistration, AzureSubscription } from '@/api/types'
+import type { ConnectionDefinition, ConnectionGroup, AzureAccountInfo, AzureAppRegistration, AzureSubscription, ConnectionHeader } from '@/api/types'
 import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
 import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
@@ -211,6 +211,12 @@ const authModeOptions = [
   { label: 'OAuth', value: 'OAuth' },
 ]
 
+const authorizationTypeOptions = [
+  { label: 'Raw', value: 'None' },
+  { label: 'Bearer', value: 'Bearer' },
+  { label: 'Basic', value: 'Basic' },
+]
+
 // Options for the group dropdown in the form — existing groups + ability to clear
 const groupOptions = computed(() => groups.value.map(g => ({ label: g.name, value: g.name })))
 const groupColorMap = computed(() => Object.fromEntries(groups.value.map(g => [g.name, g.color])))
@@ -250,6 +256,7 @@ function openEdit(conn: ConnectionDefinition) {
   editMode.value = true; originalName.value = conn.name
   // Deep clone so edits don't mutate the store until saved
   form.value = JSON.parse(JSON.stringify(conn))
+  normalizeAuthorizationHeaders(form.value.headers)
   // Ensure nested credential objects exist so v-model doesn't crash
   if (form.value.authenticationMode === 'AzureClientCredentials' && !form.value.azureCredentials) {
     form.value.azureCredentials = { tenantId: '', clientId: '', clientSecret: '', scope: '' }
@@ -331,6 +338,7 @@ async function save() {
   if (form.value.azureCredentials) {
     form.value.azureCredentials = { ...form.value.azureCredentials, subscriptionId: selectedSubscriptionId.value }
   }
+  normalizeAuthorizationHeaders(form.value.headers)
   try {
     if (editMode.value) {
       await connectionsApi.update(originalName.value, form.value)
@@ -374,6 +382,43 @@ function addHeader() {
   form.value.headers.push({ name: '', value: '', authorizationType: 'None', isAuthorization: false })
 }
 function removeHeader(idx: number) { form.value.headers?.splice(idx, 1) }
+
+function isAuthorizationHeader(header: Pick<ConnectionHeader, 'name'>) {
+  return header.name?.trim().toLowerCase() === 'authorization'
+}
+
+function normalizeAuthorizationHeaders(headers?: ConnectionHeader[]) {
+  headers?.forEach(header => {
+    if (header.authorizationType) return
+    header.authorizationType = inferAuthorizationType(header)
+  })
+}
+
+function inferAuthorizationType(header: ConnectionHeader) {
+  if (!isAuthorizationHeader(header)) return 'None'
+
+  const value = header.value?.trim().toLowerCase() ?? ''
+  if (isAuthorizationValueForScheme(value, 'basic')) return 'Basic'
+  if (isAuthorizationValueForScheme(value, 'bearer')) return 'Bearer'
+  return 'Bearer'
+}
+
+function isAuthorizationValueForScheme(value: string, scheme: string) {
+  return value === scheme || value.startsWith(`${scheme} `)
+}
+
+function headerValuePlaceholder(header: ConnectionHeader) {
+  if (!isAuthorizationHeader(header)) return 'Value'
+
+  switch (header.authorizationType) {
+    case 'Bearer':
+      return 'Token, with or without Bearer'
+    case 'Basic':
+      return 'Base64 credentials, with or without Basic'
+    default:
+      return 'Full value, e.g. Basic <token>'
+  }
+}
 
 function openCreateGroup() {
   groupForm.value = { name: '', color: '#6366f1', description: '' }
@@ -642,7 +687,13 @@ onMounted(load)
           <p v-if="!form.headers?.length" class="muted-sm">No custom headers.</p>
           <div v-for="(h, idx) in form.headers" :key="idx" class="header-row">
             <InputText v-model="h.name" placeholder="Header name" style="flex:1" />
-            <InputText v-model="h.value" placeholder="Value" style="flex:2" />
+            <Select v-if="isAuthorizationHeader(h)"
+                    v-model="h.authorizationType"
+                    :options="authorizationTypeOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    style="width:8rem" />
+            <InputText v-model="h.value" :placeholder="headerValuePlaceholder(h)" style="flex:2" />
             <Button icon="pi pi-times" text size="small" severity="danger" @click="removeHeader(idx)" />
           </div>
         </div>
@@ -881,4 +932,3 @@ onMounted(load)
 .drop-zone.has-file { border-color:var(--success); color:var(--success); background:rgba(34,197,94,.05); }
 .drop-icon { font-size:28px; }
 .req { color:var(--danger); }</style>
-

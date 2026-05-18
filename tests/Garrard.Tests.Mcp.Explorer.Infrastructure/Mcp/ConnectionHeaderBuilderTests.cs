@@ -79,6 +79,71 @@ public class ConnectionHeaderBuilderTests
         Assert.Equal("Basic dXNlcjpwYXNz", result["Authorization"]);
     }
 
+    [Fact]
+    public void Build_AuthorizationHeader_RawScheme_PassesThroughFullValue()
+    {
+        var headers = new List<ConnectionHeader>
+        {
+            new() { Name = "Authorization", Value = "Basic dXNlcjpwYXNz", AuthorizationType = "None" }
+        };
+
+        var result = ConnectionHeaderBuilder.Build(headers);
+
+        Assert.Equal("Basic dXNlcjpwYXNz", result["Authorization"]);
+    }
+
+    [Fact]
+    public void Build_AuthorizationHeader_BlankSchemeWithFullBasicValue_DoesNotAddBearerPrefix()
+    {
+        var headers = new List<ConnectionHeader>
+        {
+            new() { Name = "Authorization", Value = "Basic dXNlcjpwYXNz" }
+        };
+
+        var result = ConnectionHeaderBuilder.Build(headers);
+
+        Assert.Equal("Basic dXNlcjpwYXNz", result["Authorization"]);
+    }
+
+    [Fact]
+    public void Build_AuthorizationHeader_BlankSchemeWithSchemeOnlyValue_DoesNotDoublePrefix()
+    {
+        var headers = new List<ConnectionHeader>
+        {
+            new() { Name = "Authorization", Value = "Basic" }
+        };
+
+        var result = ConnectionHeaderBuilder.Build(headers);
+
+        Assert.Equal("Basic", result["Authorization"]);
+    }
+
+    [Fact]
+    public void Build_AuthorizationHeader_ExplicitBasicSchemeWithFullValue_DoesNotDoublePrefix()
+    {
+        var headers = new List<ConnectionHeader>
+        {
+            new() { Name = "Authorization", Value = "Basic dXNlcjpwYXNz", AuthorizationType = "Basic" }
+        };
+
+        var result = ConnectionHeaderBuilder.Build(headers);
+
+        Assert.Equal("Basic dXNlcjpwYXNz", result["Authorization"]);
+    }
+
+    [Fact]
+    public void Build_AuthorizationHeader_ExplicitBearerSchemeWithSchemeOnlyValue_DoesNotDoublePrefix()
+    {
+        var headers = new List<ConnectionHeader>
+        {
+            new() { Name = "Authorization", Value = "Bearer", AuthorizationType = "Bearer" }
+        };
+
+        var result = ConnectionHeaderBuilder.Build(headers);
+
+        Assert.Equal("Bearer", result["Authorization"]);
+    }
+
     // ── Authorization header — case-insensitive name matching ─────────────────
 
     [Fact]
