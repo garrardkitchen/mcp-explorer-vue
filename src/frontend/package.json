@@ -11,9 +11,9 @@
   "dependencies": {
     "@primeuix/themes": "^2.0.3",
     "@types/dompurify": "^3.0.5",
-    "axios": "^1.14.0",
+    "axios": "^1.15.2",
     "chart.js": "^4.5.1",
-    "dompurify": "^3.3.3",
+    "dompurify": "^3.4.0",
     "mark.js": "^8.11.1",
     "marked": "^17.0.5",
     "pinia": "^3.0.4",
