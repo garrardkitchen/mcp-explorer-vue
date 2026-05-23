@@ -60,7 +60,7 @@ flowchart LR
   Backend --> HTTPAPIs["🌐 External HTTP APIs"]
   Backend --> LLMAPIs["☁️ LLM APIs"]
   Backend --> Azure["🔐 Azure\nKey Vault · Entra ID"]
-  Backend --> Storage[("💾 settings.json\n/data volume")]
+  Backend --> Storage[("💾 Persistent data (/data)\nsettings.json + HttpApis/http-apis.json + HttpApis/*/*.jsonl")]
   Backend -->|"spawns devtunnel CLI"| DevTunnel["🚇 Dev Tunnel\nPublic webhook endpoint"]
   MCPServers -->|"webhook POST"| DevTunnel
   DevTunnel -->|"forwards payload"| Backend
@@ -575,7 +575,7 @@ Copy `.env.example` to `.env` and fill in your values. Key variables:
 | `ASPNETCORE_ENVIRONMENT` | Runtime env — controls logging/error detail | `Production` |
 | `AppMetadata__Version` | Version string shown in UI footer | `0.5.0` |
 | `MCP_CLIENT_NAME` | Client name sent to MCP servers in handshake and User-Agent | `mcp-explorer` |
-| `MCP_DATA_PATH` | **Host** directory mounted as `/data` — persists connections, workflows, models | _(anonymous volume)_ |
+| `MCP_DATA_PATH` | **Host** directory mounted as `/data` — persists settings, workflows, models, and HTTP API definitions/history | _(anonymous volume)_ |
 | `PREFERENCES__StoragePath` | Absolute path to `settings.json` inside the container | `/data/settings.json` |
 | `HOST_AZURE_CONFIG_DIR` | Absolute path to host `~/.azure` — mounted into container for `AzureCliCredential` | _(empty)_ |
 | `AZURE_CONFIG_DIR` | Path to `.azure` directory inside the container | `/root/.azure` |

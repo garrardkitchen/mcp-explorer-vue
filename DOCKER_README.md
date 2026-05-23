@@ -155,7 +155,7 @@ The script runs `devtunnel user login --use-device-code-auth` inside the `api` c
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_DATA_PATH` | *(named volume)* | Host directory containing `settings.json` (connections, workflows, models). Mount this to persist data across restarts. macOS: `/Users/<you>/Library/Application Support/McpExplorer` |
+| `MCP_DATA_PATH` | *(named volume)* | Host directory containing persisted app data (`settings.json` plus `HttpApis/*` definition/history files). Mount this to persist data across restarts. macOS: `/Users/<you>/Library/Application Support/McpExplorer` |
 | `PREFERENCES__StoragePath` | `/data/settings.json` | Path to `settings.json` *inside* the container. Only change if you customise the volume target. |
 
 ### Azure (optional — enables Key Vault & App Registration features)

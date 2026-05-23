@@ -11,7 +11,7 @@
 - **HTTP API list UX**: Show Infrastructure HTTP API connections in a management table aligned with the MCP Connections list, and restyle invoke-side API selection to mirror the MCP Tools list feel.
 - **Invocation detail UX**: Convert expanded history details to tabbed request/response views (Request, Response Headers, Response Body) for faster inspection.
 - **README architecture docs**: Refresh system and clean-architecture diagrams to explicitly include HTTP API Explorer surfaces and the `mcp-http` CLI.
-- **README coverage**: Update root, Docker, and docs-site README content so HTTP API Explorer and CLI capabilities are represented consistently.
+- **README coverage**: Update root and Docker README content for HTTP API Explorer + CLI coverage, and refresh docs-site README structure mapping for current documentation sections.
 
 ### Fixed
 - **HTTP API definition dialog**: Keep auth option sections stable when changing auth mode and add Authorization header Raw/Bearer/Basic UX parity with Connections.
