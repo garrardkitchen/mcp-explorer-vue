@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Garrard.Mcp.Explorer.Api.Dtos.HttpApis;
 using Garrard.Mcp.Explorer.Core.Domain.HttpApi;
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Garrard.Mcp.Explorer.Infrastructure.HttpApi;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
@@ -86,7 +87,10 @@ public sealed class HttpApiCollectionsController(
     /// (if available), and returns a per-endpoint summary.
     /// </summary>
     [HttpPost("{id}/run")]
-    public async Task<IActionResult> Run(string id, CancellationToken ct)
+    public async Task<IActionResult> Run(
+        string id,
+        [FromBody] RunHttpApiCollectionRequest? request,
+        CancellationToken ct)
     {
         var collection = await store.GetCollectionAsync(id, ct);
         if (collection is null) return NotFound();
@@ -103,7 +107,8 @@ public sealed class HttpApiCollectionsController(
                 continue;
             }
 
-            var invokeResult = await invoker.InvokeAsync(def, ct);
+            var invokeResult = await invoker.InvokeAsync(def, request?.Inputs, ct);
+            var resolved     = HttpApiTemplateResolver.Apply(def, request?.Inputs);
             var schema       = schemaInference.InferSchema(invokeResult.Body);
             var hash         = schemaInference.ComputeSchemaHash(schema);
 
@@ -132,7 +137,15 @@ public sealed class HttpApiCollectionsController(
                 SchemaHash            = hash,
                 SchemaMatchedSnapshot = comparison is null ? null : !comparison.IsBreaking,
                 CollectionRunId       = runId,
-                ErrorMessage          = invokeResult.ErrorMessage
+                ErrorMessage          = invokeResult.ErrorMessage,
+                RequestMethod         = resolved.Method,
+                RequestBaseUrl        = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.BaseUrl),
+                RequestPath           = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.Path),
+                RequestHeaders        = HttpApiInvocationSanitizer.SanitizeHeaders(ToSnapshotDictionary(resolved.Headers.Select(h => (h.Name, h.Value)))),
+                RequestQueryParams    = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
+                ResponseHeaders       = HttpApiInvocationSanitizer.SanitizeHeaders(invokeResult.ResponseHeaders),
+                ContentType           = invokeResult.ContentType,
+                Body                  = HttpApiInvocationSanitizer.SanitizeBody(invokeResult.Body)
             }, ct);
 
             results.Add(new
@@ -153,5 +166,13 @@ public sealed class HttpApiCollectionsController(
         await store.SaveCollectionAsync(collection, ct);
 
         return Ok(new { runId, collectionId = id, ranAt = DateTime.UtcNow, results });
+    }
+
+    private static Dictionary<string, string> ToSnapshotDictionary(IEnumerable<(string Name, string Value)> items)
+    {
+        return items
+            .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+            .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Last().Value, StringComparer.OrdinalIgnoreCase);
     }
 }

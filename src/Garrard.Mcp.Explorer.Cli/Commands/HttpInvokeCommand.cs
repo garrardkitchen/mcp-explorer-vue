@@ -30,12 +30,18 @@ public sealed class HttpInvokeCommand : AsyncCommand<HttpInvokeCommand.Settings>
         [CommandOption("--name")] [Description("Endpoint name (partial match)")] public string? Name { get; init; }
         [CommandOption("--bookmark")] [Description("Save a snapshot bookmark after invocation")] public bool Bookmark { get; init; }
         [CommandOption("--label")] [Description("Label for the bookmark")] public string? Label { get; init; }
+        [CommandOption("--use-localhost")] [Description("Replace host.docker.internal with localhost")] public bool UseLocalhost { get; init; }
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
     {
         var def = await ResolveEndpointAsync(settings.Id, settings.Name);
         if (def is null) return 1;
+
+        if (settings.UseLocalhost)
+        {
+            def = ApplyLocalhostTransform(def);
+        }
 
         HttpApiInvokeResult result = null!;
         await AnsiConsole.Status().StartAsync($"Invoking [bold]{def.Name}[/]…", async _ =>
@@ -112,5 +118,14 @@ public sealed class HttpInvokeCommand : AsyncCommand<HttpInvokeCommand.Settings>
         }
         AnsiConsole.MarkupLine("[red]Specify --id or --name[/]");
         return null;
+    }
+
+    private static Core.Domain.HttpApi.HttpApiDefinition ApplyLocalhostTransform(Core.Domain.HttpApi.HttpApiDefinition def)
+    {
+        if (def.BaseUrl.Contains("host.docker.internal", StringComparison.OrdinalIgnoreCase))
+        {
+            def.BaseUrl = def.BaseUrl.Replace("host.docker.internal", "localhost", StringComparison.OrdinalIgnoreCase);
+        }
+        return def;
     }
 }

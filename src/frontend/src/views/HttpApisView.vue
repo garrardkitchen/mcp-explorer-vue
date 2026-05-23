@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import DataTable from 'primevue/datatable'
@@ -20,10 +21,16 @@ import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
+import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
+import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
 import { useHttpApisStore } from '@/stores/httpApis'
 import { httpApisApi } from '@/api/httpApis'
 import { apiClient } from '@/api/client'
 import type {
+  AzureAccountInfo,
+  AzureAppRegistration,
+  AzureSubscription,
   HttpApiDefinition,
   HttpApiGroup,
   HttpApiHeader,
@@ -38,6 +45,7 @@ import type {
 const toast = useToast()
 const confirm = useConfirm()
 const store = useHttpApisStore()
+const route = useRoute()
 
 // ── State ───────────────────────────────────────────────────────────────────
 const loading = ref(false)
@@ -49,6 +57,18 @@ const showFavsFirst = ref(false)
 const showDialog = ref(false)
 const editMode = ref(false)
 const saving = ref(false)
+const isConnectionsMode = computed(() => route.name === 'http-api-connections')
+const isInvokeMode = computed(() => !isConnectionsMode.value)
+const selectedSubscriptionId = ref<string | undefined>(undefined)
+
+type AuthorizationType = 'None' | 'Bearer' | 'Basic'
+type HttpApiEditorHeader = HttpApiHeader & { authorizationType?: AuthorizationType }
+
+const authorizationTypeOptions: { label: string; value: AuthorizationType }[] = [
+  { label: 'Raw', value: 'None' },
+  { label: 'Bearer', value: 'Bearer' },
+  { label: 'Basic', value: 'Basic' },
+]
 
 const AUTH_MODES: { label: string; value: HttpApiAuthenticationMode }[] = [
   { label: 'None',                    value: 'None' },
@@ -68,16 +88,124 @@ const blankForm = (): Partial<HttpApiDefinition> => ({
 })
 const form = ref<Partial<HttpApiDefinition>>(blankForm())
 const originalId = ref('')
+const formHeaders = computed(() => (form.value.headers ?? []) as HttpApiEditorHeader[])
+
+function isAuthorizationHeader(header: Pick<HttpApiEditorHeader, 'name'>) {
+  return header.name?.trim().toLowerCase() === 'authorization'
+}
+
+function isAuthorizationValueForScheme(value: string, scheme: string) {
+  return value === scheme || value.startsWith(`${scheme} `)
+}
+
+function inferAuthorizationType(header: HttpApiEditorHeader): AuthorizationType {
+  if (!isAuthorizationHeader(header)) return 'None'
+  const value = header.value?.trim().toLowerCase() ?? ''
+  if (isAuthorizationValueForScheme(value, 'basic')) return 'Basic'
+  if (isAuthorizationValueForScheme(value, 'bearer')) return 'Bearer'
+  return 'None'
+}
+
+function normalizeAuthorizationHeaders(headers?: HttpApiEditorHeader[]) {
+  headers?.forEach((header) => {
+    if (!header.authorizationType) {
+      header.authorizationType = inferAuthorizationType(header)
+    }
+  })
+}
+
+function ensureAuthorizationHeaderValue(header: HttpApiEditorHeader) {
+  if (!isAuthorizationHeader(header)) return
+  const trimmed = (header.value ?? '').trim()
+  if (!trimmed) return
+
+  const normalized = stripKnownAuthorizationScheme(trimmed)
+  if (header.authorizationType === 'Bearer') {
+    header.value = normalized ? `Bearer ${normalized}` : 'Bearer'
+  } else if (header.authorizationType === 'Basic') {
+    header.value = normalized ? `Basic ${normalized}` : 'Basic'
+  } else {
+    header.value = trimmed
+  }
+}
+
+function stripKnownAuthorizationScheme(value: string) {
+  return value.replace(/^(basic|bearer)\b\s*/i, '').trim()
+}
+
+function headerValuePlaceholder(header: HttpApiEditorHeader) {
+  if (!isAuthorizationHeader(header)) return 'Value'
+  switch (header.authorizationType) {
+    case 'Bearer':
+      return 'Token, with or without Bearer'
+    case 'Basic':
+      return 'Base64 credentials, with or without Basic'
+    default:
+      return 'Full value, e.g. Basic <token>'
+  }
+}
+
+function ensureAuthOptionModels() {
+  switch (form.value.authenticationMode) {
+    case 'ApiKey':
+      form.value.apiKeyOptions = form.value.apiKeyOptions ?? { headerName: 'X-Api-Key', apiKey: '', prefix: '' }
+      break
+    case 'Bearer':
+      form.value.bearerOptions = form.value.bearerOptions ?? { token: '' }
+      break
+    case 'AzureClientCredentials':
+      form.value.azureCredentials = form.value.azureCredentials ?? { tenantId: '', clientId: '', clientSecret: '', scope: '', subscriptionId: selectedSubscriptionId.value }
+      break
+  }
+}
+
+function onAuthModeChanged() {
+  ensureAuthOptionModels()
+}
+
+function onAzureAccountLoaded(account: AzureAccountInfo | null) {
+  if (!account || !form.value.azureCredentials) return
+  if (!form.value.azureCredentials.tenantId.trim()) {
+    form.value.azureCredentials = { ...form.value.azureCredentials, tenantId: account.tenantId }
+  }
+}
+
+function onSubscriptionChanged(subscription: AzureSubscription) {
+  selectedSubscriptionId.value = subscription.id
+  if (form.value.azureCredentials) {
+    form.value.azureCredentials = {
+      ...form.value.azureCredentials,
+      tenantId: subscription.tenantId,
+      subscriptionId: subscription.id,
+    }
+  }
+}
+
+function onAppRegistrationSelected(app: AzureAppRegistration) {
+  if (!form.value.azureCredentials) return
+  const scope = app.firstApiResourceId ? `api://${app.firstApiResourceId}/.default` : ''
+  form.value.azureCredentials = {
+    ...form.value.azureCredentials,
+    clientId: app.appId,
+    scope: scope || form.value.azureCredentials.scope,
+  }
+}
 
 function openCreate() {
   form.value = blankForm()
+  normalizeAuthorizationHeaders(form.value.headers as HttpApiEditorHeader[])
+  selectedSubscriptionId.value = undefined
   originalId.value = ''
   editMode.value = false
   showDialog.value = true
 }
 
 function openEdit(def: HttpApiDefinition) {
-  form.value = { ...def, headers: [...def.headers], queryParams: [...def.queryParams], tags: [...def.tags] }
+  const headers = [...def.headers] as HttpApiEditorHeader[]
+  normalizeAuthorizationHeaders(headers)
+  form.value = { ...def, headers, queryParams: [...def.queryParams], tags: [...def.tags] }
+  selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
+  ensureAuthOptionModels()
   originalId.value = def.id
   editMode.value = true
   showDialog.value = true
@@ -90,6 +218,18 @@ async function saveForm() {
   if (!form.value.baseUrl?.trim()) {
     toast.add({ severity: 'warn', summary: 'Base URL required', detail: 'Enter a base URL.', life: 3000 }); return
   }
+  if (form.value.authenticationMode === 'AzureClientCredentials') {
+    const az = form.value.azureCredentials
+    const hasSecret = !!az?.clientSecret?.trim() || !!az?.keyVaultSecretRef
+    if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !hasSecret || !az?.scope?.trim()) {
+      toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret (or Key Vault reference) and Scope are required for Azure Client Credentials', life: 4000 }); return
+    }
+  }
+  ensureAuthOptionModels()
+  const headers = (form.value.headers ?? []) as HttpApiEditorHeader[]
+  headers.forEach(ensureAuthorizationHeaderValue)
+  form.value.headers = headers.map(h => ({ name: h.name, value: h.value }))
+
   saving.value = true
   try {
     if (editMode.value) {
@@ -155,6 +295,10 @@ const filteredDefs = computed(() => {
 const invokeTarget = ref<HttpApiDefinition | null>(null)
 const invoking = ref(false)
 const invokeResult = ref<HttpApiInvokeResponse | null>(null)
+const showInvokeInputDialog = ref(false)
+const invokeInputFields = ref<Array<{ name: string; defaultValue: string; value: string }>>([])
+const pendingInvokeAction = ref<'invoke' | 'bookmark' | 'compare'>('invoke')
+const invokeInputPattern = /\{(?<name>[A-Za-z_][A-Za-z0-9_.-]*)(:(?<default>[^{}]*))?\}/g
 
 function openInvokePanel(def: HttpApiDefinition) {
   invokeTarget.value = def
@@ -165,24 +309,111 @@ function openInvokePanel(def: HttpApiDefinition) {
 
 const activeTab = ref('overview')
 
-async function doInvoke() {
+function extractInputsFromTemplate(template: string | null | undefined, bucket: Map<string, string>) {
+  if (!template) return
+  for (const match of template.matchAll(invokeInputPattern)) {
+    const name = match.groups?.name?.trim()
+    if (!name || bucket.has(name)) continue
+    bucket.set(name, match.groups?.default ?? '')
+  }
+}
+
+function collectInvokeInputFields(def: HttpApiDefinition) {
+  const placeholders = new Map<string, string>()
+  extractInputsFromTemplate(def.baseUrl, placeholders)
+  extractInputsFromTemplate(def.path, placeholders)
+  extractInputsFromTemplate(def.bodyTemplate, placeholders)
+
+  for (const h of def.headers) {
+    extractInputsFromTemplate(h.name, placeholders)
+    extractInputsFromTemplate(h.value, placeholders)
+  }
+  for (const q of def.queryParams) {
+    extractInputsFromTemplate(q.name, placeholders)
+    extractInputsFromTemplate(q.value, placeholders)
+  }
+
+  extractInputsFromTemplate(def.apiKeyOptions?.headerName, placeholders)
+  extractInputsFromTemplate(def.apiKeyOptions?.apiKey, placeholders)
+  extractInputsFromTemplate(def.apiKeyOptions?.prefix, placeholders)
+  extractInputsFromTemplate(def.bearerOptions?.token, placeholders)
+  extractInputsFromTemplate(def.azureCredentials?.tenantId, placeholders)
+  extractInputsFromTemplate(def.azureCredentials?.clientId, placeholders)
+  extractInputsFromTemplate(def.azureCredentials?.clientSecret, placeholders)
+  extractInputsFromTemplate(def.azureCredentials?.scope, placeholders)
+  extractInputsFromTemplate(def.azureCredentials?.authorityHost, placeholders)
+
+  return Array.from(placeholders.entries()).map(([name, defaultValue]) => ({
+    name,
+    defaultValue,
+    value: defaultValue,
+  }))
+}
+
+function resolveInvokeInputs() {
+  const resolved: Record<string, string> = {}
+  for (const field of invokeInputFields.value) {
+    const value = field.value?.trim() || field.defaultValue?.trim()
+    if (value) {
+      resolved[field.name] = value
+    }
+  }
+  return resolved
+}
+
+function promptInvokeInputsIfNeeded(action: 'invoke' | 'bookmark' | 'compare') {
+  if (!invokeTarget.value) return false
+  const fields = collectInvokeInputFields(invokeTarget.value)
+  if (fields.length === 0) return false
+  pendingInvokeAction.value = action
+  invokeInputFields.value = fields
+  showInvokeInputDialog.value = true
+  return true
+}
+
+async function executeInvoke(inputs?: Record<string, string>) {
   if (!invokeTarget.value) return
   invoking.value = true
   invokeResult.value = null
   try {
-    invokeResult.value = await httpApisApi.invoke(invokeTarget.value.id)
+    invokeResult.value = await httpApisApi.invoke(invokeTarget.value.id, inputs)
     activeTab.value = 'response'
+    await loadHistory(invokeTarget.value.id)
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Invocation failed', detail: e.message, life: 5000 })
-  } finally { invoking.value = false }
+  } finally {
+    invoking.value = false
+  }
 }
 
-async function doBookmark() {
+async function doInvoke() {
   if (!invokeTarget.value) return
+  if (promptInvokeInputsIfNeeded('invoke')) return
+  await executeInvoke()
+}
+
+async function confirmInvokeWithInputs() {
+  const action = pendingInvokeAction.value
+  const inputs = resolveInvokeInputs()
+  showInvokeInputDialog.value = false
+  if (action === 'bookmark') {
+    await doBookmark(inputs)
+    return
+  }
+  if (action === 'compare') {
+    await doCompare(inputs)
+    return
+  }
+  await executeInvoke(inputs)
+}
+
+async function doBookmark(inputs?: Record<string, string>) {
+  if (!invokeTarget.value) return
+  if (!inputs && promptInvokeInputsIfNeeded('bookmark')) return
   try {
-    const snap = await httpApisApi.bookmark(invokeTarget.value.id)
+    const snap = await httpApisApi.bookmark(invokeTarget.value.id, undefined, inputs)
     toast.add({ severity: 'success', summary: 'Bookmarked', detail: `Snapshot saved at ${new Date(snap.capturedAt).toLocaleTimeString()}.`, life: 3000 })
-    await loadSnapshots(invokeTarget.value.id)
+    await Promise.all([loadSnapshots(invokeTarget.value.id), loadHistory(invokeTarget.value.id)])
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Bookmark failed', detail: e.message, life: 5000 })
   }
@@ -192,13 +423,15 @@ async function doBookmark() {
 const comparing = ref(false)
 const compareResult = ref<{ comparison: HttpSchemaComparisonResult; liveResponse: any } | null>(null)
 
-async function doCompare() {
+async function doCompare(inputs?: Record<string, string>) {
   if (!invokeTarget.value) return
+  if (!inputs && promptInvokeInputsIfNeeded('compare')) return
   comparing.value = true
   compareResult.value = null
   try {
-    compareResult.value = await httpApisApi.compare(invokeTarget.value.id)
+    compareResult.value = await httpApisApi.compare(invokeTarget.value.id, undefined, inputs)
     activeTab.value = 'comparison'
+    await loadHistory(invokeTarget.value.id)
   } catch (e: any) {
     const msg = e.response?.data?.error ?? e.message
     toast.add({ severity: 'error', summary: 'Compare failed', detail: msg, life: 5000 })
@@ -245,10 +478,14 @@ async function pinSnapshot(snapshotId: string) {
 // ── History ───────────────────────────────────────────────────────────────────
 const history = ref<HttpApiInvocationRecord[]>([])
 const historyLoading = ref(false)
+const expandedHistoryRows = ref<HttpApiInvocationRecord[]>([])
 
 async function loadHistory(id: string) {
   historyLoading.value = true
-  try { history.value = await httpApisApi.getHistory(id, 50) }
+  try {
+    history.value = await httpApisApi.getHistory(id, 50)
+    expandedHistoryRows.value = []
+  }
   finally { historyLoading.value = false }
 }
 
@@ -441,6 +678,12 @@ function statusSeverity(code: number) {
   return 'secondary'
 }
 
+function methodSeverity(method: string) {
+  if (method === 'GET') return 'info'
+  if (method === 'DELETE') return 'danger'
+  return 'secondary'
+}
+
 // ── Mount ─────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   loading.value = true
@@ -478,7 +721,7 @@ onMounted(async () => {
           @click="showFavsFirst = !showFavsFirst"
         />
       </div>
-      <div class="toolbar-right">
+      <div v-if="isConnectionsMode" class="toolbar-right">
         <Button label="Import" icon="pi pi-upload" severity="secondary" outlined size="small" @click="openImportDialog" />
         <Button label="Export" icon="pi pi-download" severity="secondary" outlined size="small" @click="openExportDialog" />
         <Button label="Group" icon="pi pi-tag" severity="secondary" outlined size="small" @click="openCreateGroup" />
@@ -486,12 +729,69 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ── Main split: list + invoke panel ────────────────────────────────── -->
-    <div class="main-layout">
-      <!-- Definition list -->
+    <div v-if="isConnectionsMode" class="table-wrap">
+      <DataTable :value="filteredDefs" :loading="loading" stripedRows rowHover scrollable scrollHeight="flex">
+        <template #empty>
+          <div class="empty-state">
+            <i class="pi pi-send empty-icon" />
+            <p>No HTTP API definitions yet.</p>
+            <Button label="Create one" icon="pi pi-plus" @click="openCreate" />
+          </div>
+        </template>
+        <template #loading>
+          <div class="p-4"><Skeleton v-for="i in 4" :key="i" height="40px" class="mb-2" /></div>
+        </template>
+        <Column field="name" header="Name" sortable style="min-width:220px">
+          <template #body="{ data }">
+            <div class="table-name-cell">
+              <Button
+                :icon="store.isFavourite(data.id) ? 'pi pi-star-fill' : 'pi pi-star'"
+                :severity="store.isFavourite(data.id) ? 'warning' : 'secondary'"
+                text rounded size="small"
+                class="fav-btn"
+                @click.stop="store.toggleFavourite(data.id)"
+              />
+              <span class="def-name">{{ data.name }}</span>
+            </div>
+          </template>
+        </Column>
+        <Column field="method" header="Method" sortable style="min-width:120px">
+          <template #body="{ data }">
+            <Tag :value="data.method" :severity="methodSeverity(data.method)" />
+          </template>
+        </Column>
+        <Column header="Endpoint" style="min-width:280px">
+          <template #body="{ data }">
+            <span class="mono">{{ data.baseUrl }}{{ data.path }}</span>
+          </template>
+        </Column>
+        <Column field="authenticationMode" header="Auth" style="min-width:180px">
+          <template #body="{ data }">
+            <Tag :value="data.authenticationMode" :severity="AUTH_SEVERITY[data.authenticationMode] ?? 'secondary'" />
+          </template>
+        </Column>
+        <Column field="groupName" header="Group" sortable style="min-width:140px">
+          <template #body="{ data }">
+            <span v-if="data.groupName">{{ data.groupName }}</span>
+            <span v-else class="text-muted">—</span>
+          </template>
+        </Column>
+        <Column header="Actions" style="min-width:200px;text-align:right">
+          <template #body="{ data }">
+            <div class="row-actions">
+              <Button icon="pi pi-copy" text rounded size="small" v-tooltip.top="'Duplicate'" @click="copyDef(data)" />
+              <Button icon="pi pi-pencil" text rounded size="small" v-tooltip.top="'Edit'" @click="openEdit(data)" />
+              <Button icon="pi pi-trash" text rounded size="small" severity="danger" v-tooltip.top="'Delete'" @click="confirmDelete(data)" />
+            </div>
+          </template>
+        </Column>
+      </DataTable>
+    </div>
+
+    <!-- ── Invoke mode split: list + invoke panel ───────────────────────────── -->
+    <div v-else class="main-layout">
       <div class="def-list">
         <Skeleton v-if="loading" height="4rem" class="mb-2" v-for="i in 4" :key="i" />
-
         <div
           v-if="!loading"
           v-for="def in filteredDefs"
@@ -500,47 +800,36 @@ onMounted(async () => {
           :class="{ 'def-card--active': invokeTarget?.id === def.id }"
           @click="openAndLoad(def)"
         >
-          <div class="def-card__header">
-            <div class="def-card__title-row">
-              <Button
-                :icon="store.isFavourite(def.id) ? 'pi pi-star-fill' : 'pi pi-star'"
-                :severity="store.isFavourite(def.id) ? 'warning' : 'secondary'"
-                text rounded size="small"
-                class="fav-btn"
-                @click.stop="store.toggleFavourite(def.id)"
-              />
-              <span class="def-name">{{ def.name }}</span>
-              <Tag :value="def.method" :severity="def.method === 'GET' ? 'info' : def.method === 'DELETE' ? 'danger' : 'secondary'" class="method-tag" />
-              <Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
-            </div>
-            <div class="def-card__url">{{ def.baseUrl }}{{ def.path }}</div>
-            <div v-if="def.note" class="def-card__note">{{ def.note }}</div>
-            <div v-if="def.tags.length" class="def-card__tags">
-              <Tag v-for="t in def.tags" :key="t" :value="t" severity="secondary" rounded class="tag-pill" />
+          <div class="def-card__body">
+            <div class="def-icon-badge">{{ def.name.charAt(0).toUpperCase() }}</div>
+            <div class="def-card__text">
+              <div class="def-card__title-row">
+                <span class="def-name">{{ def.name }}</span>
+                <Tag :value="def.method" :severity="methodSeverity(def.method)" class="method-tag" />
+                <Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
+              </div>
+              <div class="def-card__url">{{ def.baseUrl }}{{ def.path }}</div>
+              <div v-if="def.note" class="def-card__note">{{ def.note }}</div>
             </div>
           </div>
-          <div class="def-card__actions" @click.stop>
-            <Button icon="pi pi-copy" text rounded size="small" v-tooltip.top="'Duplicate'" @click="copyDef(def)" />
-            <Button icon="pi pi-pencil" text rounded size="small" v-tooltip.top="'Edit'" @click="openEdit(def)" />
-            <Button icon="pi pi-trash" text rounded size="small" severity="danger" v-tooltip.top="'Delete'" @click="confirmDelete(def)" />
-          </div>
+          <button class="fav-btn icon-only" @click.stop="store.toggleFavourite(def.id)" :title="store.isFavourite(def.id) ? 'Unfavorite' : 'Favorite'">
+            <i :class="store.isFavourite(def.id) ? 'pi pi-star-fill' : 'pi pi-star'" :style="store.isFavourite(def.id) ? 'color:var(--warning)' : ''" />
+          </button>
         </div>
 
         <div v-if="!loading && filteredDefs.length === 0" class="empty-state">
           <i class="pi pi-send empty-icon" />
-          <p>No HTTP API definitions yet.</p>
-          <Button label="Create one" size="small" @click="openCreate" />
+          <p>No HTTP API definitions found.</p>
         </div>
       </div>
 
-      <!-- Invoke panel -->
       <div v-if="invokeTarget" class="invoke-panel">
         <div class="invoke-panel__header">
           <span class="invoke-panel__title">{{ invokeTarget.name }}</span>
           <div class="invoke-panel__actions">
             <Button label="Invoke" icon="pi pi-play" size="small" :loading="invoking" @click="doInvoke" />
-            <Button label="Bookmark" icon="pi pi-bookmark" severity="secondary" outlined size="small" @click="doBookmark" />
-            <Button label="Compare" icon="pi pi-sync" severity="info" outlined size="small" :loading="comparing" @click="doCompare" />
+            <Button label="Bookmark" icon="pi pi-bookmark" severity="secondary" outlined size="small" @click="() => doBookmark()" />
+            <Button label="Compare" icon="pi pi-sync" severity="info" outlined size="small" :loading="comparing" @click="() => doCompare()" />
           </div>
         </div>
 
@@ -552,7 +841,7 @@ onMounted(async () => {
             <Tab value="snapshots">Snapshots</Tab>
             <Tab value="history">History</Tab>
           </TabList>
-          <TabPanels>
+          <TabPanels v-model:value="activeTab">
           <!-- Overview -->
           <TabPanel value="overview">
             <div class="overview-grid">
@@ -661,11 +950,13 @@ onMounted(async () => {
             <DataTable
               v-if="!historyLoading"
               :value="history"
+              v-model:expandedRows="expandedHistoryRows"
               size="small"
               :paginator="history.length > 20"
               :rows="20"
               class="history-table"
             >
+              <Column expander style="width: 2.5rem" />
               <Column field="invokedAt" header="When">
                 <template #body="{ data }">{{ new Date(data.invokedAt).toLocaleString() }}</template>
               </Column>
@@ -692,6 +983,54 @@ onMounted(async () => {
                   <span v-if="data.errorMessage" class="error-text" v-tooltip.top="data.errorMessage">⚠️</span>
                 </template>
               </Column>
+              <template #expansion="{ data }">
+                <div class="history-expansion">
+                  <Tabs value="request" class="history-detail-tabs">
+                    <TabList>
+                      <Tab value="request">Request</Tab>
+                      <Tab value="response-headers">Response Headers</Tab>
+                      <Tab value="response-body">Response Body</Tab>
+                    </TabList>
+                    <TabPanels>
+                      <TabPanel value="request">
+                        <div class="overview-grid">
+                          <div class="ov-row"><span class="ov-label">URL</span><code>{{ data.requestBaseUrl }}{{ data.requestPath }}</code></div>
+                          <div class="ov-row"><span class="ov-label">Method</span><Tag :value="data.requestMethod || '—'" :severity="methodSeverity(data.requestMethod || '')" /></div>
+                        </div>
+                        <div class="section-label mt-2">Request Headers</div>
+                        <DataTable :value="Object.entries(data.requestHeaders ?? {}).map(([name, value]) => ({ name, value }))" size="small">
+                          <Column field="name" header="Name" />
+                          <Column field="value" header="Value" />
+                        </DataTable>
+                        <div class="section-label mt-2">Query Strings</div>
+                        <DataTable :value="Object.entries(data.requestQueryParams ?? {}).map(([name, value]) => ({ name, value }))" size="small">
+                          <Column field="name" header="Name" />
+                          <Column field="value" header="Value" />
+                        </DataTable>
+                      </TabPanel>
+                      <TabPanel value="response-headers">
+                        <div class="response-meta">
+                          <Tag :value="`${data.statusCode || '—'}`" :severity="statusSeverity(data.statusCode)" />
+                          <span class="latency">{{ data.latencyMs }} ms</span>
+                          <span v-if="data.contentType" class="content-type">{{ data.contentType }}</span>
+                        </div>
+                        <DataTable
+                          :value="Object.entries(data.responseHeaders ?? {}).map(([name, value]) => ({ name, value }))"
+                          size="small"
+                          class="mt-2"
+                        >
+                          <Column field="name" header="Name" />
+                          <Column field="value" header="Value" />
+                        </DataTable>
+                      </TabPanel>
+                      <TabPanel value="response-body">
+                        <JsonViewer v-if="data.body" :data="data.body" />
+                        <span v-else class="text-muted">No response body captured.</span>
+                      </TabPanel>
+                    </TabPanels>
+                  </Tabs>
+                </div>
+              </template>
             </DataTable>
           </TabPanel>
           </TabPanels>
@@ -728,7 +1067,14 @@ onMounted(async () => {
           </div>
           <div>
             <label>Auth Mode</label>
-            <Select v-model="form.authenticationMode" :options="AUTH_MODES" optionLabel="label" optionValue="value" class="w-full" />
+            <Select
+              v-model="form.authenticationMode"
+              :options="AUTH_MODES"
+              optionLabel="label"
+              optionValue="value"
+              class="w-full"
+              @update:modelValue="onAuthModeChanged"
+            />
           </div>
         </div>
         <div class="form-row-two">
@@ -748,16 +1094,16 @@ onMounted(async () => {
           <div class="form-row-two">
             <div>
               <label>Header Name</label>
-              <InputText v-model="(form.apiKeyOptions as any).headerName" placeholder="X-Api-Key" class="w-full" @click="form.apiKeyOptions = form.apiKeyOptions ?? { headerName: 'X-Api-Key', apiKey: '' }" />
+              <InputText v-model="form.apiKeyOptions!.headerName" placeholder="X-Api-Key" class="w-full" />
             </div>
             <div>
               <label>Prefix (optional)</label>
-              <InputText v-model="(form.apiKeyOptions as any).prefix" placeholder="Bearer " class="w-full" />
+              <InputText v-model="form.apiKeyOptions!.prefix" placeholder="Bearer " class="w-full" />
             </div>
           </div>
           <div class="form-row">
             <label>API Key *</label>
-            <Password v-model="(form.apiKeyOptions as any).apiKey" :feedback="false" toggleMask class="w-full" />
+            <Password v-model="form.apiKeyOptions!.apiKey" :feedback="false" toggleMask class="w-full" />
           </div>
         </template>
 
@@ -766,32 +1112,54 @@ onMounted(async () => {
           <div class="form-section-label">Bearer Token</div>
           <div class="form-row">
             <label>Token *</label>
-            <Password v-model="(form.bearerOptions as any).token" :feedback="false" toggleMask class="w-full" @click="form.bearerOptions = form.bearerOptions ?? { token: '' }" />
+            <Password v-model="form.bearerOptions!.token" :feedback="false" toggleMask class="w-full" />
           </div>
         </template>
 
         <!-- Azure Client Credentials -->
         <template v-if="form.authenticationMode === 'AzureClientCredentials'">
           <div class="form-section-label">Azure Client Credentials</div>
+          <div class="full-width">
+            <AzureContextBanner
+              :subscriptionId="selectedSubscriptionId"
+              @account-loaded="onAzureAccountLoaded"
+              @subscription-changed="onSubscriptionChanged"
+            />
+          </div>
           <div class="form-row-two">
             <div>
               <label>Tenant ID</label>
-              <InputText v-model="(form.azureCredentials as any).tenantId" class="w-full" @click="form.azureCredentials = form.azureCredentials ?? { tenantId: '', clientId: '', clientSecret: '', scope: '' }" />
+              <InputText v-model="form.azureCredentials!.tenantId" class="w-full" />
             </div>
             <div>
               <label>Client ID</label>
-              <InputText v-model="(form.azureCredentials as any).clientId" class="w-full" />
+              <InputText v-model="form.azureCredentials!.clientId" class="w-full" />
+              <AppRegistrationPicker :clientId="form.azureCredentials!.clientId" @selected="onAppRegistrationSelected" />
             </div>
           </div>
           <div class="form-row-two">
             <div>
               <label>Client Secret</label>
-              <Password v-model="(form.azureCredentials as any).clientSecret" :feedback="false" toggleMask class="w-full" />
+              <Password
+                v-if="!form.azureCredentials!.keyVaultSecretRef"
+                v-model="form.azureCredentials!.clientSecret"
+                :feedback="false"
+                toggleMask
+                class="w-full"
+              />
+              <KeyVaultSecretPicker
+                v-model="form.azureCredentials!.keyVaultSecretRef"
+                :subscriptionId="selectedSubscriptionId"
+              />
             </div>
             <div>
               <label>Scope</label>
-              <InputText v-model="(form.azureCredentials as any).scope" placeholder="https://..." class="w-full" />
+              <InputText v-model="form.azureCredentials!.scope" placeholder="https://..." class="w-full" />
             </div>
+          </div>
+          <div class="form-row">
+            <label>Authority Host <span class="text-muted">(optional)</span></label>
+            <InputText v-model="form.azureCredentials!.authorityHost" placeholder="https://login.microsoftonline.com" class="w-full" />
           </div>
         </template>
 
@@ -800,10 +1168,24 @@ onMounted(async () => {
           Request Headers
           <Button icon="pi pi-plus" text rounded size="small" @click="addHeader" />
         </div>
-        <div v-for="(h, i) in form.headers" :key="i" class="form-row-three">
-          <InputText v-model="h.name" placeholder="Header" class="w-full" />
-          <InputText v-model="h.value" placeholder="Value" class="w-full" />
-          <Button icon="pi pi-times" text rounded size="small" severity="danger" @click="removeHeader(i)" />
+        <div v-for="(h, i) in formHeaders" :key="i">
+          <div v-if="isAuthorizationHeader(h)" class="form-row-header">
+            <InputText v-model="h.name" placeholder="Header" class="w-full" @update:modelValue="normalizeAuthorizationHeaders([h])" />
+            <Select
+              v-model="h.authorizationType"
+              :options="authorizationTypeOptions"
+              optionLabel="label"
+              optionValue="value"
+              style="width: 8rem"
+            />
+            <InputText v-model="h.value" :placeholder="headerValuePlaceholder(h)" class="w-full" />
+            <Button icon="pi pi-times" text rounded size="small" severity="danger" @click="removeHeader(i)" />
+          </div>
+          <div v-else class="form-row-header--plain">
+            <InputText v-model="h.name" placeholder="Header" class="w-full" @update:modelValue="normalizeAuthorizationHeaders([h])" />
+            <InputText v-model="h.value" :placeholder="headerValuePlaceholder(h)" class="w-full" />
+            <Button icon="pi pi-times" text rounded size="small" severity="danger" @click="removeHeader(i)" />
+          </div>
         </div>
 
         <!-- Query params -->
@@ -811,7 +1193,7 @@ onMounted(async () => {
           Query Params
           <Button icon="pi pi-plus" text rounded size="small" @click="addQueryParam" />
         </div>
-        <div v-for="(q, i) in form.queryParams" :key="i" class="form-row-three">
+        <div v-for="(q, i) in form.queryParams" :key="i" class="form-row-query">
           <InputText v-model="q.name" placeholder="Name" class="w-full" />
           <InputText v-model="q.value" placeholder="Value" class="w-full" />
           <Button icon="pi pi-times" text rounded size="small" severity="danger" @click="removeQueryParam(i)" />
@@ -827,6 +1209,31 @@ onMounted(async () => {
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="showDialog = false" />
         <Button :label="editMode ? 'Save' : 'Create'" icon="pi pi-check" :loading="saving" @click="saveForm" />
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="showInvokeInputDialog"
+      header="Invoke HTTP API"
+      modal
+      :style="{ width: '520px' }"
+    >
+      <div class="form-grid">
+        <div class="form-row">
+          <label>
+            This API requires runtime inputs from placeholders (for example:
+            <code>{{ '{upn}' }}</code> or <code>{{ '{upn:user@contoso.com}' }}</code>).
+          </label>
+        </div>
+        <div v-for="field in invokeInputFields" :key="field.name" class="form-row">
+          <label>{{ field.name }}</label>
+          <InputText v-model="field.value" :placeholder="field.defaultValue || 'Required if no default'" class="w-full" />
+          <small v-if="field.defaultValue" class="text-muted">Default: {{ field.defaultValue }}</small>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" outlined @click="showInvokeInputDialog = false" />
+        <Button label="Invoke" icon="pi pi-play" :loading="invoking" @click="confirmInvokeWithInputs" />
       </template>
     </Dialog>
 
@@ -918,11 +1325,14 @@ onMounted(async () => {
 .group-chip { cursor: pointer; }
 
 .main-layout { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; flex: 1; min-height: 0; overflow: hidden; }
+.table-wrap { flex: 1; min-height: 0; }
 
 .def-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-.def-card { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.75rem; cursor: pointer; display: flex; justify-content: space-between; transition: border-color 0.15s; }
+.def-card { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: border-color 0.15s; gap: 0.5rem; }
 .def-card:hover, .def-card--active { border-color: var(--primary-color); }
-.def-card__header { flex: 1; min-width: 0; }
+.def-card__body { display: flex; align-items: center; gap: 0.55rem; flex: 1; min-width: 0; }
+.def-card__text { min-width: 0; flex: 1; }
+.def-icon-badge { width: 1.8rem; height: 1.8rem; border-radius: 999px; background: var(--primary-color); color: var(--primary-color-text); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
 .def-card__title-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .def-name { font-weight: 600; font-size: 0.9rem; }
 .method-tag, .auth-tag { font-size: 0.7rem !important; }
@@ -930,9 +1340,11 @@ onMounted(async () => {
 .def-card__note { font-size: 0.75rem; color: var(--text-color-secondary); margin-top: 0.15rem; }
 .def-card__tags { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.3rem; }
 .tag-pill { font-size: 0.65rem !important; }
-.def-card__actions { display: flex; flex-direction: column; gap: 0.25rem; justify-content: flex-start; opacity: 0; transition: opacity 0.15s; }
-.def-card:hover .def-card__actions { opacity: 1; }
 .fav-btn { flex-shrink: 0; }
+.icon-only { border: 0; background: transparent; width: 1.8rem; height: 1.8rem; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+
+.table-name-cell { display: flex; align-items: center; gap: 0.35rem; }
+.row-actions { display: flex; justify-content: flex-end; gap: 0.2rem; }
 
 .empty-state { text-align: center; padding: 2rem; color: var(--text-color-secondary); }
 .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
@@ -981,6 +1393,10 @@ onMounted(async () => {
 .snapshot-row__schema { font-size: 0.75rem; max-height: 120px; overflow-y: auto; }
 
 .history-table { font-size: 0.82rem; }
+.history-expansion {
+  border-top: 1px solid var(--surface-border);
+  padding-top: 0.5rem;
+}
 
 /* Form dialog */
 .form-grid { display: flex; flex-direction: column; gap: 0.6rem; }
@@ -988,7 +1404,9 @@ onMounted(async () => {
 .form-row label { font-size: 0.8rem; font-weight: 600; color: var(--text-color-secondary); }
 .form-row-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .form-row-two label { font-size: 0.8rem; font-weight: 600; color: var(--text-color-secondary); }
-.form-row-three { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.4rem; align-items: center; }
+.form-row-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 0.4rem; align-items: center; }
+.form-row-header--plain { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.4rem; align-items: center; }
+.form-row-query { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.4rem; align-items: center; }
 .w-full { width: 100%; }
 .font-mono { font-family: monospace; }
 

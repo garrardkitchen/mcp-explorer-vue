@@ -94,11 +94,14 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
         if (!Directory.Exists(_baseDir)) return [];
 
         var allRecords = new List<HttpApiInvocationRecord>();
+        var perFileLimit = limit.GetValueOrDefault();
         foreach (var dir in Directory.EnumerateDirectories(_baseDir))
         {
             var histPath = Path.Combine(dir, "history.jsonl");
             if (!File.Exists(histPath)) continue;
-            var records = await ReadJsonlAsync<HttpApiInvocationRecord>(histPath, ct).ConfigureAwait(false);
+            var records = limit.HasValue
+                ? await ReadJsonlTailAsync<HttpApiInvocationRecord>(histPath, perFileLimit, ct).ConfigureAwait(false)
+                : await ReadJsonlAsync<HttpApiInvocationRecord>(histPath, ct).ConfigureAwait(false);
             allRecords.AddRange(records);
         }
 
@@ -139,6 +142,41 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
             }
         }
         return result;
+    }
+
+    private async Task<List<T>> ReadJsonlTailAsync<T>(string path, int limit, CancellationToken ct)
+    {
+        if (!File.Exists(path) || limit <= 0) return [];
+
+        var queue = new Queue<T>(limit);
+        await foreach (var line in File.ReadLinesAsync(path, ct).ConfigureAwait(false))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                var item = JsonSerializer.Deserialize<T>(line, _json);
+                if (item is null)
+                {
+                    continue;
+                }
+
+                queue.Enqueue(item);
+                if (queue.Count > limit)
+                {
+                    queue.Dequeue();
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Skipping malformed JSONL line in {Path}", path);
+            }
+        }
+
+        return [.. queue];
     }
 
     private static async Task WriteJsonlAsync<T>(string path, IEnumerable<T> items, CancellationToken ct)

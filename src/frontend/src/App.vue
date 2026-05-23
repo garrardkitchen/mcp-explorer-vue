@@ -35,13 +35,14 @@ const navGroups = [
     accent: 'blue',
     items: [
       { name: 'connections', label: 'Connections', icon: 'pi-server' },
+      { name: 'http-api-connections', label: 'HTTP Connections', icon: 'pi-link' },
     ],
   },
   {
     label: 'HTTP API Explorer',
     accent: 'emerald',
     items: [
-      { name: 'http-apis',             label: 'HTTP APIs',    icon: 'pi-send'  },
+      { name: 'http-apis',             label: 'Invoke APIs',  icon: 'pi-send'  },
       { name: 'http-api-collections',  label: 'Collections',  icon: 'pi-list'  },
       { name: 'http-api-history',      label: 'History',      icon: 'pi-clock' },
     ],

@@ -13,7 +13,13 @@ const router = createRouter({
       path: '/http-apis',
       name: 'http-apis',
       component: () => import('@/views/HttpApisView.vue'),
-      meta: { title: 'HTTP APIs', icon: 'pi pi-send' },
+      meta: { title: 'Invoke HTTP APIs', icon: 'pi pi-send' },
+    },
+    {
+      path: '/http-api-connections',
+      name: 'http-api-connections',
+      component: () => import('@/views/HttpApisView.vue'),
+      meta: { title: 'HTTP Connections', icon: 'pi pi-link' },
     },
     {
       path: '/http-api-collections',

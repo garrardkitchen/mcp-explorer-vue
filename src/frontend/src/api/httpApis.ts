@@ -37,16 +37,25 @@ export const httpApisApi = {
     apiClient.patch(`/http-apis/${encodeURIComponent(id)}/favourite`, { isFavourite }),
 
   // ── Invoke / Bookmark / Compare ──────────────────────────────────────────────
-  invoke: (id: string) =>
-    apiClient.post<HttpApiInvokeResponse>(`/http-apis/${encodeURIComponent(id)}/invoke`).then(r => r.data),
+  invoke: (id: string, inputs?: Record<string, string>) =>
+    apiClient.post<HttpApiInvokeResponse>(
+      `/http-apis/${encodeURIComponent(id)}/invoke`,
+      inputs && Object.keys(inputs).length > 0 ? { inputs } : {}
+    ).then(r => r.data),
 
-  bookmark: (id: string, label?: string) =>
-    apiClient.post<HttpResponseSnapshot>(`/http-apis/${encodeURIComponent(id)}/bookmark`, { label }).then(r => r.data),
+  bookmark: (id: string, label?: string, inputs?: Record<string, string>) =>
+    apiClient.post<HttpResponseSnapshot>(
+      `/http-apis/${encodeURIComponent(id)}/bookmark`,
+      {
+        label,
+        ...(inputs && Object.keys(inputs).length > 0 ? { inputs } : {}),
+      }
+    ).then(r => r.data),
 
-  compare: (id: string, snapshotId?: string) =>
+  compare: (id: string, snapshotId?: string, inputs?: Record<string, string>) =>
     apiClient.post<HttpApiCompareResponse>(
       `/http-apis/${encodeURIComponent(id)}/compare`,
-      null,
+      inputs && Object.keys(inputs).length > 0 ? { inputs } : {},
       snapshotId ? { params: { snapshotId } } : undefined
     ).then(r => r.data),
 
@@ -103,6 +112,9 @@ export const httpApisApi = {
   deleteCollection: (id: string) =>
     apiClient.delete(`/http-api-collections/${encodeURIComponent(id)}`),
 
-  runCollection: (id: string) =>
-    apiClient.post<HttpApiCollectionRunResult>(`/http-api-collections/${encodeURIComponent(id)}/run`).then(r => r.data),
+  runCollection: (id: string, inputs?: Record<string, string>) =>
+    apiClient.post<HttpApiCollectionRunResult>(
+      `/http-api-collections/${encodeURIComponent(id)}/run`,
+      inputs && Object.keys(inputs).length > 0 ? { inputs } : {}
+    ).then(r => r.data),
 }

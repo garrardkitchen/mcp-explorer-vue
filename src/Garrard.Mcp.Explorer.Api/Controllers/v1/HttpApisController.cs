@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Garrard.Mcp.Explorer.Api.Dtos.HttpApis;
 using Garrard.Mcp.Explorer.Core.Domain.HttpApi;
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Garrard.Mcp.Explorer.Infrastructure.HttpApi;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
@@ -109,24 +110,36 @@ public sealed class HttpApisController(
     // ── Invoke & Bookmark ─────────────────────────────────────────────────────
 
     [HttpPost("{id}/invoke")]
-    public async Task<IActionResult> Invoke(string id, CancellationToken ct)
+    public async Task<IActionResult> Invoke(
+        string id,
+        [FromBody] InvokeHttpApiRequest? request,
+        CancellationToken ct)
     {
         var def = await store.GetDefinitionAsync(id, ct);
         if (def is null) return NotFound();
 
-        var result = await invoker.InvokeAsync(def, ct);
+        var resolved = HttpApiTemplateResolver.Apply(def, request?.Inputs);
+        var result = await invoker.InvokeAsync(def, request?.Inputs, ct);
         var schema = schemaInference.InferSchema(result.Body);
         var hash   = schemaInference.ComputeSchemaHash(schema);
 
         // Record invocation in history
         await snapshotStore.AppendInvocationAsync(new HttpApiInvocationRecord
         {
-            EndpointId   = def.Id,
-            EndpointName = def.Name,
-            StatusCode   = result.StatusCode,
-            LatencyMs    = result.LatencyMs,
-            SchemaHash   = hash,
-            ErrorMessage = result.ErrorMessage
+            EndpointId       = def.Id,
+            EndpointName     = def.Name,
+            StatusCode       = result.StatusCode,
+            LatencyMs        = result.LatencyMs,
+            SchemaHash       = hash,
+            ErrorMessage     = result.ErrorMessage,
+            RequestMethod      = resolved.Method,
+            RequestBaseUrl     = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.BaseUrl),
+            RequestPath        = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.Path),
+            RequestHeaders     = HttpApiInvocationSanitizer.SanitizeHeaders(ToSnapshotDictionary(resolved.Headers.Select(h => (h.Name, h.Value)))),
+            RequestQueryParams = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
+            ResponseHeaders    = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
+            ContentType        = result.ContentType,
+            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.Body)
         }, ct);
 
         // Update lastInvokedAt
@@ -152,7 +165,8 @@ public sealed class HttpApisController(
         var def = await store.GetDefinitionAsync(id, ct);
         if (def is null) return NotFound();
 
-        var result = await invoker.InvokeAsync(def, ct);
+        var resolved = HttpApiTemplateResolver.Apply(def, request?.Inputs);
+        var result = await invoker.InvokeAsync(def, request?.Inputs, ct);
         if (!result.IsSuccess && result.StatusCode != 0)
         {
             // Allow bookmarking non-2xx to track error states, but flag it
@@ -177,18 +191,30 @@ public sealed class HttpApisController(
 
         await snapshotStore.AppendInvocationAsync(new HttpApiInvocationRecord
         {
-            EndpointId   = def.Id,
-            EndpointName = def.Name,
-            StatusCode   = result.StatusCode,
-            LatencyMs    = result.LatencyMs,
-            SchemaHash   = schemaInference.ComputeSchemaHash(schema)
+            EndpointId         = def.Id,
+            EndpointName       = def.Name,
+            StatusCode         = result.StatusCode,
+            LatencyMs          = result.LatencyMs,
+            SchemaHash         = schemaInference.ComputeSchemaHash(schema),
+            RequestMethod      = resolved.Method,
+            RequestBaseUrl     = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.BaseUrl),
+            RequestPath        = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.Path),
+            RequestHeaders     = HttpApiInvocationSanitizer.SanitizeHeaders(ToSnapshotDictionary(resolved.Headers.Select(h => (h.Name, h.Value)))),
+            RequestQueryParams = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
+            ResponseHeaders    = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
+            ContentType        = result.ContentType,
+            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.Body)
         }, ct);
 
         return Ok(snapshot);
     }
 
     [HttpPost("{id}/compare")]
-    public async Task<IActionResult> Compare(string id, [FromQuery] string? snapshotId, CancellationToken ct)
+    public async Task<IActionResult> Compare(
+        string id,
+        [FromBody] CompareHttpApiRequest? request,
+        [FromQuery] string? snapshotId,
+        CancellationToken ct)
     {
         var def = await store.GetDefinitionAsync(id, ct);
         if (def is null) return NotFound();
@@ -208,7 +234,8 @@ public sealed class HttpApisController(
         if (baseline is null)
             return BadRequest(new { error = "No baseline snapshot found. Invoke /bookmark first." });
 
-        var result = await invoker.InvokeAsync(def, ct);
+        var result = await invoker.InvokeAsync(def, request?.Inputs, ct);
+        var resolved = HttpApiTemplateResolver.Apply(def, request?.Inputs);
         var schema = schemaInference.InferSchema(result.Body);
         var hash   = schemaInference.ComputeSchemaHash(schema);
 
@@ -221,7 +248,16 @@ public sealed class HttpApisController(
             StatusCode            = result.StatusCode,
             LatencyMs             = result.LatencyMs,
             SchemaHash            = hash,
-            SchemaMatchedSnapshot = !comparison.IsBreaking
+            SchemaMatchedSnapshot = !comparison.IsBreaking,
+            ErrorMessage = result.ErrorMessage,
+            RequestMethod         = resolved.Method,
+            RequestBaseUrl        = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.BaseUrl),
+            RequestPath           = HttpApiInvocationSanitizer.SanitizeUrlComponent(resolved.Path),
+            RequestHeaders        = HttpApiInvocationSanitizer.SanitizeHeaders(ToSnapshotDictionary(resolved.Headers.Select(h => (h.Name, h.Value)))),
+            RequestQueryParams    = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
+            ResponseHeaders       = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
+            ContentType           = result.ContentType,
+            Body                  = HttpApiInvocationSanitizer.SanitizeBody(result.Body)
         }, ct);
 
         return Ok(new
@@ -432,7 +468,9 @@ public sealed class HttpApisController(
             ClientId      = src.AzureCredentials.ClientId,
             ClientSecret  = src.AzureCredentials.ClientSecret,
             Scope         = src.AzureCredentials.Scope,
-            AuthorityHost = src.AzureCredentials.AuthorityHost
+            AuthorityHost = src.AzureCredentials.AuthorityHost,
+            KeyVaultSecretRef = src.AzureCredentials.KeyVaultSecretRef,
+            SubscriptionId = src.AzureCredentials.SubscriptionId
         },
         ApiKeyOptions      = src.ApiKeyOptions is null ? null : new HttpApiApiKeyOptions
         {
@@ -443,4 +481,12 @@ public sealed class HttpApisController(
         BearerOptions      = src.BearerOptions is null ? null : new HttpApiBearerOptions { Token = src.BearerOptions.Token },
         CreatedAt          = DateTime.UtcNow
     };
+
+    private static Dictionary<string, string> ToSnapshotDictionary(IEnumerable<(string Name, string Value)> items)
+    {
+        return items
+            .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+            .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Last().Value, StringComparer.OrdinalIgnoreCase);
+    }
 }

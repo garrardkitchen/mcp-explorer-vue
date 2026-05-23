@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased] - 2026-05-23
+
+### Added
+- **HTTP API invocation templates**: Add runtime placeholder inputs using `{name}` and `{name:default}` syntax so invoke requests can prompt for values and apply defaults when omitted.
+- **HTTP API history inspection**: Capture invocation response details (body/content-type/headers) and show expandable response inspection rows in HTTP API history views.
+
+### Changed
+- **Navigation**: Add an Infrastructure entry for HTTP connections and keep invoke-focused HTTP API actions under the HTTP API Explorer section.
+- **HTTP API list UX**: Show Infrastructure HTTP API connections in a management table aligned with the MCP Connections list, and restyle invoke-side API selection to mirror the MCP Tools list feel.
+- **Invocation detail UX**: Convert expanded history details to tabbed request/response views (Request, Response Headers, Response Body) for faster inspection.
+- **README architecture docs**: Refresh system and clean-architecture diagrams to explicitly include HTTP API Explorer surfaces and the `mcp-http` CLI.
+- **README coverage**: Update root, Docker, and docs-site README content so HTTP API Explorer and CLI capabilities are represented consistently.
+
+### Fixed
+- **HTTP API definition dialog**: Keep auth option sections stable when changing auth mode and add Authorization header Raw/Bearer/Basic UX parity with Connections.
+- **HTTP API invoke tabs**: Bind tab panel state explicitly so switching to History no longer traps navigation away from the other tabs.
+- **Authorization header coercion**: Preserve raw Authorization values unless the selected mode is explicit Basic/Bearer, avoiding malformed double-scheme values during mode switching.
+- **HTTP API invocation history security**: Redact sensitive values (headers, query parameters, and body fields) before writing invocation records to history files and serving history APIs.
+- **HTTP API redirect handling**: Allow non-GET/HEAD redirects for 307/308 responses in the explicit redirect flow to avoid regressions for method-preserving endpoint redirects.
+- **HTTP API URL history redaction**: Redact URL user-info, sensitive query values, and sensitive/high-entropy path segments before persisting request base URL/path in invocation history.
+- **HTTP API redirect header redaction**: Sanitize URL-bearing response headers (`Location`, `Content-Location`) before persisting invocation history records.
+- **Container localhost rewrite**: Limit loopback host rewriting to `http://` URLs so HTTPS requests keep `localhost` hostnames for certificate validation.
+- **HTTP API global history reads**: Limit per-endpoint history deserialization when a `limit` is supplied so global history requests stay bounded as record payloads grow.
+
 ## [Unreleased] - 2026-05-18
 
 ### Added

@@ -43,6 +43,21 @@ public sealed record HttpApiExportPayloadDto(
     string Data
 );
 
-public sealed record BookmarkRequest(string? Label);
+public sealed record BookmarkRequest(
+    string? Label,
+    Dictionary<string, string?>? Inputs
+);
 
 public sealed record SetFavouriteRequest(bool IsFavourite);
+
+public sealed record InvokeHttpApiRequest(
+    Dictionary<string, string?>? Inputs
+);
+
+public sealed record CompareHttpApiRequest(
+    Dictionary<string, string?>? Inputs
+);
+
+public sealed record RunHttpApiCollectionRequest(
+    Dictionary<string, string?>? Inputs
+);

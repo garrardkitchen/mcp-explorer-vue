@@ -19,4 +19,12 @@ public sealed class HttpApiInvocationRecord
     /// <summary>If run as part of a collection, the collection's run ID.</summary>
     public string? CollectionRunId { get; set; }
     public string? ErrorMessage { get; set; }
+    public string RequestMethod { get; set; } = string.Empty;
+    public string RequestBaseUrl { get; set; } = string.Empty;
+    public string RequestPath { get; set; } = string.Empty;
+    public Dictionary<string, string> RequestHeaders { get; init; } = [];
+    public Dictionary<string, string> RequestQueryParams { get; init; } = [];
+    public Dictionary<string, string> ResponseHeaders { get; init; } = [];
+    public string? ContentType { get; set; }
+    public string? Body { get; set; }
 }

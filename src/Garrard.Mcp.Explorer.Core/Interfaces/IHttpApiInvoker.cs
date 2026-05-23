@@ -8,6 +8,10 @@ namespace Garrard.Mcp.Explorer.Core.Interfaces;
 public interface IHttpApiInvoker
 {
     Task<HttpApiInvokeResult> InvokeAsync(HttpApiDefinition definition, CancellationToken ct = default);
+    Task<HttpApiInvokeResult> InvokeAsync(
+        HttpApiDefinition definition,
+        IReadOnlyDictionary<string, string?>? inputs,
+        CancellationToken ct = default);
 }
 
 public sealed class HttpApiInvokeResult

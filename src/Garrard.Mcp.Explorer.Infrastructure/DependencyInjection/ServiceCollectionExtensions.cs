@@ -70,7 +70,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISchemaInferenceService, SchemaInferenceService>();
         services.AddSingleton<ISchemaComparisonService, SchemaComparisonService>();
         services.AddSingleton<IHttpApiExportService, HttpApiExportService>();
-        services.AddHttpClient("HttpApiInvoker", client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient("HttpApiInvoker", client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                // Redirects are handled explicitly in HttpApiInvoker so the app can
+                // stop before HTTP endpoints silently upgrade into HTTPS.
+                AllowAutoRedirect = false
+            });
         services.AddScoped<IHttpApiInvoker, HttpApiInvoker>();
 
         return services;

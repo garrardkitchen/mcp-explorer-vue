@@ -119,24 +119,96 @@ function defName(id: string) {
 const runTarget = ref<HttpApiCollection | null>(null)
 const running = ref(false)
 const runResult = ref<HttpApiCollectionRunResult | null>(null)
+const showRunInputDialog = ref(false)
+const runInputFields = ref<Array<{ name: string; defaultValue: string; value: string }>>([])
+const runInputPattern = /\{(?<name>[A-Za-z_][A-Za-z0-9_.-]*)(:(?<default>[^{}]*))?\}/g
 
 function openRun(c: HttpApiCollection) {
   runTarget.value = c
   runResult.value = null
 }
 
-async function doRun() {
+function extractInputsFromTemplate(template: string | null | undefined, bucket: Map<string, string>) {
+  if (!template) return
+  for (const match of template.matchAll(runInputPattern)) {
+    const name = match.groups?.name?.trim()
+    if (!name || bucket.has(name)) continue
+    bucket.set(name, match.groups?.default ?? '')
+  }
+}
+
+function collectCollectionInputFields(collection: HttpApiCollection) {
+  const placeholders = new Map<string, string>()
+  const defs = collection.endpointIds
+    .map(id => store.definitions.find(d => d.id === id))
+    .filter((d): d is NonNullable<typeof d> => !!d)
+
+  for (const def of defs) {
+    extractInputsFromTemplate(def.baseUrl, placeholders)
+    extractInputsFromTemplate(def.path, placeholders)
+    extractInputsFromTemplate(def.bodyTemplate, placeholders)
+    def.headers.forEach(h => {
+      extractInputsFromTemplate(h.name, placeholders)
+      extractInputsFromTemplate(h.value, placeholders)
+    })
+    def.queryParams.forEach(q => {
+      extractInputsFromTemplate(q.name, placeholders)
+      extractInputsFromTemplate(q.value, placeholders)
+    })
+    extractInputsFromTemplate(def.apiKeyOptions?.headerName, placeholders)
+    extractInputsFromTemplate(def.apiKeyOptions?.apiKey, placeholders)
+    extractInputsFromTemplate(def.apiKeyOptions?.prefix, placeholders)
+    extractInputsFromTemplate(def.bearerOptions?.token, placeholders)
+    extractInputsFromTemplate(def.azureCredentials?.tenantId, placeholders)
+    extractInputsFromTemplate(def.azureCredentials?.clientId, placeholders)
+    extractInputsFromTemplate(def.azureCredentials?.clientSecret, placeholders)
+    extractInputsFromTemplate(def.azureCredentials?.scope, placeholders)
+    extractInputsFromTemplate(def.azureCredentials?.authorityHost, placeholders)
+  }
+
+  return Array.from(placeholders.entries()).map(([name, defaultValue]) => ({
+    name,
+    defaultValue,
+    value: defaultValue,
+  }))
+}
+
+function resolveRunInputs() {
+  const resolved: Record<string, string> = {}
+  for (const field of runInputFields.value) {
+    const value = field.value?.trim() || field.defaultValue?.trim()
+    if (value) {
+      resolved[field.name] = value
+    }
+  }
+  return resolved
+}
+
+async function doRun(inputs?: Record<string, string>) {
   if (!runTarget.value) return
+  if (!inputs) {
+    const fields = collectCollectionInputFields(runTarget.value)
+    if (fields.length > 0) {
+      runInputFields.value = fields
+      showRunInputDialog.value = true
+      return
+    }
+  }
   running.value = true
   runResult.value = null
   try {
-    runResult.value = await httpApisApi.runCollection(runTarget.value.id)
+    runResult.value = await httpApisApi.runCollection(runTarget.value.id, inputs)
     const idx = collections.value.findIndex(c => c.id === runTarget.value!.id)
     if (idx >= 0) collections.value[idx].lastRunAt = runResult.value.ranAt
     toast.add({ severity: 'success', summary: 'Collection run complete', life: 3000 })
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Run failed', detail: e.message, life: 5000 })
   } finally { running.value = false }
+}
+
+async function confirmRunWithInputs() {
+  showRunInputDialog.value = false
+  await doRun(resolveRunInputs())
 }
 
 function statusSeverity(code: number) {
@@ -221,7 +293,7 @@ onMounted(async () => {
       <div v-if="runTarget" class="run-panel">
         <div class="run-panel__header">
           <span class="run-title">{{ runTarget.name }}</span>
-          <Button label="Run Collection" icon="pi pi-play" size="small" :loading="running" @click="doRun" />
+          <Button label="Run Collection" icon="pi pi-play" size="small" :loading="running" @click="() => doRun()" />
         </div>
 
         <div v-if="!runResult" class="no-result">
@@ -309,6 +381,31 @@ onMounted(async () => {
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="showDialog = false" />
         <Button :label="editMode ? 'Save' : 'Create'" icon="pi pi-check" :loading="saving" @click="saveForm" />
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="showRunInputDialog"
+      header="Run Collection"
+      modal
+      :style="{ width: '520px' }"
+    >
+      <div class="form-grid">
+        <div class="form-row">
+          <label>
+            This collection includes placeholder inputs (for example:
+            <code>{{ '{upn}' }}</code> or <code>{{ '{upn:user@contoso.com}' }}</code>).
+          </label>
+        </div>
+        <div v-for="field in runInputFields" :key="field.name" class="form-row">
+          <label>{{ field.name }}</label>
+          <InputText v-model="field.value" :placeholder="field.defaultValue || 'Required if no default'" class="w-full" />
+          <small v-if="field.defaultValue" class="text-muted">Default: {{ field.defaultValue }}</small>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" outlined @click="showRunInputDialog = false" />
+        <Button label="Run Collection" icon="pi pi-play" :loading="running" @click="confirmRunWithInputs" />
       </template>
     </Dialog>
   </div>

@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 [![Docker Hub](https://img.shields.io/docker/pulls/garrardkitchen/mcp-explorer-x.svg)](https://hub.docker.com/r/garrardkitchen/mcp-explorer-x)
 
-A modern MCP (Model Context Protocol) server explorer — browse tools, prompts, resources, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core 10** backend using clean architecture.
+A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, prompts, resources, invoke HTTP APIs, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core 10** backend, with a companion **.NET CLI** for scripted HTTP API workflows.
 
 > [!NOTE]
 > 🔄 **This is a ground-up rewrite** of the original [MCP Explorer](https://mcp-explorer-docs.garrardkitchen.com/) (Blazor Server UI), migrated to Vue 3 + Vite + PrimeVue with a clean-architecture ASP.NET Core 10 backend, Docker-first deployment, and Azure Key Vault / Entra ID integration.
@@ -17,6 +17,8 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 - 🔐 **Azure Key Vault Integration** — resolve connection secrets (client secrets, API keys) directly from Key Vault references; no plaintext secrets stored on disk
 - 🏢 **Azure Entra App Registrations** — browse and select app registrations from your tenant via Microsoft Graph; auto-populates client ID and tenant fields
 - 🛠️ **Tools** — browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
+- 🌐 **HTTP API Explorer** — manage HTTP API connections under Infrastructure, invoke from HTTP API Explorer with runtime `{placeholder}` inputs (supports defaults via `{name:default}`), inspect tabbed request/response history, and auto-redact sensitive values in persisted history details
+- ⌨️ **CLI (`mcp-http`)** — script HTTP API invoke/compare/history and API definition import/export from terminal automation
 - 🚇 **Dev Tunnels** — create public DevTunnels for webhook callbacks, inspect live payloads over SSE, scrub event history, and replay captured requests
 - 💬 **Prompts** — list, execute, and evaluate prompts; pipe results directly to an LLM
 - 📄 **Resources & Templates** — browse MCP resources; expand templates with runtime parameters
@@ -52,7 +54,10 @@ A modern MCP (Model Context Protocol) server explorer — browse tools, prompts,
 flowchart LR
   Browser["🌐 Browser\nVue 3 · Vite · PrimeVue"] --> Deployment["🐳 Deployment\n(single container or compose)"]
   Deployment --> Backend["🏗️ ASP.NET Core 10\nClean Architecture"]
+  CLI["⌨️ .NET CLI\nmcp-http"] --> HTTPAPIs["🌐 External HTTP APIs"]
+  CLI --> Storage
   Backend --> MCPServers["🖥️ MCP Servers"]
+  Backend --> HTTPAPIs["🌐 External HTTP APIs"]
   Backend --> LLMAPIs["☁️ LLM APIs"]
   Backend --> Azure["🔐 Azure\nKey Vault · Entra ID"]
   Backend --> Storage[("💾 settings.json\n/data volume")]
@@ -65,6 +70,7 @@ flowchart LR
   classDef deploy    fill:#164e63,stroke:#22d3ee,color:#cffafe
   classDef backend   fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
   classDef external  fill:#1c1917,stroke:#f59e0b,color:#fef3c7
+  classDef cli       fill:#334155,stroke:#94a3b8,color:#e2e8f0
   classDef azure     fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff
   classDef data      fill:#292524,stroke:#a78bfa,color:#ede9fe
   classDef tunnel    fill:#064e3b,stroke:#10b981,color:#d1fae5
@@ -72,7 +78,8 @@ flowchart LR
   class Browser browser
   class Deployment deploy
   class Backend backend
-  class MCPServers,LLMAPIs external
+  class MCPServers,HTTPAPIs,LLMAPIs external
+  class CLI cli
   class Azure azure
   class Storage data
   class DevTunnel tunnel
@@ -149,17 +156,19 @@ flowchart TB
     C1["🔌 connections"] --- C2["🛠️ tools"] --- C3["💬 prompts"]
     C4["📄 resources"] --- C5["🤖 chat · SSE"] --- C6["⚡ workflows"]
     C7["🙋 elicitations · SSE"] --- C8["🧠 llmmodels"] --- C9["⚙️ preferences"]
+    C10["🌐 http-apis"] --- C11["🧪 http-api-collections"] --- C12["📜 http-api-history"]
   end
 
   subgraph CORE["Core  (no framework deps)"]
     direction LR
-    DOMAIN["📦 Domain Models\nConnectionDefinition\nWorkflowDefinition · LlmModelDefinition"]
-    IFACES["🔗 Interfaces\nIConnectionService · IUserPreferencesStore\nIWorkflowEngine · IConnectionExportService"]
+    DOMAIN["📦 Domain Models\nConnectionDefinition · WorkflowDefinition\nLlmModelDefinition · HttpApiDefinition · HttpApiCollection"]
+    IFACES["🔗 Interfaces\nIConnectionService · IUserPreferencesStore\nIWorkflowEngine · IConnectionExportService\nIHttpApiStore · IHttpApiInvoker · IHttpApiSnapshotStore"]
   end
 
   subgraph INFRA["Infrastructure"]
     direction LR
     MCPSDK["🔌 MCP SDK\nActiveConnection · Tool\nPrompt · Resource · Elicitation"]
+    HTTPAPI["🌐 HTTP API Services\nHttpApiInvoker · SnapshotStore · TemplateResolver"]
     LLMPROV["🧠 LLM Providers\nOpenAI · AzureOpenAI · AzureAIFoundry\nOllama · Custom"]
     PERSIST["💾 JSON Persistence\nUserPreferencesStore"]
     SECURITY["🔐 Security\nAES-256-GCM · PBKDF2-SHA256\nSensitiveField Detection"]
@@ -174,9 +183,9 @@ flowchart TB
   classDef core  fill:#1e1b4b,stroke:#818cf8,color:#e0e7ff
   classDef infra fill:#134e4a,stroke:#14b8a6,color:#ccfbf1
 
-  class C1,C2,C3,C4,C5,C6,C7,C8,C9 ctrl
+  class C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C12 ctrl
   class DOMAIN,IFACES core
-  class MCPSDK,LLMPROV,PERSIST,SECURITY,WFENG,AZURESVC infra
+  class MCPSDK,HTTPAPI,LLMPROV,PERSIST,SECURITY,WFENG,AZURESVC infra
 ```
 
 ### Azure Integration
@@ -370,16 +379,17 @@ flowchart TB
 ```
 src/
 ├── Garrard.Mcp.Explorer.Core/           # Domain models + interfaces (no framework deps)
-├── Garrard.Mcp.Explorer.Infrastructure/ # MCP SDK, LLM providers, persistence, security
+├── Garrard.Mcp.Explorer.Infrastructure/ # MCP SDK, HTTP API services, LLM providers, persistence, security
 │   ├── Azure/KeyVaultService.cs         #   Key Vault secret resolution
 │   └── Azure/GraphService.cs            #   Microsoft Graph App Registration browser
-├── Garrard.Mcp.Explorer.Api/            # ASP.NET Core Web API (9 controllers, versioned)
+├── Garrard.Mcp.Explorer.Api/            # ASP.NET Core Web API (versioned MCP + HTTP API Explorer controllers)
+├── Garrard.Mcp.Explorer.Cli/            # .NET CLI (mcp-http) for scripted HTTP API operations
 ├── Garrard.Mcp.Explorer.Gateway/        # YARP reverse proxy + Vue SPA host
 ├── Garrard.Mcp.MessageContentProtection/# Sensitive data detection library
 └── frontend/                            # Vue 3 + Vite + PrimeVue 4 SPA
     ├── src/api/          # Typed API client layer
     ├── src/stores/       # Pinia stores (chat, connections, preferences, themes, workflows)
-    ├── src/views/        # 10 feature views
+    ├── src/views/        # Feature views (MCP, HTTP API, Dev Tunnels, chat, workflows)
     ├── src/components/   # Shared components (CommandPalette, ThemeSwitcher, JsonViewer)
     └── src/themes/       # CSS custom property themes
 
@@ -435,6 +445,22 @@ cd src/frontend && npm run build && cd ../..
 dotnet publish src/Garrard.Mcp.Explorer.Gateway -c Release -o out/gateway
 dotnet run --project src/Garrard.Mcp.Explorer.Api &
 dotnet out/gateway/Garrard.Mcp.Explorer.Gateway.dll
+```
+
+### CLI (mcp-http)
+
+```bash
+# Build the CLI
+dotnet build src/Garrard.Mcp.Explorer.Cli/
+
+# Show commands
+dotnet run --project src/Garrard.Mcp.Explorer.Cli -- --help
+
+# Invoke by API name
+dotnet run --project src/Garrard.Mcp.Explorer.Cli -- http invoke --name "My API"
+
+# Run collection and fail on schema breaks
+dotnet run --project src/Garrard.Mcp.Explorer.Cli -- http run-collection --name "Regression Suite" --fail-on-breaking
 ```
 
 ## Docker
@@ -584,6 +610,9 @@ All endpoints are versioned at `/api/v1/`. Swagger UI available at `/swagger` in
 | `/api/v1/elicitations` | SSE stream + respond to server-initiated requests |
 | `/api/v1/llmmodels` | LLM model definitions CRUD |
 | `/api/v1/preferences` | User preferences + theme |
+| `/api/v1/http-apis` | HTTP API definitions CRUD, invoke/bookmark/compare/history |
+| `/api/v1/http-api-collections` | HTTP API collection CRUD + collection run |
+| `/api/v1/http-api-history` | Global HTTP API invocation history |
 | `/api/v1/azure` | Azure subscription list, Key Vault secret resolution, App Registration search |
 
 ## Themes

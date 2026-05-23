@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
+using Spectre.Console.Cli.Help;
 
 // ── Dependency injection container ───────────────────────────────────────────
 var configBuilder = new ConfigurationBuilder()
@@ -28,6 +29,48 @@ app.Configure(config =>
 {
     config.SetApplicationName("mcp-http");
     config.SetApplicationVersion("1.0.0");
+    config.Settings.HelpProviderStyles = new HelpProviderStyle
+    {
+        Description = new DescriptionStyle
+        {
+            Header = "bold"
+        },
+        Usage = new UsageStyle
+        {
+            Header = "bold",
+            CurrentCommand = "bold",
+            Command = "bold",
+            Options = "bold",
+            RequiredArgument = "bold",
+            OptionalArgument = "bold"
+        },
+        Examples = new ExampleStyle
+        {
+            Header = "bold",
+            Arguments = "bold"
+        },
+        Arguments = new ArgumentStyle
+        {
+            Header = "bold",
+            RequiredArgument = "bold",
+            OptionalArgument = "bold"
+        },
+        Options = new OptionStyle
+        {
+            Header = "bold",
+            DefaultValueHeader = "bold",
+            DefaultValue = "bold",
+            RequiredOption = "bold",
+            RequiredOptionValue = "bold",
+            OptionalOptionValue = "bold"
+        },
+        Commands = new CommandStyle
+        {
+            Header = "bold",
+            ChildCommand = "bold",
+            RequiredArgument = "bold"
+        }
+    };
 
     config.AddBranch("http", http =>
     {

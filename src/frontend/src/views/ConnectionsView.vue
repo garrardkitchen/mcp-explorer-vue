@@ -423,7 +423,7 @@ function inferAuthorizationType(header: ConnectionHeader) {
   const value = header.value?.trim().toLowerCase() ?? ''
   if (isAuthorizationValueForScheme(value, 'basic')) return 'Basic'
   if (isAuthorizationValueForScheme(value, 'bearer')) return 'Bearer'
-  return 'Bearer'
+  return 'None'
 }
 
 function isAuthorizationValueForScheme(value: string, scheme: string) {

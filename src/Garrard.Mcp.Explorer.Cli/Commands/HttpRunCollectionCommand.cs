@@ -33,6 +33,7 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
         [CommandOption("--id")] [Description("Collection ID")] public string? Id { get; init; }
         [CommandOption("--name")] [Description("Collection name (partial match)")] public string? Name { get; init; }
         [CommandOption("--fail-on-breaking")] [Description("Exit with code 1 if any endpoint has breaking changes")] public bool FailOnBreaking { get; init; }
+        [CommandOption("--use-localhost")] [Description("Replace host.docker.internal with localhost")] public bool UseLocalhost { get; init; }
     }
 
     protected override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken ct)
@@ -69,6 +70,11 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                         resultTable.AddRow(endpointId, "—", "—", "[dim]Skipped (not found)[/]", "—");
                         task.Increment(1);
                         continue;
+                    }
+
+                    if (settings.UseLocalhost)
+                    {
+                        def = ApplyLocalhostTransform(def);
                     }
 
                     var result = await _invoker.InvokeAsync(def);
@@ -149,5 +155,14 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
         }
         AnsiConsole.MarkupLine("[red]Specify --id or --name[/]");
         return null;
+    }
+
+    private static Core.Domain.HttpApi.HttpApiDefinition ApplyLocalhostTransform(Core.Domain.HttpApi.HttpApiDefinition def)
+    {
+        if (def.BaseUrl.Contains("host.docker.internal", StringComparison.OrdinalIgnoreCase))
+        {
+            def.BaseUrl = def.BaseUrl.Replace("host.docker.internal", "localhost", StringComparison.OrdinalIgnoreCase);
+        }
+        return def;
     }
 }

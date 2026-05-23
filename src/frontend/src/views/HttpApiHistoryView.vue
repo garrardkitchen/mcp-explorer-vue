@@ -5,12 +5,19 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Tag from 'primevue/tag'
 import Skeleton from 'primevue/skeleton'
+import Tabs from 'primevue/tabs'
+import TabList from 'primevue/tablist'
+import Tab from 'primevue/tab'
+import TabPanels from 'primevue/tabpanels'
+import TabPanel from 'primevue/tabpanel'
 import { httpApisApi } from '@/api/httpApis'
 import type { HttpApiInvocationRecord } from '@/api/types'
+import JsonViewer from '@/components/common/JsonViewer.vue'
 
 const records = ref<HttpApiInvocationRecord[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
+const expandedRows = ref<HttpApiInvocationRecord[]>([])
 
 const filtered = computed(() => {
   const q = searchQuery.value.toLowerCase()
@@ -49,7 +56,10 @@ const endpointGroups = computed(() => {
 
 onMounted(async () => {
   loading.value = true
-  try { records.value = await httpApisApi.getGlobalHistory(500) }
+  try {
+    records.value = await httpApisApi.getGlobalHistory(500)
+    expandedRows.value = []
+  }
   finally { loading.value = false }
 })
 </script>
@@ -96,12 +106,14 @@ onMounted(async () => {
     <DataTable
       v-if="!loading"
       :value="filtered"
+      v-model:expandedRows="expandedRows"
       :paginator="filtered.length > 50"
       :rows="50"
       size="small"
       class="log-table"
       :globalFilterFields="['endpointName', 'endpointId']"
     >
+      <Column expander style="width: 2.5rem" />
       <Column field="invokedAt" header="When" sortable>
         <template #body="{ data }">{{ new Date(data.invokedAt).toLocaleString() }}</template>
       </Column>
@@ -137,6 +149,54 @@ onMounted(async () => {
           <span v-if="data.errorMessage" class="error-text" v-tooltip.top="data.errorMessage">⚠️</span>
         </template>
       </Column>
+      <template #expansion="{ data }">
+        <div class="history-expansion">
+          <Tabs value="request" class="history-detail-tabs">
+            <TabList>
+              <Tab value="request">Request</Tab>
+              <Tab value="response-headers">Response Headers</Tab>
+              <Tab value="response-body">Response Body</Tab>
+            </TabList>
+            <TabPanels>
+              <TabPanel value="request">
+                <div class="request-meta">
+                  <span><strong>URL:</strong> <code>{{ data.requestBaseUrl }}{{ data.requestPath }}</code></span>
+                  <span><strong>Method:</strong> {{ data.requestMethod || '—' }}</span>
+                </div>
+                <div class="section-label">Request Headers</div>
+                <DataTable
+                  :value="Object.entries(data.requestHeaders ?? {}).map(([name, value]) => ({ name, value }))"
+                  size="small"
+                >
+                  <Column field="name" header="Name" />
+                  <Column field="value" header="Value" />
+                </DataTable>
+                <div class="section-label">Query Strings</div>
+                <DataTable
+                  :value="Object.entries(data.requestQueryParams ?? {}).map(([name, value]) => ({ name, value }))"
+                  size="small"
+                >
+                  <Column field="name" header="Name" />
+                  <Column field="value" header="Value" />
+                </DataTable>
+              </TabPanel>
+              <TabPanel value="response-headers">
+                <DataTable
+                  :value="Object.entries(data.responseHeaders ?? {}).map(([name, value]) => ({ name, value }))"
+                  size="small"
+                >
+                  <Column field="name" header="Name" />
+                  <Column field="value" header="Value" />
+                </DataTable>
+              </TabPanel>
+              <TabPanel value="response-body">
+                <JsonViewer v-if="data.body" :data="data.body" />
+                <span v-else class="text-muted">No response body captured.</span>
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
+        </div>
+      </template>
     </DataTable>
   </div>
 </template>
@@ -156,7 +216,10 @@ onMounted(async () => {
 .latency-bar--drift { background: var(--red-400, #f87171); }
 
 .log-table { flex: 1; overflow: auto; font-size: 0.82rem; }
+.history-expansion { border-top: 1px solid var(--surface-border); padding-top: 0.5rem; }
+.section-label { font-size: 0.75rem; font-weight: 600; color: var(--text-color-secondary); margin: 0.4rem 0 0.2rem; text-transform: uppercase; }
 .text-muted { color: var(--text-color-secondary); }
+.request-meta { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; }
 .run-id { font-family: monospace; font-size: 0.75rem; }
 .error-text { cursor: help; }
 .mb-2 { margin-bottom: 0.5rem; }

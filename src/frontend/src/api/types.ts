@@ -420,6 +420,8 @@ export interface HttpApiAzureCredentialsOptions {
   clientSecret: string
   scope: string
   authorityHost?: string
+  keyVaultSecretRef?: KeyVaultSecretReference
+  subscriptionId?: string
 }
 
 export interface HttpApiApiKeyOptions {
@@ -497,6 +499,14 @@ export interface HttpApiInvocationRecord {
   schemaMatchedSnapshot?: boolean | null
   collectionRunId?: string | null
   errorMessage?: string | null
+  requestMethod?: string
+  requestBaseUrl?: string
+  requestPath?: string
+  requestHeaders?: Record<string, string>
+  requestQueryParams?: Record<string, string>
+  responseHeaders?: Record<string, string>
+  contentType?: string | null
+  body?: string | null
 }
 
 export interface SchemaPropertyChange {

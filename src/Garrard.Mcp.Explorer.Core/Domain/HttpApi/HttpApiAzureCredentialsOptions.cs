@@ -1,3 +1,5 @@
+using Garrard.Mcp.Explorer.Core.Domain.Connections;
+
 namespace Garrard.Mcp.Explorer.Core.Domain.HttpApi;
 
 public sealed class HttpApiAzureCredentialsOptions
@@ -7,4 +9,6 @@ public sealed class HttpApiAzureCredentialsOptions
     public string ClientSecret { get; set; } = string.Empty;
     public string Scope { get; set; } = string.Empty;
     public string? AuthorityHost { get; set; }
+    public KeyVaultSecretReference? KeyVaultSecretRef { get; set; }
+    public string? SubscriptionId { get; set; }
 }
