@@ -10,6 +10,24 @@ const router = createRouter({
       redirect: '/connections',
     },
     {
+      path: '/http-apis',
+      name: 'http-apis',
+      component: () => import('@/views/HttpApisView.vue'),
+      meta: { title: 'HTTP APIs', icon: 'pi pi-send' },
+    },
+    {
+      path: '/http-api-collections',
+      name: 'http-api-collections',
+      component: () => import('@/views/HttpApiCollectionsView.vue'),
+      meta: { title: 'API Collections', icon: 'pi pi-list' },
+    },
+    {
+      path: '/http-api-history',
+      name: 'http-api-history',
+      component: () => import('@/views/HttpApiHistoryView.vue'),
+      meta: { title: 'API History', icon: 'pi pi-clock' },
+    },
+    {
       path: '/connections',
       name: 'connections',
       component: () => import('@/views/ConnectionsView.vue'),

@@ -38,6 +38,15 @@ const navGroups = [
     ],
   },
   {
+    label: 'HTTP API Explorer',
+    accent: 'emerald',
+    items: [
+      { name: 'http-apis',             label: 'HTTP APIs',    icon: 'pi-send'  },
+      { name: 'http-api-collections',  label: 'Collections',  icon: 'pi-list'  },
+      { name: 'http-api-history',      label: 'History',      icon: 'pi-clock' },
+    ],
+  },
+  {
     label: 'Dev Tunnels',
     accent: 'cyan',
     items: [

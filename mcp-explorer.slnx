@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Garrard.Mcp.Explorer.Api/Garrard.Mcp.Explorer.Api.csproj" />
+    <Project Path="src/Garrard.Mcp.Explorer.Cli/Garrard.Mcp.Explorer.Cli.csproj" />
     <Project Path="src/Garrard.Mcp.Explorer.Core/Garrard.Mcp.Explorer.Core.csproj" />
     <Project Path="src/Garrard.Mcp.Explorer.Gateway/Garrard.Mcp.Explorer.Gateway.csproj" />
     <Project Path="src/Garrard.Mcp.Explorer.Infrastructure/Garrard.Mcp.Explorer.Infrastructure.csproj" />
