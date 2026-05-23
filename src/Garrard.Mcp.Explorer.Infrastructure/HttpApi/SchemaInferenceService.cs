@@ -65,7 +65,10 @@ public sealed class SchemaInferenceService : ISchemaInferenceService
 
     private static Dictionary<string, object?> BuildArraySchema(JsonArray arr)
     {
-        // Infer items schema from first element
+        // Infer items schema from the first element only.
+        // Note: heterogeneous arrays (elements with different types) will only reflect
+        // the type of the first element. This is a known limitation of this lightweight
+        // schema inference approach.
         var itemSchema = arr.Count > 0
             ? BuildSchema(arr[0])
             : new Dictionary<string, object?> { ["type"] = "unknown" };

@@ -150,6 +150,8 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
     private async Task TrimIfNeededAsync<T>(string path, int retention, CancellationToken ct)
     {
         var lines = await File.ReadAllLinesAsync(path, ct).ConfigureAwait(false);
+        // Read all lines into memory to trim. For files bounded by 'retention' (default 500 lines)
+        // this is intentionally acceptable; the total file size stays small.
         if (lines.Length <= retention) return;
         var trimmed = lines.TakeLast(retention);
         await File.WriteAllLinesAsync(path, trimmed, Encoding.UTF8, ct).ConfigureAwait(false);

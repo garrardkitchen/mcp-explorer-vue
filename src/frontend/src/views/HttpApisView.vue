@@ -293,6 +293,8 @@ function toggleExportItem(id: string) {
   exportSelected.value = s
 }
 function generateExportPassword() {
+  // Excludes visually similar characters (I, l, 1, O, 0) to reduce transcription errors.
+  // Avoids shell-special characters (`, $, \, ") to ensure safe usage in terminals.
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
   const arr = crypto.getRandomValues(new Uint8Array(20))
   exportPassword.value = Array.from(arr, b => chars[b % chars.length]).join('')

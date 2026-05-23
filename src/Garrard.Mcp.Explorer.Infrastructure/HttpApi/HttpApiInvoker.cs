@@ -15,6 +15,9 @@ namespace Garrard.Mcp.Explorer.Infrastructure.HttpApi;
 /// </summary>
 public sealed class HttpApiInvoker : IHttpApiInvoker
 {
+    // Maximum bytes to read from the response body for storage and schema inference.
+    // 4 KB is intentionally small to prevent the snapshot store from growing excessively
+    // when endpoints return large payloads (e.g. binary files, large JSON arrays).
     private const int MaxBodyBytes = 4096;
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -100,9 +103,10 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
             }
         }
 
-        // Body
+        // Body — RFC 7231 allows bodies on all methods except GET and HEAD.
+        // DELETE is intentionally allowed here as some APIs use it for batch operations.
         if (!string.IsNullOrWhiteSpace(def.BodyTemplate) &&
-            method != HttpMethod.Get && method != HttpMethod.Head && method != HttpMethod.Delete)
+            method != HttpMethod.Get && method != HttpMethod.Head)
         {
             request.Content = new StringContent(def.BodyTemplate, Encoding.UTF8, "application/json");
         }
