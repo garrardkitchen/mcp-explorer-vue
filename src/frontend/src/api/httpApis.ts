@@ -17,6 +17,9 @@ export const httpApisApi = {
   getAll: () =>
     apiClient.get<{ definitions: HttpApiDefinition[]; favouriteIds: string[] }>('/http-apis').then(r => r.data),
 
+  getLatestStatuses: () =>
+    apiClient.get<Record<string, { statusCode: number; invokedAt: string }>>('/http-apis/latest-statuses').then(r => r.data),
+
   getOne: (id: string) =>
     apiClient.get<HttpApiDefinition>(`/http-apis/${encodeURIComponent(id)}`).then(r => r.data),
 

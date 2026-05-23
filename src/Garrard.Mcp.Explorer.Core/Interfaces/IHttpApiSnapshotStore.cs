@@ -18,4 +18,6 @@ public interface IHttpApiSnapshotStore
     Task AppendInvocationAsync(HttpApiInvocationRecord record, CancellationToken ct = default);
     Task<IReadOnlyList<HttpApiInvocationRecord>> GetHistoryAsync(string endpointId, int? limit = null, CancellationToken ct = default);
     Task<IReadOnlyList<HttpApiInvocationRecord>> GetGlobalHistoryAsync(int? limit = null, CancellationToken ct = default);
+    /// <summary>Returns the most recent invocation record per endpoint, keyed by endpoint ID.</summary>
+    Task<IReadOnlyDictionary<string, HttpApiInvocationRecord>> GetLatestStatusesAsync(CancellationToken ct = default);
 }

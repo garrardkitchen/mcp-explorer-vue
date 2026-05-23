@@ -23,4 +23,5 @@ public sealed class HttpApiDefinition
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastUpdatedAt { get; set; }
     public DateTime? LastInvokedAt { get; set; }
+    public int? LastStatusCode { get; set; }
 }

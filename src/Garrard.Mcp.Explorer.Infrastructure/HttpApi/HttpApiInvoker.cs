@@ -19,10 +19,10 @@ namespace Garrard.Mcp.Explorer.Infrastructure.HttpApi;
 /// </summary>
 public sealed class HttpApiInvoker : IHttpApiInvoker
 {
-    // Maximum bytes to read from the response body for storage and schema inference.
-    // 4 KB is intentionally small to prevent the snapshot store from growing excessively
-    // when endpoints return large payloads (e.g. binary files, large JSON arrays).
-    private const int MaxBodyBytes = 4096;
+    // Snapshot/history storage cap — intentionally small to prevent the store growing excessively.
+    private const int MaxStorageBodyBytes = 4096;
+    // Display cap for the live response returned to the caller (1 MB).
+    private const int MaxDisplayBodyBytes = 1024 * 1024;
     private static readonly string DefaultUserAgent = $"MCP Explorer/{ResolveVersion()}";
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -57,7 +57,7 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
 
             sw.Stop();
 
-            var body = await ReadBodyAsync(response, ct).ConfigureAwait(false);
+            var (body, truncatedBody) = await ReadBodyAsync(response, ct).ConfigureAwait(false);
             var headers = response.Headers.Concat(response.Content.Headers)
                 .ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase);
 
@@ -67,7 +67,8 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
                 LatencyMs       = sw.ElapsedMilliseconds,
                 ResponseHeaders = headers,
                 ContentType     = response.Content.Headers.ContentType?.MediaType,
-                Body            = body
+                Body            = body,
+                TruncatedBody   = truncatedBody
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -278,11 +279,29 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
         return await _keyVaultSecretResolver.ResolveAsync(opts.KeyVaultSecretRef, ct).ConfigureAwait(false);
     }
 
-    private static async Task<string?> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task<(string? body, string? truncatedBody)> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
     {
         var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-        if (bytes.Length == 0) return null;
-        var truncated = bytes.Length > MaxBodyBytes ? bytes.AsSpan(0, MaxBodyBytes).ToArray() : bytes;
-        return Encoding.UTF8.GetString(truncated);
+        if (bytes.Length == 0) return (null, null);
+        var displayLen  = Utf8SafeLength(bytes, MaxDisplayBodyBytes);
+        var storageLen  = Utf8SafeLength(bytes, MaxStorageBodyBytes);
+        var body          = Encoding.UTF8.GetString(bytes, 0, displayLen);
+        var truncatedBody = storageLen == displayLen ? body : Encoding.UTF8.GetString(bytes, 0, storageLen);
+        return (body, truncatedBody);
+    }
+
+    /// <summary>
+    /// Returns the largest byte count ≤ <paramref name="maxBytes"/> that ends on a complete UTF-8 character boundary,
+    /// avoiding replacement characters from slicing mid-sequence.
+    /// </summary>
+    private static int Utf8SafeLength(byte[] bytes, int maxBytes)
+    {
+        if (bytes.Length <= maxBytes) return bytes.Length;
+        var pos = maxBytes;
+        // Walk back past continuation bytes (10xxxxxx)
+        while (pos > 0 && (bytes[pos - 1] & 0xC0) == 0x80) pos--;
+        // If the byte now at pos-1 is a multi-byte start (11xxxxxx), it's incomplete — exclude it too
+        if (pos > 0 && (bytes[pos - 1] & 0xC0) == 0xC0) pos--;
+        return pos;
     }
 }

@@ -18,8 +18,19 @@ export const useHttpApisStore = defineStore('httpApis', () => {
   async function loadAll() {
     loading.value = true
     try {
-      const { definitions: defs, favouriteIds: favs } = await httpApisApi.getAll()
-      definitions.value = defs
+      const [{ definitions: defs, favouriteIds: favs }, latestStatuses] = await Promise.all([
+        httpApisApi.getAll(),
+        httpApisApi.getLatestStatuses(),
+      ])
+      // Overlay the most recent status from history onto each definition
+      definitions.value = defs.map(d => {
+        const hist = latestStatuses[d.id]
+        if (!hist) return d
+        const histTime = new Date(hist.invokedAt).getTime()
+        const defTime  = d.lastInvokedAt ? new Date(d.lastInvokedAt).getTime() : 0
+        if (histTime > defTime) return { ...d, lastStatusCode: hist.statusCode, lastInvokedAt: hist.invokedAt }
+        return d
+      })
       favouriteIds.value = new Set(favs)
     } finally {
       loading.value = false

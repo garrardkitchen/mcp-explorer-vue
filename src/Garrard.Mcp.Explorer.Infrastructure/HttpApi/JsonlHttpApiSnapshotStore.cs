@@ -109,7 +109,26 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
         return limit.HasValue ? ordered.Take(limit.Value).ToList() : ordered;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    public async Task<IReadOnlyDictionary<string, HttpApiInvocationRecord>> GetLatestStatusesAsync(CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, HttpApiInvocationRecord>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(_baseDir)) return result;
+
+        foreach (var dir in Directory.EnumerateDirectories(_baseDir))
+        {
+            var histPath = Path.Combine(dir, "history.jsonl");
+            if (!File.Exists(histPath)) continue;
+            // history.jsonl is appended in chronological order — last line = most recent
+            var tail = await ReadJsonlTailAsync<HttpApiInvocationRecord>(histPath, 1, ct).ConfigureAwait(false);
+            var record = tail.FirstOrDefault();
+            if (record is not null && !string.IsNullOrEmpty(record.EndpointId))
+                result[record.EndpointId] = record;
+        }
+
+        return result;
+    }
+
+
 
     private string GetEndpointDir(string endpointId)
         => Path.Combine(_baseDir, Sanitize(endpointId));

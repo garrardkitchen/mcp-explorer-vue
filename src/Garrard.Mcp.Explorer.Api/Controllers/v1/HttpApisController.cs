@@ -28,6 +28,20 @@ public sealed class HttpApisController(
         return Ok(new { definitions = defs, favouriteIds = favs });
     }
 
+    /// <summary>
+    /// Returns the most recent invocation status (statusCode + invokedAt) per endpoint,
+    /// sourced from history — more up-to-date than the stored lastStatusCode on the definition.
+    /// </summary>
+    [HttpGet("latest-statuses")]
+    public async Task<IActionResult> GetLatestStatuses(CancellationToken ct)
+    {
+        var latest = await snapshotStore.GetLatestStatusesAsync(ct);
+        var result = latest.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new { statusCode = kvp.Value.StatusCode, invokedAt = kvp.Value.InvokedAt });
+        return Ok(result);
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetOne(string id, CancellationToken ct)
     {
@@ -64,8 +78,10 @@ public sealed class HttpApisController(
         }
 
         var updated = MapFromRequest(request);
-        updated.Id        = existing.Id;
-        updated.CreatedAt = existing.CreatedAt;
+        updated.Id             = existing.Id;
+        updated.CreatedAt      = existing.CreatedAt;
+        updated.LastInvokedAt  = existing.LastInvokedAt;
+        updated.LastStatusCode = existing.LastStatusCode;
         var saved = await store.SaveDefinitionAsync(updated, ct);
         return Ok(saved);
     }
@@ -139,11 +155,12 @@ public sealed class HttpApisController(
             RequestQueryParams = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
             ResponseHeaders    = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
             ContentType        = result.ContentType,
-            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.Body)
+            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody)
         }, ct);
 
-        // Update lastInvokedAt
-        def.LastInvokedAt = DateTime.UtcNow;
+        // Update lastInvokedAt and lastStatusCode
+        def.LastInvokedAt  = DateTime.UtcNow;
+        def.LastStatusCode = result.StatusCode;
         await store.SaveDefinitionAsync(def, ct);
 
         return Ok(new
@@ -182,7 +199,7 @@ public sealed class HttpApisController(
             LatencyMs          = result.LatencyMs,
             ResponseHeaders    = result.ResponseHeaders,
             InferredSchema     = schema,
-            RawBodyTruncated   = result.Body,
+            RawBodyTruncated   = result.TruncatedBody,
             ContentType        = result.ContentType,
             Label              = request?.Label
         };
@@ -203,7 +220,7 @@ public sealed class HttpApisController(
             RequestQueryParams = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
             ResponseHeaders    = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
             ContentType        = result.ContentType,
-            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.Body)
+            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody)
         }, ct);
 
         return Ok(snapshot);
@@ -257,7 +274,7 @@ public sealed class HttpApisController(
             RequestQueryParams    = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
             ResponseHeaders       = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
             ContentType           = result.ContentType,
-            Body                  = HttpApiInvocationSanitizer.SanitizeBody(result.Body)
+            Body                  = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody)
         }, ct);
 
         return Ok(new

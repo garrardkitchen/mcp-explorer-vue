@@ -3,6 +3,11 @@
 ## [Unreleased] - 2026-05-23
 
 ### Added
+- **CLI command restructure**: Reorganised all `http` commands into two sub-branches — `http api` (list, invoke, compare, history, export, import) and `http collection` (list, run). Replaces the flat `http invoke`, `http run-collection`, etc. and removes the separate top-level `apis` branch.
+- **CLI `--data-path` global option**: Pass `--data-path <dir>` before any subcommand to point the CLI at a different data directory (e.g. the Docker container's `MCP_DATA_PATH`). Resolves the mismatch where the CLI defaulted to `~/.local/share/McpExplorer` while the Docker app used `~/Library/Application Support/McpExplorerv2`.
+- **HTTP API list favourite toggle**: Favourite star (⭐) now renders on every row; dimmed when not a favourite and clickable to toggle with a tooltip, instead of only appearing when already favourited.
+
+### Added
 - **HTTP API invocation templates**: Add runtime placeholder inputs using `{name}` and `{name:default}` syntax so invoke requests can prompt for values and apply defaults when omitted.
 - **HTTP API history inspection**: Capture invocation response details (body/content-type/headers) and show expandable response inspection rows in HTTP API history views.
 
@@ -14,6 +19,7 @@
 - **README coverage**: Update root and Docker README content for HTTP API Explorer + CLI coverage, and refresh docs-site README structure mapping for current documentation sections.
 
 ### Fixed
+- **HTTP API response body truncation**: Separate live response body (capped at 1 MB) from snapshot storage body (capped at 4 KB), so large responses display in full rather than as cut-off escaped strings.
 - **HTTP API definition dialog**: Keep auth option sections stable when changing auth mode and add Authorization header Raw/Bearer/Basic UX parity with Connections.
 - **HTTP API invoke tabs**: Bind tab panel state explicitly so switching to History no longer traps navigation away from the other tabs.
 - **Authorization header coercion**: Preserve raw Authorization values unless the selected mode is explicit Basic/Bearer, avoiding malformed double-scheme values during mode switching.

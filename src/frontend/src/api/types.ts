@@ -454,6 +454,7 @@ export interface HttpApiDefinition {
   createdAt: string
   lastUpdatedAt?: string | null
   lastInvokedAt?: string | null
+  lastStatusCode?: number | null
 }
 
 export interface HttpApiCollection {

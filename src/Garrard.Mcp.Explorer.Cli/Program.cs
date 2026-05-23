@@ -7,11 +7,32 @@ using Microsoft.Extensions.Logging;
 using Spectre.Console.Cli;
 using Spectre.Console.Cli.Help;
 
+// ── Pre-parse --data-path before Spectre.Console sees it ─────────────────────
+// Usage: mcp-http --data-path "/path/to/McpExplorerv2" http run-collection …
+// Strips the option from args so Spectre.Console doesn't error on an unknown flag.
+var argsList = args.ToList();
+string? dataPathOverride = null;
+var dpIdx = argsList.IndexOf("--data-path");
+if (dpIdx >= 0 && dpIdx + 1 < argsList.Count)
+{
+    dataPathOverride = argsList[dpIdx + 1];
+    argsList.RemoveRange(dpIdx, 2);
+    args = [.. argsList];
+}
+
 // ── Dependency injection container ───────────────────────────────────────────
 var configBuilder = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.cli.json", optional: true)
     .AddEnvironmentVariables();
+
+if (!string.IsNullOrWhiteSpace(dataPathOverride))
+{
+    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        ["PREFERENCES:StoragePath"] = Path.Combine(dataPathOverride, "settings.json")
+    });
+}
 
 var configuration = configBuilder.Build();
 
@@ -29,6 +50,8 @@ app.Configure(config =>
 {
     config.SetApplicationName("mcp-http");
     config.SetApplicationVersion("1.0.0");
+    // Note: --data-path <dir> is a global pre-option processed before Spectre.Console.
+    // It overrides the data directory (equivalent to MCP_DATA_PATH used by Docker).
     config.Settings.HelpProviderStyles = new HelpProviderStyle
     {
         Description = new DescriptionStyle
@@ -76,37 +99,47 @@ app.Configure(config =>
     {
         http.SetDescription("HTTP API Explorer commands");
 
-        http.AddCommand<HttpInvokeCommand>("invoke")
-            .WithDescription("Invoke an HTTP API endpoint by name or ID and display the response with inferred schema.")
-            .WithExample("http", "invoke", "--name", "My API");
+        http.AddBranch("api", api =>
+        {
+            api.SetDescription("HTTP API definition commands");
 
-        http.AddCommand<HttpCompareCommand>("compare")
-            .WithDescription("Invoke an endpoint and compare the response schema against its saved baseline snapshot.")
-            .WithExample("http", "compare", "--name", "My API", "--fail-on-breaking");
+            api.AddCommand<ApiListCommand>("list")
+                .WithDescription("List all saved HTTP API definitions.")
+                .WithExample("http", "api", "list");
 
-        http.AddCommand<HttpRunCollectionCommand>("run-collection")
-            .WithDescription("Run all endpoints in a collection, compare against baselines, and print a summary table.")
-            .WithExample("http", "run-collection", "--name", "Regression Suite", "--fail-on-breaking");
+            api.AddCommand<HttpInvokeCommand>("invoke")
+                .WithDescription("Invoke an HTTP API endpoint by name or ID and display the response with inferred schema.")
+                .WithExample("http", "api", "invoke", "--name", "My API");
 
-        http.AddCommand<HttpHistoryCommand>("history")
-            .WithDescription("Show the recent invocation history for an endpoint or all endpoints.")
-            .WithExample("http", "history", "--endpoint", "My API", "--limit", "20");
-    });
+            api.AddCommand<HttpCompareCommand>("compare")
+                .WithDescription("Invoke an endpoint and compare the response schema against its saved baseline snapshot.")
+                .WithExample("http", "api", "compare", "--name", "My API", "--fail-on-breaking");
 
-    config.AddBranch("apis", apis =>
-    {
-        apis.SetDescription("HTTP API definition management commands");
+            api.AddCommand<HttpHistoryCommand>("history")
+                .WithDescription("Show the recent invocation history for an endpoint or all endpoints.")
+                .WithExample("http", "api", "history", "--endpoint", "My API", "--limit", "20");
 
-        apis.AddCommand<ApiListCommand>("list")
-            .WithDescription("List all saved HTTP API definitions.");
+            api.AddCommand<ApiExportCommand>("export")
+                .WithDescription("Export selected API definitions to an encrypted file.")
+                .WithExample("http", "api", "export", "--output", "export.json", "--password", "secret");
 
-        apis.AddCommand<ApiExportCommand>("export")
-            .WithDescription("Export selected API definitions to an encrypted file.")
-            .WithExample("apis", "export", "--output", "export.json", "--password", "secret");
+            api.AddCommand<ApiImportCommand>("import")
+                .WithDescription("Import API definitions from an encrypted export file.")
+                .WithExample("http", "api", "import", "--file", "export.json", "--password", "secret");
+        });
 
-        apis.AddCommand<ApiImportCommand>("import")
-            .WithDescription("Import API definitions from an encrypted export file.")
-            .WithExample("apis", "import", "--file", "export.json", "--password", "secret");
+        http.AddBranch("collection", collection =>
+        {
+            collection.SetDescription("HTTP API collection commands");
+
+            collection.AddCommand<HttpListCollectionsCommand>("list")
+                .WithDescription("List all saved collections.")
+                .WithExample("http", "collection", "list");
+
+            collection.AddCommand<HttpRunCollectionCommand>("run")
+                .WithDescription("Run all endpoints in a collection, compare against baselines, and print a summary table.")
+                .WithExample("http", "collection", "run", "--name", "Regression Suite", "--fail-on-breaking");
+        });
     });
 });
 

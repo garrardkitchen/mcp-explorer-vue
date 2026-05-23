@@ -85,7 +85,8 @@ public static partial class HttpApiTemplateResolver
             GoldenSnapshotId = definition.GoldenSnapshotId,
             CreatedAt = definition.CreatedAt,
             LastUpdatedAt = definition.LastUpdatedAt,
-            LastInvokedAt = definition.LastInvokedAt
+            LastInvokedAt = definition.LastInvokedAt,
+            LastStatusCode = definition.LastStatusCode
         };
     }
 

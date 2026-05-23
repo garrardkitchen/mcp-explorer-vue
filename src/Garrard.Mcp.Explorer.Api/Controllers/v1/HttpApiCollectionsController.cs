@@ -145,7 +145,7 @@ public sealed class HttpApiCollectionsController(
                 RequestQueryParams    = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
                 ResponseHeaders       = HttpApiInvocationSanitizer.SanitizeHeaders(invokeResult.ResponseHeaders),
                 ContentType           = invokeResult.ContentType,
-                Body                  = HttpApiInvocationSanitizer.SanitizeBody(invokeResult.Body)
+                Body                  = HttpApiInvocationSanitizer.SanitizeBody(invokeResult.TruncatedBody)
             }, ct);
 
             results.Add(new

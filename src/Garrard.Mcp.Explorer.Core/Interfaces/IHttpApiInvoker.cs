@@ -20,7 +20,10 @@ public sealed class HttpApiInvokeResult
     public long LatencyMs { get; set; }
     public Dictionary<string, string> ResponseHeaders { get; init; } = [];
     public string? ContentType { get; set; }
+    /// <summary>Full response body (up to 1 MB) for live display.</summary>
     public string? Body { get; set; }
+    /// <summary>Body truncated to 4 KB for snapshot/history storage.</summary>
+    public string? TruncatedBody { get; set; }
     public string? ErrorMessage { get; set; }
     public bool IsSuccess => StatusCode is >= 200 and < 300;
 }

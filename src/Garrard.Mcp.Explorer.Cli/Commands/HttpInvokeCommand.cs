@@ -79,7 +79,7 @@ public sealed class HttpInvokeCommand : AsyncCommand<HttpInvokeCommand.Settings>
                 LatencyMs        = result.LatencyMs,
                 ResponseHeaders  = result.ResponseHeaders,
                 InferredSchema   = schema,
-                RawBodyTruncated = result.Body,
+                RawBodyTruncated = result.TruncatedBody,
                 ContentType      = result.ContentType,
                 Label            = settings.Label
             };

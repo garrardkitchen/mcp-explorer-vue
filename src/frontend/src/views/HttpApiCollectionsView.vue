@@ -461,6 +461,11 @@ onMounted(async () => {
 .available-list { max-height: 160px; overflow-y: auto; border: 1px solid var(--surface-border); border-radius: 6px; padding: 0.3rem; }
 .available-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.3rem; border-radius: 4px; cursor: pointer; font-size: 0.82rem; }
 .available-item:hover { background: var(--surface-hover); }
-.available-item--selected { background: var(--primary-50, #e8f5e9); }
+.available-item--selected {
+  background: color-mix(in srgb, var(--primary-color) 18%, var(--surface-card, var(--surface-ground)));
+  outline: 1px solid color-mix(in srgb, var(--primary-color) 60%, transparent);
+  outline-offset: -1px;
+  color: var(--text-color);
+}
 .avail-url { color: var(--text-color-secondary); font-size: 0.72rem; margin-left: auto; }
 </style>

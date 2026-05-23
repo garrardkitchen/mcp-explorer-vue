@@ -293,6 +293,7 @@ const filteredDefs = computed(() => {
 
 // ── Invoke panel ─────────────────────────────────────────────────────────────
 const invokeTarget = ref<HttpApiDefinition | null>(null)
+const expandedId = ref<string | null>(null)
 const invoking = ref(false)
 const invokeResult = ref<HttpApiInvokeResponse | null>(null)
 const showInvokeInputDialog = ref(false)
@@ -373,14 +374,23 @@ function promptInvokeInputsIfNeeded(action: 'invoke' | 'bookmark' | 'compare') {
 
 async function executeInvoke(inputs?: Record<string, string>) {
   if (!invokeTarget.value) return
+  const id = invokeTarget.value.id
   invoking.value = true
   invokeResult.value = null
   try {
-    invokeResult.value = await httpApisApi.invoke(invokeTarget.value.id, inputs)
+    const result = await httpApisApi.invoke(id, inputs)
+    if (invokeTarget.value?.id !== id) return
+    invokeResult.value = result
     activeTab.value = 'response'
-    await loadHistory(invokeTarget.value.id)
+    const defInStore = store.definitions.find(d => d.id === id)
+    if (defInStore) {
+      defInStore.lastStatusCode = result.statusCode
+      defInStore.lastInvokedAt = new Date().toISOString()
+    }
+    await loadHistory(id)
   } catch (e: any) {
-    toast.add({ severity: 'error', summary: 'Invocation failed', detail: e.message, life: 5000 })
+    if (invokeTarget.value?.id === id)
+      toast.add({ severity: 'error', summary: 'Invocation failed', detail: e.message, life: 5000 })
   } finally {
     invoking.value = false
   }
@@ -455,7 +465,10 @@ const snapshotsLoading = ref(false)
 
 async function loadSnapshots(id: string) {
   snapshotsLoading.value = true
-  try { snapshots.value = await httpApisApi.getSnapshots(id) }
+  try {
+    const snaps = await httpApisApi.getSnapshots(id)
+    if (invokeTarget.value?.id === id) snapshots.value = snaps
+  }
   finally { snapshotsLoading.value = false }
 }
 
@@ -483,16 +496,35 @@ const expandedHistoryRows = ref<HttpApiInvocationRecord[]>([])
 async function loadHistory(id: string) {
   historyLoading.value = true
   try {
-    history.value = await httpApisApi.getHistory(id, 50)
-    expandedHistoryRows.value = []
+    const rows = await httpApisApi.getHistory(id, 50)
+    if (invokeTarget.value?.id === id) {
+      history.value = rows
+      expandedHistoryRows.value = []
+    }
   }
   finally { historyLoading.value = false }
 }
 
 // ── Open invoke panel + lazy load ─────────────────────────────────────────────
-async function openAndLoad(def: HttpApiDefinition) {
+function openAndLoad(def: HttpApiDefinition) {
   openInvokePanel(def)
-  await Promise.all([loadSnapshots(def.id), loadHistory(def.id)])
+  expandedId.value = def.id
+  loadSnapshots(def.id)
+  loadHistory(def.id)
+}
+
+function toggleExpand(def: HttpApiDefinition) {
+  if (expandedId.value === def.id) {
+    expandedId.value = null
+  } else {
+    openAndLoad(def)
+  }
+}
+
+async function invokeAndExpand(def: HttpApiDefinition) {
+  openAndLoad(def)
+  activeTab.value = 'response'
+  await doInvoke()
 }
 
 // ── Export dialog ─────────────────────────────────────────────────────────────
@@ -788,258 +820,286 @@ onMounted(async () => {
       </DataTable>
     </div>
 
-    <!-- ── Invoke mode split: list + invoke panel ───────────────────────────── -->
-    <div v-else class="main-layout">
-      <div class="def-list">
-        <Skeleton v-if="loading" height="4rem" class="mb-2" v-for="i in 4" :key="i" />
-        <div
-          v-if="!loading"
-          v-for="def in filteredDefs"
-          :key="def.id"
-          class="def-card"
-          :class="{ 'def-card--active': invokeTarget?.id === def.id }"
-          @click="openAndLoad(def)"
-        >
-          <div class="def-card__body">
-            <div class="def-icon-badge">{{ def.name.charAt(0).toUpperCase() }}</div>
-            <div class="def-card__text">
-              <div class="def-card__title-row">
-                <span class="def-name">{{ def.name }}</span>
-                <Tag :value="def.method" :severity="methodSeverity(def.method)" class="method-tag" />
-                <Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
-              </div>
-              <div class="def-card__url">{{ def.baseUrl }}{{ def.path }}</div>
-              <div v-if="def.note" class="def-card__note">{{ def.note }}</div>
-            </div>
-          </div>
-          <button class="fav-btn icon-only" @click.stop="store.toggleFavourite(def.id)" :title="store.isFavourite(def.id) ? 'Unfavorite' : 'Favorite'">
-            <i :class="store.isFavourite(def.id) ? 'pi pi-star-fill' : 'pi pi-star'" :style="store.isFavourite(def.id) ? 'color:var(--warning)' : ''" />
-          </button>
-        </div>
-
-        <div v-if="!loading && filteredDefs.length === 0" class="empty-state">
-          <i class="pi pi-send empty-icon" />
-          <p>No HTTP API definitions found.</p>
-        </div>
+    <!-- ── Invoke mode: full-width table ─────────────────────────────────────── -->
+    <div v-else class="api-table">
+      <!-- header row -->
+      <div class="api-table__header">
+        <div class="col-expand"></div>
+        <div class="col-method">Method</div>
+        <div class="col-name">Name</div>
+        <div class="col-url">URL</div>
+        <div class="col-auth">Auth</div>
+        <div class="col-status">Status</div>
+        <div class="col-actions"></div>
       </div>
 
-      <div v-if="invokeTarget" class="invoke-panel">
-        <div class="invoke-panel__header">
-          <span class="invoke-panel__title">{{ invokeTarget.name }}</span>
-          <div class="invoke-panel__actions">
-            <Button label="Invoke" icon="pi pi-play" size="small" :loading="invoking" @click="doInvoke" />
-            <Button label="Bookmark" icon="pi pi-bookmark" severity="secondary" outlined size="small" @click="() => doBookmark()" />
-            <Button label="Compare" icon="pi pi-sync" severity="info" outlined size="small" :loading="comparing" @click="() => doCompare()" />
+      <Skeleton v-if="loading" height="3rem" class="mb-2" v-for="i in 4" :key="i" />
+
+      <template v-if="!loading">
+        <div v-for="def in filteredDefs" :key="def.id" class="api-row-wrap">
+          <!-- main row -->
+          <div class="api-row" :class="{ 'api-row--expanded': expandedId === def.id }">
+            <div class="col-expand">
+              <Button
+                text rounded size="small"
+                :icon="expandedId === def.id ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+                @click="toggleExpand(def)"
+              />
+            </div>
+            <div class="col-method">
+              <Tag :value="def.method" :severity="methodSeverity(def.method)" class="method-tag" />
+            </div>
+            <div class="col-name">
+              <span
+                class="fav-star"
+                :class="{ 'fav-star--inactive': !store.isFavourite(def.id) }"
+                v-tooltip.top="store.isFavourite(def.id) ? 'Remove from favourites' : 'Add to favourites'"
+                @click.stop="store.toggleFavourite(def.id)"
+              >⭐</span>
+              <span class="def-name-text">{{ def.name }}</span>
+            </div>
+            <div class="col-url">
+              <span class="url-text" :title="`${def.baseUrl}${def.path}`">{{ def.baseUrl }}{{ def.path }}</span>
+            </div>
+            <div class="col-auth">
+              <Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
+            </div>
+            <div class="col-status">
+              <Tag
+                v-if="def.lastStatusCode"
+                :value="`${def.lastStatusCode}`"
+                :severity="statusSeverity(def.lastStatusCode)"
+              />
+            </div>
+            <div class="col-actions">
+              <Button
+                label="Invoke"
+                icon="pi pi-play"
+                size="small"
+                :loading="invoking && invokeTarget?.id === def.id"
+                @click="invokeAndExpand(def)"
+              />
+            </div>
+          </div>
+
+          <!-- expanded detail panel -->
+          <div v-if="expandedId === def.id" class="api-detail-panel">
+            <div class="api-detail-panel__header">
+              <span class="api-detail-panel__title">{{ def.name }}</span>
+              <div class="api-detail-panel__actions">
+                <Button label="Invoke" icon="pi pi-play" size="small" :loading="invoking" @click="doInvoke" />
+                <Button label="Bookmark" icon="pi pi-bookmark" severity="secondary" outlined size="small" @click="() => doBookmark()" />
+                <Button label="Compare" icon="pi pi-sync" severity="info" outlined size="small" :loading="comparing" @click="() => doCompare()" />
+              </div>
+            </div>
+
+            <Tabs v-model:value="activeTab" class="invoke-tabs">
+              <TabList>
+                <Tab value="overview">Overview</Tab>
+                <Tab value="response">Response</Tab>
+                <Tab value="comparison">Comparison</Tab>
+                <Tab value="snapshots">Snapshots</Tab>
+                <Tab value="history">History</Tab>
+              </TabList>
+              <TabPanels v-model:value="activeTab">
+              <!-- Overview -->
+              <TabPanel value="overview">
+                <div class="overview-grid">
+                  <div class="ov-row"><span class="ov-label">URL</span><code>{{ def.baseUrl }}{{ def.path }}</code></div>
+                  <div class="ov-row"><span class="ov-label">Method</span><Tag :value="def.method" severity="info" /></div>
+                  <div class="ov-row"><span class="ov-label">Auth</span><Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode]" /></div>
+                  <div v-if="def.note" class="ov-row"><span class="ov-label">Note</span><span>{{ def.note }}</span></div>
+                  <div v-if="def.lastInvokedAt" class="ov-row"><span class="ov-label">Last invoked</span><span>{{ new Date(def.lastInvokedAt).toLocaleString() }}</span></div>
+                </div>
+
+                <div v-if="def.headers.length" class="section-label">Request Headers</div>
+                <DataTable v-if="def.headers.length" :value="def.headers" size="small" class="mt-1">
+                  <Column field="name" header="Name" />
+                  <Column field="value" header="Value" />
+                </DataTable>
+
+                <div v-if="def.queryParams.filter(q => q.enabled).length" class="section-label mt-2">Query Params</div>
+                <DataTable v-if="def.queryParams.filter(q => q.enabled).length" :value="def.queryParams.filter(q => q.enabled)" size="small">
+                  <Column field="name" header="Name" />
+                  <Column field="value" header="Value" />
+                </DataTable>
+              </TabPanel>
+
+              <!-- Response -->
+              <TabPanel value="response">
+                <div v-if="!invokeResult" class="no-result">Hit <strong>Invoke</strong> to see the response.</div>
+                <div v-else>
+                  <div class="response-meta">
+                    <Tag :value="`${invokeResult.statusCode}`" :severity="statusSeverity(invokeResult.statusCode)" />
+                    <span class="latency">{{ invokeResult.latencyMs }} ms</span>
+                    <span v-if="invokeResult.contentType" class="content-type">{{ invokeResult.contentType }}</span>
+                  </div>
+                  <div v-if="invokeResult.errorMessage" class="error-box">{{ invokeResult.errorMessage }}</div>
+                  <div class="section-label mt-2">Body</div>
+                  <JsonViewer v-if="invokeResult.body" :data="invokeResult.body" />
+                  <div class="section-label mt-2">Inferred Schema</div>
+                  <JsonViewer :data="schemaToString(invokeResult.inferredSchema)" />
+                  <div class="section-label mt-2">Response Headers</div>
+                  <DataTable :value="Object.entries(invokeResult.responseHeaders).map(([k,v]) => ({name:k,value:v}))" size="small">
+                    <Column field="name" header="Name" />
+                    <Column field="value" header="Value" />
+                  </DataTable>
+                </div>
+              </TabPanel>
+
+              <!-- Comparison -->
+              <TabPanel value="comparison">
+                <div v-if="!compareResult" class="no-result">Hit <strong>Compare</strong> to diff against the latest snapshot.</div>
+                <div v-else>
+                  <div class="compare-summary">
+                    <Tag :value="comparisonLabel(compareResult.comparison)" :severity="comparisonSeverity(compareResult.comparison)" />
+                    <span class="latency-ratio">
+                      Latency: {{ compareResult.comparison.liveLatencyMs }} ms vs {{ compareResult.comparison.snapshotLatencyMs }} ms
+                      ({{ (compareResult.comparison.latencyRatio * 100).toFixed(0) }}%)
+                    </span>
+                  </div>
+                  <div v-if="compareResult.comparison.removedProperties.length" class="diff-section diff-section--removed">
+                    <div class="diff-header">🔴 Removed ({{ compareResult.comparison.removedProperties.length }})</div>
+                    <div v-for="p in compareResult.comparison.removedProperties" :key="p" class="diff-item diff-item--removed">{{ p }}</div>
+                  </div>
+                  <div v-if="compareResult.comparison.addedProperties.length" class="diff-section diff-section--added">
+                    <div class="diff-header">🟢 Added ({{ compareResult.comparison.addedProperties.length }})</div>
+                    <div v-for="p in compareResult.comparison.addedProperties" :key="p" class="diff-item diff-item--added">{{ p }}</div>
+                  </div>
+                  <div v-if="compareResult.comparison.changedTypes.length" class="diff-section diff-section--changed">
+                    <div class="diff-header">🟡 Type changed ({{ compareResult.comparison.changedTypes.length }})</div>
+                    <div v-for="c in compareResult.comparison.changedTypes" :key="c.propertyPath" class="diff-item diff-item--changed">
+                      <code>{{ c.propertyPath }}</code>: <del>{{ c.previousType }}</del> → <strong>{{ c.currentType }}</strong>
+                    </div>
+                  </div>
+                  <div v-if="!compareResult.comparison.isBreaking && !compareResult.comparison.isDegraded" class="diff-ok">
+                    ✅ No breaking changes or degradation detected.
+                  </div>
+                </div>
+              </TabPanel>
+
+              <!-- Snapshots -->
+              <TabPanel value="snapshots">
+                <Skeleton v-if="snapshotsLoading" height="3rem" class="mb-2" />
+                <div v-if="!snapshotsLoading && snapshots.length === 0" class="no-result">
+                  No bookmarks yet. Invoke and then hit <strong>Bookmark</strong>.
+                </div>
+                <div v-for="snap in snapshots" :key="snap.id" class="snapshot-row">
+                  <div class="snapshot-row__meta">
+                    <Tag :value="`${snap.statusCode}`" :severity="statusSeverity(snap.statusCode)" />
+                    <span class="snapshot-time">{{ new Date(snap.capturedAt).toLocaleString() }}</span>
+                    <span class="latency">{{ snap.latencyMs }} ms</span>
+                    <Tag v-if="snap.isGolden || def.goldenSnapshotId === snap.id" value="Golden" severity="warn" />
+                    <span v-if="snap.label" class="snap-label">{{ snap.label }}</span>
+                  </div>
+                  <div class="snapshot-row__schema">
+                    <JsonViewer :data="schemaToString(snap.inferredSchema)" />
+                  </div>
+                  <div class="snapshot-row__actions">
+                    <Button icon="pi pi-star" text rounded size="small" v-tooltip.top="'Pin as golden'" @click="pinSnapshot(snap.id)" />
+                    <Button icon="pi pi-trash" text rounded size="small" severity="danger" v-tooltip.top="'Delete'" @click="deleteSnapshot(snap.id)" />
+                  </div>
+                </div>
+              </TabPanel>
+
+              <!-- History -->
+              <TabPanel value="history">
+                <Skeleton v-if="historyLoading" height="3rem" class="mb-2" />
+                <DataTable
+                  v-if="!historyLoading"
+                  :value="history"
+                  v-model:expandedRows="expandedHistoryRows"
+                  size="small"
+                  :paginator="history.length > 20"
+                  :rows="20"
+                  class="history-table"
+                >
+                  <Column expander style="width: 2.5rem" />
+                  <Column field="invokedAt" header="When">
+                    <template #body="{ data }">{{ new Date(data.invokedAt).toLocaleString() }}</template>
+                  </Column>
+                  <Column field="statusCode" header="Status">
+                    <template #body="{ data }">
+                      <Tag :value="`${data.statusCode}`" :severity="statusSeverity(data.statusCode)" />
+                    </template>
+                  </Column>
+                  <Column field="latencyMs" header="Latency">
+                    <template #body="{ data }">{{ data.latencyMs }} ms</template>
+                  </Column>
+                  <Column field="schemaMatchedSnapshot" header="Schema">
+                    <template #body="{ data }">
+                      <Tag
+                        v-if="data.schemaMatchedSnapshot !== null && data.schemaMatchedSnapshot !== undefined"
+                        :value="data.schemaMatchedSnapshot ? 'Match' : 'Drift'"
+                        :severity="data.schemaMatchedSnapshot ? 'success' : 'danger'"
+                      />
+                      <span v-else class="text-muted">—</span>
+                    </template>
+                  </Column>
+                  <Column field="errorMessage" header="Error">
+                    <template #body="{ data }">
+                      <span v-if="data.errorMessage" class="error-text" v-tooltip.top="data.errorMessage">⚠️</span>
+                    </template>
+                  </Column>
+                  <template #expansion="{ data }">
+                    <div class="history-expansion">
+                      <Tabs value="request" class="history-detail-tabs">
+                        <TabList>
+                          <Tab value="request">Request</Tab>
+                          <Tab value="response-headers">Response Headers</Tab>
+                          <Tab value="response-body">Response Body</Tab>
+                        </TabList>
+                        <TabPanels>
+                          <TabPanel value="request">
+                            <div class="overview-grid">
+                              <div class="ov-row"><span class="ov-label">URL</span><code>{{ data.requestBaseUrl }}{{ data.requestPath }}</code></div>
+                              <div class="ov-row"><span class="ov-label">Method</span><Tag :value="data.requestMethod || '—'" :severity="methodSeverity(data.requestMethod || '')" /></div>
+                            </div>
+                            <div class="section-label mt-2">Request Headers</div>
+                            <DataTable :value="Object.entries(data.requestHeaders ?? {}).map(([name, value]) => ({ name, value }))" size="small">
+                              <Column field="name" header="Name" />
+                              <Column field="value" header="Value" />
+                            </DataTable>
+                            <div class="section-label mt-2">Query Strings</div>
+                            <DataTable :value="Object.entries(data.requestQueryParams ?? {}).map(([name, value]) => ({ name, value }))" size="small">
+                              <Column field="name" header="Name" />
+                              <Column field="value" header="Value" />
+                            </DataTable>
+                          </TabPanel>
+                          <TabPanel value="response-headers">
+                            <div class="response-meta">
+                              <Tag :value="`${data.statusCode || '—'}`" :severity="statusSeverity(data.statusCode)" />
+                              <span class="latency">{{ data.latencyMs }} ms</span>
+                              <span v-if="data.contentType" class="content-type">{{ data.contentType }}</span>
+                            </div>
+                            <DataTable
+                              :value="Object.entries(data.responseHeaders ?? {}).map(([name, value]) => ({ name, value }))"
+                              size="small"
+                              class="mt-2"
+                            >
+                              <Column field="name" header="Name" />
+                              <Column field="value" header="Value" />
+                            </DataTable>
+                          </TabPanel>
+                          <TabPanel value="response-body">
+                            <JsonViewer v-if="data.body" :data="data.body" />
+                            <span v-else class="text-muted">No response body captured.</span>
+                          </TabPanel>
+                        </TabPanels>
+                      </Tabs>
+                    </div>
+                  </template>
+                </DataTable>
+              </TabPanel>
+              </TabPanels>
+            </Tabs>
           </div>
         </div>
+      </template>
 
-        <Tabs v-model:value="activeTab" class="invoke-tabs">
-          <TabList>
-            <Tab value="overview">Overview</Tab>
-            <Tab value="response">Response</Tab>
-            <Tab value="comparison">Comparison</Tab>
-            <Tab value="snapshots">Snapshots</Tab>
-            <Tab value="history">History</Tab>
-          </TabList>
-          <TabPanels v-model:value="activeTab">
-          <!-- Overview -->
-          <TabPanel value="overview">
-            <div class="overview-grid">
-              <div class="ov-row"><span class="ov-label">URL</span><code>{{ invokeTarget.baseUrl }}{{ invokeTarget.path }}</code></div>
-              <div class="ov-row"><span class="ov-label">Method</span><Tag :value="invokeTarget.method" severity="info" /></div>
-              <div class="ov-row"><span class="ov-label">Auth</span><Tag :value="invokeTarget.authenticationMode" :severity="AUTH_SEVERITY[invokeTarget.authenticationMode]" /></div>
-              <div v-if="invokeTarget.note" class="ov-row"><span class="ov-label">Note</span><span>{{ invokeTarget.note }}</span></div>
-              <div v-if="invokeTarget.lastInvokedAt" class="ov-row"><span class="ov-label">Last invoked</span><span>{{ new Date(invokeTarget.lastInvokedAt).toLocaleString() }}</span></div>
-            </div>
-
-            <!-- Headers preview -->
-            <div v-if="invokeTarget.headers.length" class="section-label">Request Headers</div>
-            <DataTable v-if="invokeTarget.headers.length" :value="invokeTarget.headers" size="small" class="mt-1">
-              <Column field="name" header="Name" />
-              <Column field="value" header="Value" />
-            </DataTable>
-
-            <!-- Query params preview -->
-            <div v-if="invokeTarget.queryParams.filter(q => q.enabled).length" class="section-label mt-2">Query Params</div>
-            <DataTable v-if="invokeTarget.queryParams.filter(q => q.enabled).length" :value="invokeTarget.queryParams.filter(q => q.enabled)" size="small">
-              <Column field="name" header="Name" />
-              <Column field="value" header="Value" />
-            </DataTable>
-          </TabPanel>
-
-          <!-- Response -->
-          <TabPanel value="response">
-            <div v-if="!invokeResult" class="no-result">Hit <strong>Invoke</strong> to see the response.</div>
-            <div v-else>
-              <div class="response-meta">
-                <Tag :value="`${invokeResult.statusCode}`" :severity="statusSeverity(invokeResult.statusCode)" />
-                <span class="latency">{{ invokeResult.latencyMs }} ms</span>
-                <span v-if="invokeResult.contentType" class="content-type">{{ invokeResult.contentType }}</span>
-              </div>
-              <div v-if="invokeResult.errorMessage" class="error-box">{{ invokeResult.errorMessage }}</div>
-              <div class="section-label mt-2">Body</div>
-              <JsonViewer v-if="invokeResult.body" :data="invokeResult.body" />
-              <div class="section-label mt-2">Inferred Schema</div>
-              <JsonViewer :data="schemaToString(invokeResult.inferredSchema)" />
-              <div class="section-label mt-2">Response Headers</div>
-              <DataTable :value="Object.entries(invokeResult.responseHeaders).map(([k,v]) => ({name:k,value:v}))" size="small">
-                <Column field="name" header="Name" />
-                <Column field="value" header="Value" />
-              </DataTable>
-            </div>
-          </TabPanel>
-
-          <!-- Comparison -->
-          <TabPanel value="comparison">
-            <div v-if="!compareResult" class="no-result">Hit <strong>Compare</strong> to diff against the latest snapshot.</div>
-            <div v-else>
-              <div class="compare-summary">
-                <Tag :value="comparisonLabel(compareResult.comparison)" :severity="comparisonSeverity(compareResult.comparison)" />
-                <span class="latency-ratio">
-                  Latency: {{ compareResult.comparison.liveLatencyMs }} ms vs {{ compareResult.comparison.snapshotLatencyMs }} ms
-                  ({{ (compareResult.comparison.latencyRatio * 100).toFixed(0) }}%)
-                </span>
-              </div>
-              <div v-if="compareResult.comparison.removedProperties.length" class="diff-section diff-section--removed">
-                <div class="diff-header">🔴 Removed ({{ compareResult.comparison.removedProperties.length }})</div>
-                <div v-for="p in compareResult.comparison.removedProperties" :key="p" class="diff-item diff-item--removed">{{ p }}</div>
-              </div>
-              <div v-if="compareResult.comparison.addedProperties.length" class="diff-section diff-section--added">
-                <div class="diff-header">🟢 Added ({{ compareResult.comparison.addedProperties.length }})</div>
-                <div v-for="p in compareResult.comparison.addedProperties" :key="p" class="diff-item diff-item--added">{{ p }}</div>
-              </div>
-              <div v-if="compareResult.comparison.changedTypes.length" class="diff-section diff-section--changed">
-                <div class="diff-header">🟡 Type changed ({{ compareResult.comparison.changedTypes.length }})</div>
-                <div v-for="c in compareResult.comparison.changedTypes" :key="c.propertyPath" class="diff-item diff-item--changed">
-                  <code>{{ c.propertyPath }}</code>: <del>{{ c.previousType }}</del> → <strong>{{ c.currentType }}</strong>
-                </div>
-              </div>
-              <div v-if="!compareResult.comparison.isBreaking && !compareResult.comparison.isDegraded" class="diff-ok">
-                ✅ No breaking changes or degradation detected.
-              </div>
-            </div>
-          </TabPanel>
-
-          <!-- Snapshots -->
-          <TabPanel value="snapshots">
-            <Skeleton v-if="snapshotsLoading" height="3rem" class="mb-2" />
-            <div v-if="!snapshotsLoading && snapshots.length === 0" class="no-result">
-              No bookmarks yet. Invoke and then hit <strong>Bookmark</strong>.
-            </div>
-            <div v-for="snap in snapshots" :key="snap.id" class="snapshot-row">
-              <div class="snapshot-row__meta">
-                <Tag :value="`${snap.statusCode}`" :severity="statusSeverity(snap.statusCode)" />
-                <span class="snapshot-time">{{ new Date(snap.capturedAt).toLocaleString() }}</span>
-                <span class="latency">{{ snap.latencyMs }} ms</span>
-                <Tag v-if="snap.isGolden || invokeTarget?.goldenSnapshotId === snap.id" value="Golden" severity="warn" />
-                <span v-if="snap.label" class="snap-label">{{ snap.label }}</span>
-              </div>
-              <div class="snapshot-row__schema">
-                <JsonViewer :data="schemaToString(snap.inferredSchema)" />
-              </div>
-              <div class="snapshot-row__actions">
-                <Button icon="pi pi-star" text rounded size="small" v-tooltip.top="'Pin as golden'" @click="pinSnapshot(snap.id)" />
-                <Button icon="pi pi-trash" text rounded size="small" severity="danger" v-tooltip.top="'Delete'" @click="deleteSnapshot(snap.id)" />
-              </div>
-            </div>
-          </TabPanel>
-
-          <!-- History -->
-          <TabPanel value="history">
-            <Skeleton v-if="historyLoading" height="3rem" class="mb-2" />
-            <DataTable
-              v-if="!historyLoading"
-              :value="history"
-              v-model:expandedRows="expandedHistoryRows"
-              size="small"
-              :paginator="history.length > 20"
-              :rows="20"
-              class="history-table"
-            >
-              <Column expander style="width: 2.5rem" />
-              <Column field="invokedAt" header="When">
-                <template #body="{ data }">{{ new Date(data.invokedAt).toLocaleString() }}</template>
-              </Column>
-              <Column field="statusCode" header="Status">
-                <template #body="{ data }">
-                  <Tag :value="`${data.statusCode}`" :severity="statusSeverity(data.statusCode)" />
-                </template>
-              </Column>
-              <Column field="latencyMs" header="Latency">
-                <template #body="{ data }">{{ data.latencyMs }} ms</template>
-              </Column>
-              <Column field="schemaMatchedSnapshot" header="Schema">
-                <template #body="{ data }">
-                  <Tag
-                    v-if="data.schemaMatchedSnapshot !== null && data.schemaMatchedSnapshot !== undefined"
-                    :value="data.schemaMatchedSnapshot ? 'Match' : 'Drift'"
-                    :severity="data.schemaMatchedSnapshot ? 'success' : 'danger'"
-                  />
-                  <span v-else class="text-muted">—</span>
-                </template>
-              </Column>
-              <Column field="errorMessage" header="Error">
-                <template #body="{ data }">
-                  <span v-if="data.errorMessage" class="error-text" v-tooltip.top="data.errorMessage">⚠️</span>
-                </template>
-              </Column>
-              <template #expansion="{ data }">
-                <div class="history-expansion">
-                  <Tabs value="request" class="history-detail-tabs">
-                    <TabList>
-                      <Tab value="request">Request</Tab>
-                      <Tab value="response-headers">Response Headers</Tab>
-                      <Tab value="response-body">Response Body</Tab>
-                    </TabList>
-                    <TabPanels>
-                      <TabPanel value="request">
-                        <div class="overview-grid">
-                          <div class="ov-row"><span class="ov-label">URL</span><code>{{ data.requestBaseUrl }}{{ data.requestPath }}</code></div>
-                          <div class="ov-row"><span class="ov-label">Method</span><Tag :value="data.requestMethod || '—'" :severity="methodSeverity(data.requestMethod || '')" /></div>
-                        </div>
-                        <div class="section-label mt-2">Request Headers</div>
-                        <DataTable :value="Object.entries(data.requestHeaders ?? {}).map(([name, value]) => ({ name, value }))" size="small">
-                          <Column field="name" header="Name" />
-                          <Column field="value" header="Value" />
-                        </DataTable>
-                        <div class="section-label mt-2">Query Strings</div>
-                        <DataTable :value="Object.entries(data.requestQueryParams ?? {}).map(([name, value]) => ({ name, value }))" size="small">
-                          <Column field="name" header="Name" />
-                          <Column field="value" header="Value" />
-                        </DataTable>
-                      </TabPanel>
-                      <TabPanel value="response-headers">
-                        <div class="response-meta">
-                          <Tag :value="`${data.statusCode || '—'}`" :severity="statusSeverity(data.statusCode)" />
-                          <span class="latency">{{ data.latencyMs }} ms</span>
-                          <span v-if="data.contentType" class="content-type">{{ data.contentType }}</span>
-                        </div>
-                        <DataTable
-                          :value="Object.entries(data.responseHeaders ?? {}).map(([name, value]) => ({ name, value }))"
-                          size="small"
-                          class="mt-2"
-                        >
-                          <Column field="name" header="Name" />
-                          <Column field="value" header="Value" />
-                        </DataTable>
-                      </TabPanel>
-                      <TabPanel value="response-body">
-                        <JsonViewer v-if="data.body" :data="data.body" />
-                        <span v-else class="text-muted">No response body captured.</span>
-                      </TabPanel>
-                    </TabPanels>
-                  </Tabs>
-                </div>
-              </template>
-            </DataTable>
-          </TabPanel>
-          </TabPanels>
-        </Tabs>
-      </div>
-
-      <div v-if="!invokeTarget" class="invoke-placeholder">
-        <i class="pi pi-arrow-left placeholder-icon" />
-        <p>Select a definition to invoke and inspect.</p>
+      <div v-if="!loading && filteredDefs.length === 0" class="empty-state">
+        <i class="pi pi-send empty-icon" />
+        <p>No HTTP API definitions found.</p>
       </div>
     </div>
 
@@ -1324,24 +1384,24 @@ onMounted(async () => {
 .group-chips { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 .group-chip { cursor: pointer; }
 
-.main-layout { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; flex: 1; min-height: 0; overflow: hidden; }
-.table-wrap { flex: 1; min-height: 0; }
-
-.def-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-.def-card { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: border-color 0.15s; gap: 0.5rem; }
-.def-card:hover, .def-card--active { border-color: var(--primary-color); }
-.def-card__body { display: flex; align-items: center; gap: 0.55rem; flex: 1; min-width: 0; }
-.def-card__text { min-width: 0; flex: 1; }
-.def-icon-badge { width: 1.8rem; height: 1.8rem; border-radius: 999px; background: var(--primary-color); color: var(--primary-color-text); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
-.def-card__title-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-.def-name { font-weight: 600; font-size: 0.9rem; }
+.api-table { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--surface-border); border-radius: 8px; background: var(--surface-card); }
+.api-table__header { display: grid; grid-template-columns: 2.5rem 84px minmax(0, 1.5fr) minmax(0, 2.5fr) 168px 80px 104px; align-items: center; gap: 0.5rem; padding: 0.35rem 0.75rem; font-size: 0.72rem; font-weight: 600; color: var(--text-color-secondary); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--surface-border); position: sticky; top: 0; background: var(--surface-card); z-index: 1; }
+.api-row-wrap { border-bottom: 1px solid var(--surface-border); }
+.api-row-wrap:last-child { border-bottom: none; }
+.api-row { display: grid; grid-template-columns: 2.5rem 84px minmax(0, 1.5fr) minmax(0, 2.5fr) 168px 80px 104px; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; transition: background 0.12s; }
+.api-row:hover { background: var(--surface-hover); }
+.api-row--expanded { background: var(--surface-hover); }
+.col-expand { display: flex; align-items: center; justify-content: center; }
+.col-method, .col-auth, .col-status, .col-actions { display: flex; align-items: center; }
+.col-actions { justify-content: flex-end; }
+.col-name { display: flex; align-items: center; gap: 0.3rem; min-width: 0; font-weight: 600; font-size: 0.9rem; overflow: hidden; }
+.col-url { min-width: 0; display: flex; align-items: center; }
+.url-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; color: var(--text-color-secondary); }
+.def-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-star { font-size: 0.85rem; flex-shrink: 0; cursor: pointer; transition: opacity 0.15s; }
+.fav-star--inactive { opacity: 0.2; }
+.fav-star:hover { opacity: 1; }
 .method-tag, .auth-tag { font-size: 0.7rem !important; }
-.def-card__url { font-size: 0.75rem; color: var(--text-color-secondary); margin-top: 0.2rem; word-break: break-all; }
-.def-card__note { font-size: 0.75rem; color: var(--text-color-secondary); margin-top: 0.15rem; }
-.def-card__tags { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.3rem; }
-.tag-pill { font-size: 0.65rem !important; }
-.fav-btn { flex-shrink: 0; }
-.icon-only { border: 0; background: transparent; width: 1.8rem; height: 1.8rem; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 
 .table-name-cell { display: flex; align-items: center; gap: 0.35rem; }
 .row-actions { display: flex; justify-content: flex-end; gap: 0.2rem; }
@@ -1349,11 +1409,11 @@ onMounted(async () => {
 .empty-state { text-align: center; padding: 2rem; color: var(--text-color-secondary); }
 .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
 
-.invoke-panel { overflow-y: auto; border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.75rem; background: var(--surface-card); }
-.invoke-panel__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem; }
-.invoke-panel__title { font-weight: 700; font-size: 1rem; }
-.invoke-panel__actions { display: flex; gap: 0.4rem; }
-.invoke-tabs { height: 100%; }
+.api-detail-panel { border-top: 1px solid var(--surface-border); padding: 0.75rem 1rem; background: var(--surface-ground); }
+.api-detail-panel__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem; }
+.api-detail-panel__title { font-weight: 700; font-size: 1rem; }
+.api-detail-panel__actions { display: flex; gap: 0.4rem; }
+.invoke-tabs { }
 
 .invoke-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-color-secondary); }
 .placeholder-icon { font-size: 2rem; margin-bottom: 0.5rem; }
