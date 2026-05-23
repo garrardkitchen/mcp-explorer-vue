@@ -1,0 +1,157 @@
+using Asp.Versioning;
+using Garrard.Mcp.Explorer.Api.Dtos.HttpApis;
+using Garrard.Mcp.Explorer.Core.Domain.HttpApi;
+using Garrard.Mcp.Explorer.Core.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
+
+[ApiController]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/http-api-collections")]
+public sealed class HttpApiCollectionsController(
+    IHttpApiStore store,
+    IHttpApiSnapshotStore snapshotStore,
+    IHttpApiInvoker invoker,
+    ISchemaInferenceService schemaInference,
+    ISchemaComparisonService schemaComparison) : ControllerBase
+{
+    [HttpGet]
+    public async Task<IActionResult> GetAll(CancellationToken ct)
+    {
+        var collections = await store.GetAllCollectionsAsync(ct);
+        return Ok(collections.OrderBy(c => c.Name));
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetOne(string id, CancellationToken ct)
+    {
+        var collection = await store.GetCollectionAsync(id, ct);
+        if (collection is null) return NotFound();
+        return Ok(collection);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] SaveHttpApiCollectionRequest request, CancellationToken ct)
+    {
+        var all = await store.GetAllCollectionsAsync(ct);
+        if (all.Any(c => string.Equals(c.Name, request.Name, StringComparison.OrdinalIgnoreCase)))
+            return Conflict(new { error = $"A collection named '{request.Name}' already exists." });
+
+        var collection = new HttpApiCollection
+        {
+            Name        = request.Name,
+            Description = request.Description ?? string.Empty,
+            GroupName   = request.GroupName,
+            EndpointIds = request.EndpointIds ?? []
+        };
+
+        var saved = await store.SaveCollectionAsync(collection, ct);
+        return CreatedAtAction(nameof(GetOne), new { id = saved.Id }, saved);
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(string id, [FromBody] SaveHttpApiCollectionRequest request, CancellationToken ct)
+    {
+        var existing = await store.GetCollectionAsync(id, ct);
+        if (existing is null) return NotFound();
+
+        if (!string.Equals(request.Name, existing.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            var all = await store.GetAllCollectionsAsync(ct);
+            if (all.Any(c => !string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals(c.Name, request.Name, StringComparison.OrdinalIgnoreCase)))
+                return Conflict(new { error = $"A collection named '{request.Name}' already exists." });
+        }
+
+        existing.Name        = request.Name;
+        existing.Description = request.Description ?? string.Empty;
+        existing.GroupName   = request.GroupName;
+        existing.EndpointIds.Clear();
+        existing.EndpointIds.AddRange(request.EndpointIds ?? []);
+
+        var saved = await store.SaveCollectionAsync(existing, ct);
+        return Ok(saved);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(string id, CancellationToken ct)
+    {
+        await store.DeleteCollectionAsync(id, ct);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Runs all endpoints in the collection in order, compares each against its latest baseline snapshot
+    /// (if available), and returns a per-endpoint summary.
+    /// </summary>
+    [HttpPost("{id}/run")]
+    public async Task<IActionResult> Run(string id, CancellationToken ct)
+    {
+        var collection = await store.GetCollectionAsync(id, ct);
+        if (collection is null) return NotFound();
+
+        var runId   = Guid.NewGuid().ToString();
+        var results = new List<object>();
+
+        foreach (var endpointId in collection.EndpointIds)
+        {
+            var def = await store.GetDefinitionAsync(endpointId, ct);
+            if (def is null)
+            {
+                results.Add(new { endpointId, error = "Definition not found", skipped = true });
+                continue;
+            }
+
+            var invokeResult = await invoker.InvokeAsync(def, ct);
+            var schema       = schemaInference.InferSchema(invokeResult.Body);
+            var hash         = schemaInference.ComputeSchemaHash(schema);
+
+            // Get baseline for comparison
+            var targetSnapshotId = def.GoldenSnapshotId;
+            HttpResponseSnapshot? baseline = null;
+
+            if (!string.IsNullOrEmpty(targetSnapshotId))
+                baseline = await snapshotStore.GetSnapshotAsync(endpointId, targetSnapshotId, ct);
+            if (baseline is null)
+            {
+                var allSnaps = await snapshotStore.GetSnapshotsAsync(endpointId, ct);
+                baseline = allSnaps.MaxBy(s => s.CapturedAt);
+            }
+
+            HttpSchemaComparisonResult? comparison = null;
+            if (baseline is not null)
+                comparison = schemaComparison.Compare(def, baseline, invokeResult.StatusCode, invokeResult.LatencyMs, schema);
+
+            await snapshotStore.AppendInvocationAsync(new HttpApiInvocationRecord
+            {
+                EndpointId            = def.Id,
+                EndpointName          = def.Name,
+                StatusCode            = invokeResult.StatusCode,
+                LatencyMs             = invokeResult.LatencyMs,
+                SchemaHash            = hash,
+                SchemaMatchedSnapshot = comparison is null ? null : !comparison.IsBreaking,
+                CollectionRunId       = runId,
+                ErrorMessage          = invokeResult.ErrorMessage
+            }, ct);
+
+            results.Add(new
+            {
+                endpointId   = def.Id,
+                endpointName = def.Name,
+                statusCode   = invokeResult.StatusCode,
+                latencyMs    = invokeResult.LatencyMs,
+                isSuccess    = invokeResult.IsSuccess,
+                comparison,
+                inferredSchema = schema,
+                errorMessage = invokeResult.ErrorMessage
+            });
+        }
+
+        // Update lastRunAt
+        collection.LastRunAt = DateTime.UtcNow;
+        await store.SaveCollectionAsync(collection, ct);
+
+        return Ok(new { runId, collectionId = id, ranAt = DateTime.UtcNow, results });
+    }
+}
