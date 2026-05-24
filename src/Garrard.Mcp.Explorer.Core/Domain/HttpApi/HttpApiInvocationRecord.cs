@@ -27,4 +27,6 @@ public sealed class HttpApiInvocationRecord
     public Dictionary<string, string> ResponseHeaders { get; init; } = [];
     public string? ContentType { get; set; }
     public string? Body { get; set; }
+    /// <summary>Whether the invocation was triggered via the web app or CLI. See <see cref="HttpApiInvocationSource"/>.</summary>
+    public string? InvokedVia { get; set; }
 }

@@ -75,7 +75,8 @@ public sealed class HttpCompareCommand : AsyncCommand<HttpCompareCommand.Setting
             StatusCode            = result.StatusCode,
             LatencyMs             = result.LatencyMs,
             SchemaHash            = _schemaInference.ComputeSchemaHash(schema),
-            SchemaMatchedSnapshot = !comparison.IsBreaking
+            SchemaMatchedSnapshot = !comparison.IsBreaking,
+            InvokedVia            = HttpApiInvocationSource.Cli
         });
 
         // ── Print result ───────────────────────────────────────────────────────

@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] - 2026-05-24
+
+### Added
+- **Invocation source tracking**: All HTTP API invocations (invoke, compare, bookmark, collection run) now record `invokedVia` — either `"App"` or `"CLI"` — in the invocation history record, enabling users to distinguish which surface triggered each request.
+- **Collections full-width table**: The Collections view is redesigned as a full-width grid table showing collection name (with description below), endpoint count, last run time, duration, and % successful alongside Edit / Delete / Run action buttons.
+- **Collections expand panel**: An expand toggle on the left of each collection row reveals a per-endpoint table showing each endpoint's name, status code, and duration from the most recent run.
+- **Collection run stats persistence**: Running a collection (via app or CLI) now persists aggregate stats (`lastRunAt`, `lastRunDurationMs`, `lastRunSuccessCount`, `lastRunTotalCount`, `lastRunEndpointSummaries`) on the collection object, making stats available across sessions without replaying history.
+- **CLI collection run stats**: `http collection run` (formerly `http run-collection`) now tracks elapsed duration, records per-endpoint results, and persists run stats to the data store — closing a gap where CLI runs were never saved.
+
 ## [Unreleased] - 2026-05-23
 
 ### Added

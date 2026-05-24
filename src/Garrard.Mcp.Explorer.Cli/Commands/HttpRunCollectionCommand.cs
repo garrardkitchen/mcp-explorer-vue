@@ -41,7 +41,16 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
         var collection = await ResolveCollectionAsync(settings.Id, settings.Name);
         if (collection is null) return 1;
 
-        var runId = Guid.NewGuid().ToString();
+        var runId      = Guid.NewGuid().ToString();
+        var startedAt  = DateTime.UtcNow;
+        var sw         = System.Diagnostics.Stopwatch.StartNew();
+
+        if (collection.EndpointIds.Count == 0)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Collection '{collection.Name}' has no endpoints — nothing to run.[/]");
+            return 0;
+        }
+
         AnsiConsole.MarkupLine($"[bold]Running collection:[/] {collection.Name} ({collection.EndpointIds.Count} endpoints)");
 
         var resultTable = new Table()
@@ -53,9 +62,10 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
             .AddColumn("Schema Δ");
 
         var hasBreaking  = false;
-        var passCount    = 0;
-        var failCount    = 0;
+        var successCount = 0;
+        var totalCount   = 0;
         var degradeCount = 0;
+        var summaries    = new List<Core.Domain.HttpApi.HttpApiCollectionEndpointRunSummary>();
 
         await AnsiConsole.Progress()
             .StartAsync(async ctx =>
@@ -68,6 +78,12 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                     if (def is null)
                     {
                         resultTable.AddRow(endpointId, "—", "—", "[dim]Skipped (not found)[/]", "—");
+                        summaries.Add(new Core.Domain.HttpApi.HttpApiCollectionEndpointRunSummary
+                        {
+                            EndpointId   = endpointId,
+                            EndpointName = endpointId,
+                            Skipped      = true
+                        });
                         task.Increment(1);
                         continue;
                     }
@@ -95,6 +111,20 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                     if (baseline is not null)
                         comparison = _schemaComparison.Compare(def, baseline, result.StatusCode, result.LatencyMs, schema);
 
+                    var isCountedSuccess = result.IsSuccess && comparison?.IsBreaking != true;
+                    totalCount++;
+                    if (isCountedSuccess) successCount++;
+
+                    summaries.Add(new Core.Domain.HttpApi.HttpApiCollectionEndpointRunSummary
+                    {
+                        EndpointId   = def.Id,
+                        EndpointName = def.Name,
+                        StatusCode   = result.StatusCode,
+                        LatencyMs    = result.LatencyMs,
+                        IsSuccess    = isCountedSuccess,
+                        Skipped      = false
+                    });
+
                     await _snapshots.AppendInvocationAsync(new HttpApiInvocationRecord
                     {
                         EndpointId            = def.Id,
@@ -104,7 +134,8 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                         SchemaHash            = hash,
                         SchemaMatchedSnapshot = comparison is null ? null : !comparison.IsBreaking,
                         CollectionRunId       = runId,
-                        ErrorMessage          = result.ErrorMessage
+                        ErrorMessage          = result.ErrorMessage,
+                        InvokedVia            = HttpApiInvocationSource.Cli
                     });
 
                     var statusColor = result.IsSuccess ? "green" : "red";
@@ -124,16 +155,28 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                         schemaDelta
                     );
 
-                    if (comparison?.IsBreaking == true) { hasBreaking = true; failCount++; }
-                    else if (comparison?.IsDegraded == true) { degradeCount++; passCount++; }
-                    else passCount++;
+                    if (comparison?.IsBreaking == true) { hasBreaking = true; }
+                    else if (comparison?.IsDegraded == true) { degradeCount++; }
 
                     task.Increment(1);
                 }
             });
 
+        sw.Stop();
+
+        // Persist run stats to the collection (without bumping LastUpdatedAt)
+        await _store.PatchCollectionRunStatsAsync(
+            collection.Id,
+            startedAt,
+            sw.ElapsedMilliseconds,
+            successCount,
+            totalCount,
+            runId,
+            HttpApiInvocationSource.Cli,
+            summaries);
+
         AnsiConsole.Write(resultTable);
-        AnsiConsole.MarkupLine($"[bold]Summary:[/] [green]{passCount} passed[/]  [red]{failCount} failed[/]  [yellow]{degradeCount} degraded[/]");
+        AnsiConsole.MarkupLine($"[bold]Summary:[/] [green]{successCount} passed[/]  [red]{totalCount - successCount} failed[/]  [yellow]{degradeCount} degraded[/]  [dim]{sw.ElapsedMilliseconds} ms[/]");
 
         return hasBreaking && settings.FailOnBreaking ? 1 : 0;
     }

@@ -11,4 +11,11 @@ public sealed class HttpApiCollection
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastUpdatedAt { get; set; }
     public DateTime? LastRunAt { get; set; }
+    // ── Last-run aggregate stats (populated after each run) ──────────────────
+    public long? LastRunDurationMs { get; set; }
+    public int? LastRunSuccessCount { get; set; }
+    public int? LastRunTotalCount { get; set; }
+    public string? LastRunId { get; set; }
+    public string? LastRunInvokedVia { get; set; }
+    public List<HttpApiCollectionEndpointRunSummary>? LastRunEndpointSummaries { get; set; }
 }

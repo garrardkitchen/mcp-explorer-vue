@@ -23,6 +23,13 @@ const collections = ref<HttpApiCollection[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 
+// ── Expand state ──────────────────────────────────────────────────────────────
+const expandedIds = ref<Set<string>>(new Set())
+function toggleExpand(id: string) {
+  if (expandedIds.value.has(id)) expandedIds.value.delete(id)
+  else expandedIds.value.add(id)
+}
+
 // ── Form dialog ───────────────────────────────────────────────────────────────
 const showDialog = ref(false)
 const editMode = ref(false)
@@ -82,7 +89,7 @@ function confirmDelete(c: HttpApiCollection) {
     accept: async () => {
       await httpApisApi.deleteCollection(c.id)
       collections.value = collections.value.filter(x => x.id !== c.id)
-      if (runTarget.value?.id === c.id) runTarget.value = null
+      expandedIds.value.delete(c.id)
       toast.add({ severity: 'success', summary: 'Deleted', life: 2000 })
     }
   })
@@ -115,17 +122,33 @@ function defName(id: string) {
   return store.definitions.find(d => d.id === id)?.name ?? id
 }
 
-// ── Run panel ──────────────────────────────────────────────────────────────────
-const runTarget = ref<HttpApiCollection | null>(null)
-const running = ref(false)
-const runResult = ref<HttpApiCollectionRunResult | null>(null)
+// ── Run ────────────────────────────────────────────────────────────────────────
+const runningId = ref<string | null>(null)
+const runResultMap = ref<Record<string, HttpApiCollectionRunResult>>({})
+const showRunResultDialog = ref(false)
+const activeRunResult = ref<HttpApiCollectionRunResult | null>(null)
+const activeRunCollection = ref<HttpApiCollection | null>(null)
 const showRunInputDialog = ref(false)
+const runInputTarget = ref<HttpApiCollection | null>(null)
 const runInputFields = ref<Array<{ name: string; defaultValue: string; value: string }>>([])
 const runInputPattern = /\{(?<name>[A-Za-z_][A-Za-z0-9_.-]*)(:(?<default>[^{}]*))?\}/g
 
-function openRun(c: HttpApiCollection) {
-  runTarget.value = c
-  runResult.value = null
+function successPercent(c: HttpApiCollection): number | null {
+  if (c.lastRunTotalCount == null || c.lastRunTotalCount === 0) return null
+  return Math.round(((c.lastRunSuccessCount ?? 0) / c.lastRunTotalCount) * 100)
+}
+
+function successSeverity(pct: number | null) {
+  if (pct === null) return 'secondary'
+  if (pct >= 90) return 'success'
+  if (pct >= 50) return 'warn'
+  return 'danger'
+}
+
+function formatDuration(ms: number | null | undefined) {
+  if (ms == null) return '—'
+  if (ms < 1000) return `${ms} ms`
+  return `${(ms / 1000).toFixed(1)} s`
 }
 
 function extractInputsFromTemplate(template: string | null | undefined, bucket: Map<string, string>) {
@@ -177,38 +200,56 @@ function resolveRunInputs() {
   const resolved: Record<string, string> = {}
   for (const field of runInputFields.value) {
     const value = field.value?.trim() || field.defaultValue?.trim()
-    if (value) {
-      resolved[field.name] = value
-    }
+    if (value) resolved[field.name] = value
   }
   return resolved
 }
 
-async function doRun(inputs?: Record<string, string>) {
-  if (!runTarget.value) return
-  if (!inputs) {
-    const fields = collectCollectionInputFields(runTarget.value)
-    if (fields.length > 0) {
-      runInputFields.value = fields
-      showRunInputDialog.value = true
-      return
-    }
+async function startRun(c: HttpApiCollection) {
+  const fields = collectCollectionInputFields(c)
+  if (fields.length > 0) {
+    runInputTarget.value = c
+    runInputFields.value = fields
+    showRunInputDialog.value = true
+    return
   }
-  running.value = true
-  runResult.value = null
-  try {
-    runResult.value = await httpApisApi.runCollection(runTarget.value.id, inputs)
-    const idx = collections.value.findIndex(c => c.id === runTarget.value!.id)
-    if (idx >= 0) collections.value[idx].lastRunAt = runResult.value.ranAt
-    toast.add({ severity: 'success', summary: 'Collection run complete', life: 3000 })
-  } catch (e: any) {
-    toast.add({ severity: 'error', summary: 'Run failed', detail: e.message, life: 5000 })
-  } finally { running.value = false }
+  await doRun(c, undefined)
 }
 
 async function confirmRunWithInputs() {
   showRunInputDialog.value = false
-  await doRun(resolveRunInputs())
+  if (!runInputTarget.value) return
+  await doRun(runInputTarget.value, resolveRunInputs())
+}
+
+async function doRun(c: HttpApiCollection, inputs?: Record<string, string>) {
+  runningId.value = c.id
+  try {
+    const result = await httpApisApi.runCollection(c.id, inputs)
+    // Update collection in-place with new run stats
+    const idx = collections.value.findIndex(x => x.id === c.id)
+    if (idx >= 0) {
+      collections.value[idx] = {
+        ...collections.value[idx],
+        lastRunAt:               result.ranAt,
+        lastRunDurationMs:       result.durationMs,
+        lastRunSuccessCount:     result.successCount,
+        lastRunTotalCount:       result.totalCount,
+        lastRunId:               result.runId,
+        lastRunInvokedVia:       result.invokedVia,
+        lastRunEndpointSummaries: result.endpointSummaries
+      }
+    }
+    runResultMap.value[c.id] = result
+    activeRunResult.value = result
+    activeRunCollection.value = idx >= 0 ? collections.value[idx] : c
+    showRunResultDialog.value = true
+    toast.add({ severity: 'success', summary: 'Collection run complete', life: 3000 })
+  } catch (e: any) {
+    toast.add({ severity: 'error', summary: 'Run failed', detail: e.message, life: 5000 })
+  } finally {
+    runningId.value = null
+  }
 }
 
 function statusSeverity(code: number) {
@@ -258,92 +299,154 @@ onMounted(async () => {
       <Button label="New Collection" icon="pi pi-plus" size="small" @click="openCreate" />
     </div>
 
-    <div class="main-layout">
-      <!-- Collection list -->
-      <div class="col-list">
-        <Skeleton v-if="loading" height="3rem" v-for="i in 3" :key="i" class="mb-2" />
-        <div
-          v-if="!loading"
-          v-for="c in filteredCollections" :key="c.id"
-          class="col-card"
-          :class="{ 'col-card--active': runTarget?.id === c.id }"
-          @click="openRun(c)"
-        >
-          <div class="col-card__info">
-            <div class="col-name">{{ c.name }}</div>
-            <div v-if="c.description" class="col-desc">{{ c.description }}</div>
-            <div class="col-meta">
-              <Tag :value="`${c.endpointIds.length} endpoint(s)`" severity="secondary" />
-              <span v-if="c.lastRunAt" class="last-run">Last run: {{ new Date(c.lastRunAt).toLocaleString() }}</span>
-            </div>
-          </div>
-          <div class="col-card__actions" @click.stop>
-            <Button icon="pi pi-pencil" text rounded size="small" @click="openEdit(c)" />
-            <Button icon="pi pi-trash" text rounded size="small" severity="danger" @click="confirmDelete(c)" />
-          </div>
-        </div>
-        <div v-if="!loading && filteredCollections.length === 0" class="empty-state">
-          <i class="pi pi-list empty-icon" />
-          <p>No collections yet.</p>
-          <Button label="Create one" size="small" @click="openCreate" />
-        </div>
-      </div>
-
-      <!-- Run panel -->
-      <div v-if="runTarget" class="run-panel">
-        <div class="run-panel__header">
-          <span class="run-title">{{ runTarget.name }}</span>
-          <Button label="Run Collection" icon="pi pi-play" size="small" :loading="running" @click="() => doRun()" />
-        </div>
-
-        <div v-if="!runResult" class="no-result">
-          Click <strong>Run Collection</strong> to invoke all {{ runTarget.endpointIds.length }} endpoint(s) and compare against their baselines.
-        </div>
-
-        <div v-else class="run-result">
-          <div class="run-summary">
-            <Tag :value="`${runResult.results.filter((r: any) => !r.skipped && r.isSuccess && !r.comparison?.isBreaking).length} passed`" severity="success" />
-            <Tag :value="`${runResult.results.filter((r: any) => r.comparison?.isBreaking || !r.isSuccess).length} failed`" severity="danger" />
-            <Tag :value="`${runResult.results.filter((r: any) => r.comparison?.isDegraded).length} degraded`" severity="warn" />
-            <span class="run-time">{{ new Date(runResult.ranAt).toLocaleString() }}</span>
-          </div>
-
-          <DataTable :value="runResult.results" size="small" class="result-table">
-            <Column field="endpointName" header="Endpoint" />
-            <Column field="statusCode" header="Status">
-              <template #body="{ data }">
-                <Tag v-if="!data.skipped" :value="`${data.statusCode}`" :severity="statusSeverity(data.statusCode)" />
-                <span v-else>—</span>
-              </template>
-            </Column>
-            <Column field="latencyMs" header="Latency">
-              <template #body="{ data }">{{ data.skipped ? '—' : `${data.latencyMs} ms` }}</template>
-            </Column>
-            <Column header="Result">
-              <template #body="{ data }">
-                <Tag :value="itemLabel(data)" :severity="itemSeverity(data)" />
-              </template>
-            </Column>
-            <Column header="Schema changes">
-              <template #body="{ data }">
-                <span v-if="data.comparison">
-                  <span v-if="data.comparison.removedProperties.length" class="change-badge removed">-{{ data.comparison.removedProperties.length }}</span>
-                  <span v-if="data.comparison.addedProperties.length" class="change-badge added">+{{ data.comparison.addedProperties.length }}</span>
-                  <span v-if="data.comparison.changedTypes.length" class="change-badge changed">~{{ data.comparison.changedTypes.length }}</span>
-                  <span v-if="!data.comparison.isBreaking && !data.comparison.isDegraded">✅</span>
-                </span>
-                <span v-else class="text-muted">No baseline</span>
-              </template>
-            </Column>
-          </DataTable>
-        </div>
-      </div>
-
-      <div v-if="!runTarget" class="run-placeholder">
-        <i class="pi pi-list placeholder-icon" />
-        <p>Select a collection to run.</p>
-      </div>
+    <!-- Skeleton loading -->
+    <div v-if="loading" class="skeleton-list">
+      <Skeleton v-for="i in 3" :key="i" height="4rem" class="mb-2" />
     </div>
+
+    <!-- Empty state -->
+    <div v-if="!loading && filteredCollections.length === 0" class="empty-state">
+      <i class="pi pi-list empty-icon" />
+      <p>No collections yet.</p>
+      <Button label="Create one" size="small" @click="openCreate" />
+    </div>
+
+    <!-- Collections table -->
+    <div v-if="!loading && filteredCollections.length > 0" class="col-table">
+      <!-- Header row -->
+      <div class="col-header">
+        <div class="col-h-expand"></div>
+        <div class="col-h-name">Name / Description</div>
+        <div class="col-h-count">Endpoints</div>
+        <div class="col-h-lastrun">Last Run</div>
+        <div class="col-h-duration">Duration</div>
+        <div class="col-h-success">% Success</div>
+        <div class="col-h-actions">Actions</div>
+      </div>
+
+      <template v-for="c in filteredCollections" :key="c.id">
+        <!-- Main row -->
+        <div class="col-row">
+          <div class="col-expand">
+            <Button
+              :icon="expandedIds.has(c.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+              text rounded size="small"
+              :disabled="!c.lastRunEndpointSummaries?.length"
+              @click="toggleExpand(c.id)"
+            />
+          </div>
+          <div class="col-name-cell">
+            <span class="col-name">{{ c.name }}</span>
+            <span v-if="c.description" class="col-desc">{{ c.description }}</span>
+          </div>
+          <div class="col-count">
+            <Tag :value="`${c.endpointIds.length}`" severity="secondary" />
+          </div>
+          <div class="col-lastrun">
+            <span v-if="c.lastRunAt" class="meta-text">{{ new Date(c.lastRunAt).toLocaleString() }}</span>
+            <span v-else class="meta-muted">—</span>
+          </div>
+          <div class="col-duration">
+            <span class="meta-text">{{ formatDuration(c.lastRunDurationMs) }}</span>
+          </div>
+          <div class="col-success">
+            <Tag
+              v-if="successPercent(c) !== null"
+              :value="`${successPercent(c)}%`"
+              :severity="successSeverity(successPercent(c))"
+            />
+            <span v-else class="meta-muted">—</span>
+          </div>
+          <div class="col-actions">
+            <Button icon="pi pi-pencil" text rounded size="small" title="Edit" @click="openEdit(c)" />
+            <Button icon="pi pi-trash" text rounded size="small" severity="danger" title="Delete" @click="confirmDelete(c)" />
+            <Button
+              icon="pi pi-play"
+              size="small"
+              severity="success"
+              title="Run"
+              :loading="runningId === c.id"
+              @click="startRun(c)"
+            />
+          </div>
+        </div>
+
+        <!-- Expanded endpoint details -->
+        <div v-if="expandedIds.has(c.id) && c.lastRunEndpointSummaries?.length" class="col-expand-panel">
+          <div class="ep-run-meta">
+            <span class="meta-text">Last run: {{ c.lastRunAt ? new Date(c.lastRunAt).toLocaleString() : '—' }}</span>
+            <Tag
+              v-if="c.lastRunInvokedVia"
+              :value="c.lastRunInvokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'"
+              :severity="c.lastRunInvokedVia === 'CLI' ? 'secondary' : 'info'"
+              class="ep-via-tag"
+            />
+          </div>
+          <table class="ep-table">
+            <thead>
+              <tr>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="ep in c.lastRunEndpointSummaries" :key="ep.endpointId">
+                <td class="ep-name">{{ ep.endpointName }}</td>
+                <td>
+                  <span v-if="ep.skipped" class="meta-muted">Skipped</span>
+                  <Tag v-else :value="`${ep.statusCode}`" :severity="statusSeverity(ep.statusCode)" />
+                </td>
+                <td class="ep-latency">{{ ep.skipped ? '—' : `${ep.latencyMs} ms` }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </div>
+
+    <!-- Run result dialog -->
+    <Dialog v-model:visible="showRunResultDialog" header="Collection Run Results" modal :style="{ width: '760px' }">
+      <div v-if="activeRunResult" class="run-result">
+        <div class="run-summary">
+          <Tag :value="`${activeRunResult.successCount} passed`" severity="success" />
+          <Tag :value="`${activeRunResult.totalCount - activeRunResult.successCount} failed`" severity="danger" />
+          <span class="meta-text">{{ formatDuration(activeRunResult.durationMs) }}</span>
+          <span class="meta-muted">{{ new Date(activeRunResult.ranAt).toLocaleString() }}</span>
+        </div>
+        <DataTable :value="activeRunResult.results" size="small" class="result-table">
+          <Column field="endpointName" header="Endpoint" />
+          <Column field="statusCode" header="Status">
+            <template #body="{ data }">
+              <Tag v-if="!data.skipped" :value="`${data.statusCode}`" :severity="statusSeverity(data.statusCode)" />
+              <span v-else>—</span>
+            </template>
+          </Column>
+          <Column field="latencyMs" header="Latency">
+            <template #body="{ data }">{{ data.skipped ? '—' : `${data.latencyMs} ms` }}</template>
+          </Column>
+          <Column header="Result">
+            <template #body="{ data }">
+              <Tag :value="itemLabel(data)" :severity="itemSeverity(data)" />
+            </template>
+          </Column>
+          <Column header="Schema changes">
+            <template #body="{ data }">
+              <span v-if="data.comparison">
+                <span v-if="data.comparison.removedProperties.length" class="change-badge removed">-{{ data.comparison.removedProperties.length }}</span>
+                <span v-if="data.comparison.addedProperties.length" class="change-badge added">+{{ data.comparison.addedProperties.length }}</span>
+                <span v-if="data.comparison.changedTypes.length" class="change-badge changed">~{{ data.comparison.changedTypes.length }}</span>
+                <span v-if="!data.comparison.isBreaking && !data.comparison.isDegraded">✅</span>
+              </span>
+              <span v-else class="meta-muted">No baseline</span>
+            </template>
+          </Column>
+        </DataTable>
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" outlined @click="showRunResultDialog = false" />
+      </template>
+    </Dialog>
 
     <!-- Create / Edit dialog -->
     <Dialog v-model:visible="showDialog" :header="editMode ? 'Edit Collection' : 'New Collection'" modal :style="{ width: '560px' }">
@@ -384,6 +487,7 @@ onMounted(async () => {
       </template>
     </Dialog>
 
+    <!-- Run inputs dialog -->
     <Dialog
       v-model:visible="showRunInputDialog"
       header="Run Collection"
@@ -400,12 +504,12 @@ onMounted(async () => {
         <div v-for="field in runInputFields" :key="field.name" class="form-row">
           <label>{{ field.name }}</label>
           <InputText v-model="field.value" :placeholder="field.defaultValue || 'Required if no default'" class="w-full" />
-          <small v-if="field.defaultValue" class="text-muted">Default: {{ field.defaultValue }}</small>
+          <small v-if="field.defaultValue" class="meta-muted">Default: {{ field.defaultValue }}</small>
         </div>
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="showRunInputDialog = false" />
-        <Button label="Run Collection" icon="pi pi-play" :loading="running" @click="confirmRunWithInputs" />
+        <Button label="Run Collection" icon="pi pi-play" :loading="runningId !== null" @click="confirmRunWithInputs" />
       </template>
     </Dialog>
   </div>
@@ -414,38 +518,92 @@ onMounted(async () => {
 <style scoped>
 .collections-view { display: flex; flex-direction: column; height: 100%; gap: 0.75rem; padding: 1rem; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.main-layout { display: grid; grid-template-columns: 300px 1fr; gap: 1rem; flex: 1; min-height: 0; overflow: hidden; }
+.skeleton-list { display: flex; flex-direction: column; gap: 0.4rem; }
 
-.col-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-.col-card { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.75rem; cursor: pointer; display: flex; justify-content: space-between; }
-.col-card:hover, .col-card--active { border-color: var(--primary-color); }
-.col-name { font-weight: 600; font-size: 0.9rem; }
-.col-desc { font-size: 0.78rem; color: var(--text-color-secondary); margin-top: 0.1rem; }
-.col-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; }
-.last-run { font-size: 0.72rem; color: var(--text-color-secondary); }
-.col-card__actions { display: flex; flex-direction: column; gap: 0.25rem; opacity: 0; transition: opacity 0.15s; }
-.col-card:hover .col-card__actions { opacity: 1; }
+/* ── Table layout ─────────────────────────────────────────────── */
+.col-table { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 8px; overflow: hidden; }
 
+.col-header {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 9rem;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  background: var(--surface-ground);
+  border-bottom: 1px solid var(--surface-border);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-color-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  gap: 0.5rem;
+}
+
+.col-row {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 9rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--surface-border);
+  gap: 0.5rem;
+  background: var(--surface-card);
+  transition: background 0.1s;
+}
+.col-row:last-child { border-bottom: none; }
+.col-row:hover { background: var(--surface-hover); }
+
+.col-expand { display: flex; justify-content: center; }
+.col-name-cell { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.col-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-desc { font-size: 0.76rem; color: var(--text-color-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-count { display: flex; }
+.col-lastrun, .col-duration, .col-success { display: flex; align-items: center; }
+.col-actions { display: flex; align-items: center; gap: 0.2rem; justify-content: flex-end; }
+
+.meta-text { font-size: 0.78rem; color: var(--text-color-secondary); }
+.meta-muted { font-size: 0.78rem; color: var(--text-color-secondary); opacity: 0.5; }
+
+/* Header cell labels */
+.col-h-expand, .col-h-name, .col-h-count, .col-h-lastrun,
+.col-h-duration, .col-h-success, .col-h-actions { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-h-actions { text-align: right; }
+
+/* ── Expand panel ─────────────────────────────────────────────── */
+.col-expand-panel {
+  padding: 0.5rem 0.75rem 0.5rem 3rem;
+  background: var(--surface-ground);
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.ep-run-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.78rem;
+}
+.ep-via-tag { font-size: 0.72rem; }
+
+.ep-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.ep-table th { text-align: left; padding: 0.3rem 0.5rem; color: var(--text-color-secondary); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; border-bottom: 1px solid var(--surface-border); }
+.ep-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--surface-border); }
+.ep-table tr:last-child td { border-bottom: none; }
+.ep-name { font-weight: 500; }
+.ep-latency { color: var(--text-color-secondary); }
+
+/* ── Empty state ──────────────────────────────────────────────── */
 .empty-state { text-align: center; padding: 2rem; color: var(--text-color-secondary); }
 .empty-icon { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
 
-.run-panel { overflow-y: auto; border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.75rem; background: var(--surface-card); }
-.run-panel__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
-.run-title { font-weight: 700; font-size: 1rem; }
-.run-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-color-secondary); }
-.placeholder-icon { font-size: 2rem; margin-bottom: 0.5rem; }
-.no-result { text-align: center; padding: 2rem; color: var(--text-color-secondary); }
-
-.run-summary { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
-.run-time { font-size: 0.78rem; color: var(--text-color-secondary); }
+/* ── Run result dialog ────────────────────────────────────────── */
+.run-result { display: flex; flex-direction: column; gap: 0.75rem; }
+.run-summary { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .result-table { font-size: 0.82rem; }
 .change-badge { border-radius: 4px; padding: 0.1rem 0.3rem; font-size: 0.72rem; font-weight: 700; margin-right: 0.15rem; }
 .change-badge.removed { background: #fee2e2; color: #991b1b; }
 .change-badge.added { background: #dcfce7; color: #166534; }
 .change-badge.changed { background: #fef9c3; color: #854d0e; }
-.text-muted { color: var(--text-color-secondary); }
 
-/* Form dialog */
+/* ── Form dialog ──────────────────────────────────────────────── */
 .form-grid { display: flex; flex-direction: column; gap: 0.6rem; }
 .form-row { display: flex; flex-direction: column; gap: 0.2rem; }
 .form-row label { font-size: 0.8rem; font-weight: 600; color: var(--text-color-secondary); }

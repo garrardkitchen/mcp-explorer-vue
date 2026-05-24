@@ -95,7 +95,8 @@ public sealed class HttpInvokeCommand : AsyncCommand<HttpInvokeCommand.Settings>
             StatusCode   = result.StatusCode,
             LatencyMs    = result.LatencyMs,
             SchemaHash   = _schema.ComputeSchemaHash(schema),
-            ErrorMessage = result.ErrorMessage
+            ErrorMessage = result.ErrorMessage,
+            InvokedVia   = Core.Domain.HttpApi.HttpApiInvocationSource.Cli
         });
 
         return result.IsSuccess ? 0 : 1;

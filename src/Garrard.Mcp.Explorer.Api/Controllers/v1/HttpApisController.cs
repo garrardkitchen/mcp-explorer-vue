@@ -155,7 +155,8 @@ public sealed class HttpApisController(
             RequestQueryParams = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
             ResponseHeaders    = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
             ContentType        = result.ContentType,
-            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody)
+            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody),
+            InvokedVia         = HttpApiInvocationSource.App
         }, ct);
 
         // Update lastInvokedAt and lastStatusCode
@@ -220,7 +221,8 @@ public sealed class HttpApisController(
             RequestQueryParams = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
             ResponseHeaders    = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
             ContentType        = result.ContentType,
-            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody)
+            Body               = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody),
+            InvokedVia         = HttpApiInvocationSource.App
         }, ct);
 
         return Ok(snapshot);
@@ -274,7 +276,8 @@ public sealed class HttpApisController(
             RequestQueryParams    = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
             ResponseHeaders       = HttpApiInvocationSanitizer.SanitizeHeaders(result.ResponseHeaders),
             ContentType           = result.ContentType,
-            Body                  = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody)
+            Body                  = HttpApiInvocationSanitizer.SanitizeBody(result.TruncatedBody),
+            InvokedVia            = HttpApiInvocationSource.App
         }, ct);
 
         return Ok(new

@@ -466,6 +466,21 @@ export interface HttpApiCollection {
   createdAt: string
   lastUpdatedAt?: string | null
   lastRunAt?: string | null
+  lastRunDurationMs?: number | null
+  lastRunSuccessCount?: number | null
+  lastRunTotalCount?: number | null
+  lastRunId?: string | null
+  lastRunEndpointSummaries?: HttpApiCollectionEndpointRunSummary[] | null
+  lastRunInvokedVia?: string | null
+}
+
+export interface HttpApiCollectionEndpointRunSummary {
+  endpointId: string
+  endpointName: string
+  statusCode: number
+  latencyMs: number
+  isSuccess: boolean
+  skipped: boolean
 }
 
 export interface HttpApiGroup {
@@ -508,6 +523,7 @@ export interface HttpApiInvocationRecord {
   responseHeaders?: Record<string, string>
   contentType?: string | null
   body?: string | null
+  invokedVia?: string | null
 }
 
 export interface SchemaPropertyChange {
@@ -567,6 +583,11 @@ export interface HttpApiCollectionRunResult {
   runId: string
   collectionId: string
   ranAt: string
+  durationMs: number
+  successCount: number
+  totalCount: number
+  invokedVia: string
+  endpointSummaries: HttpApiCollectionEndpointRunSummary[]
   results: HttpApiCollectionRunItem[]
 }
 

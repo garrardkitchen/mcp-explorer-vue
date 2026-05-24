@@ -95,8 +95,14 @@ public sealed class HttpApiCollectionsController(
         var collection = await store.GetCollectionAsync(id, ct);
         if (collection is null) return NotFound();
 
-        var runId   = Guid.NewGuid().ToString();
-        var results = new List<object>();
+        var runId     = Guid.NewGuid().ToString();
+        var results   = new List<object>();
+        var summaries = new List<HttpApiCollectionEndpointRunSummary>();
+        var startedAt = DateTime.UtcNow;
+        var sw        = System.Diagnostics.Stopwatch.StartNew();
+
+        int successCount = 0;
+        int totalCount   = 0;
 
         foreach (var endpointId in collection.EndpointIds)
         {
@@ -104,6 +110,12 @@ public sealed class HttpApiCollectionsController(
             if (def is null)
             {
                 results.Add(new { endpointId, error = "Definition not found", skipped = true });
+                summaries.Add(new HttpApiCollectionEndpointRunSummary
+                {
+                    EndpointId   = endpointId,
+                    EndpointName = endpointId,
+                    Skipped      = true
+                });
                 continue;
             }
 
@@ -128,6 +140,20 @@ public sealed class HttpApiCollectionsController(
             if (baseline is not null)
                 comparison = schemaComparison.Compare(def, baseline, invokeResult.StatusCode, invokeResult.LatencyMs, schema);
 
+            var isCountedSuccess = invokeResult.IsSuccess && comparison?.IsBreaking != true;
+            totalCount++;
+            if (isCountedSuccess) successCount++;
+
+            summaries.Add(new HttpApiCollectionEndpointRunSummary
+            {
+                EndpointId   = def.Id,
+                EndpointName = def.Name,
+                StatusCode   = invokeResult.StatusCode,
+                LatencyMs    = invokeResult.LatencyMs,
+                IsSuccess    = isCountedSuccess,
+                Skipped      = false
+            });
+
             await snapshotStore.AppendInvocationAsync(new HttpApiInvocationRecord
             {
                 EndpointId            = def.Id,
@@ -145,7 +171,8 @@ public sealed class HttpApiCollectionsController(
                 RequestQueryParams    = HttpApiInvocationSanitizer.SanitizeQueryParams(ToSnapshotDictionary(resolved.QueryParams.Where(q => q.Enabled).Select(q => (q.Name, q.Value)))),
                 ResponseHeaders       = HttpApiInvocationSanitizer.SanitizeHeaders(invokeResult.ResponseHeaders),
                 ContentType           = invokeResult.ContentType,
-                Body                  = HttpApiInvocationSanitizer.SanitizeBody(invokeResult.TruncatedBody)
+                Body                  = HttpApiInvocationSanitizer.SanitizeBody(invokeResult.TruncatedBody),
+                InvokedVia            = HttpApiInvocationSource.App
             }, ct);
 
             results.Add(new
@@ -161,11 +188,24 @@ public sealed class HttpApiCollectionsController(
             });
         }
 
-        // Update lastRunAt
-        collection.LastRunAt = DateTime.UtcNow;
-        await store.SaveCollectionAsync(collection, ct);
+        sw.Stop();
+        var durationMs = sw.ElapsedMilliseconds;
+        var ranAt      = startedAt;
 
-        return Ok(new { runId, collectionId = id, ranAt = DateTime.UtcNow, results });
+        await store.PatchCollectionRunStatsAsync(id, ranAt, durationMs, successCount, totalCount, runId, HttpApiInvocationSource.App, summaries, ct);
+
+        return Ok(new
+        {
+            runId,
+            collectionId      = id,
+            ranAt,
+            durationMs,
+            successCount,
+            totalCount,
+            invokedVia        = HttpApiInvocationSource.App,
+            endpointSummaries = summaries,
+            results
+        });
     }
 
     private static Dictionary<string, string> ToSnapshotDictionary(IEnumerable<(string Name, string Value)> items)

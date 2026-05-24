@@ -171,6 +171,52 @@ public sealed class HttpApiStore : IHttpApiStore
         }
     }
 
+    public async Task PatchCollectionRunStatsAsync(
+        string id,
+        DateTime lastRunAt,
+        long durationMs,
+        int successCount,
+        int totalCount,
+        string runId,
+        string invokedVia,
+        List<HttpApiCollectionEndpointRunSummary> endpointSummaries,
+        CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var data = await LoadUnlockedAsync(ct).ConfigureAwait(false);
+            var updated = data.Collections.Select(c =>
+            {
+                if (!string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)) return c;
+                // Create a new instance to avoid mutating the shared object (thread safety)
+                // LastUpdatedAt is intentionally not touched — this is a run-stats patch only
+                return new HttpApiCollection
+                {
+                    Id                       = c.Id,
+                    Name                     = c.Name,
+                    Description              = c.Description,
+                    EndpointIds              = c.EndpointIds,
+                    GroupName                = c.GroupName,
+                    CreatedAt                = c.CreatedAt,
+                    LastUpdatedAt            = c.LastUpdatedAt,
+                    LastRunAt                = lastRunAt,
+                    LastRunDurationMs        = durationMs,
+                    LastRunSuccessCount      = successCount,
+                    LastRunTotalCount        = totalCount,
+                    LastRunId                = runId,
+                    LastRunInvokedVia        = invokedVia,
+                    LastRunEndpointSummaries = endpointSummaries
+                };
+            }).ToList();
+            await SaveUnlockedAsync(data with { Collections = updated }, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     // ── Groups ───────────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<HttpApiGroup>> GetAllGroupsAsync(CancellationToken ct = default)

@@ -19,6 +19,19 @@ public interface IHttpApiStore
     Task<HttpApiCollection?> GetCollectionAsync(string id, CancellationToken ct = default);
     Task<HttpApiCollection> SaveCollectionAsync(HttpApiCollection collection, CancellationToken ct = default);
     Task DeleteCollectionAsync(string id, CancellationToken ct = default);
+    /// <summary>
+    /// Updates only run-related stats on an existing collection without touching <c>LastUpdatedAt</c>.
+    /// </summary>
+    Task PatchCollectionRunStatsAsync(
+        string id,
+        DateTime lastRunAt,
+        long durationMs,
+        int successCount,
+        int totalCount,
+        string runId,
+        string invokedVia,
+        List<HttpApiCollectionEndpointRunSummary> endpointSummaries,
+        CancellationToken ct = default);
 
     // ── Groups ───────────────────────────────────────────────────────────────
     Task<IReadOnlyList<HttpApiGroup>> GetAllGroupsAsync(CancellationToken ct = default);
