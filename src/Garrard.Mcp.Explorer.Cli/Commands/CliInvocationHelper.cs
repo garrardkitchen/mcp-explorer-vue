@@ -21,11 +21,14 @@ internal static class CliInvocationHelper
         record.RequestBaseUrl     = resolved.BaseUrl;
         record.RequestPath        = resolved.Path;
         record.RequestHeaders     = resolved.Headers
-            .ToDictionary(h => h.Name, h => h.Value, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(h => h.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Last().Value, StringComparer.OrdinalIgnoreCase);
         record.RequestQueryParams = resolved.QueryParams
             .Where(q => q.Enabled)
-            .ToDictionary(q => q.Name, q => q.Value, StringComparer.OrdinalIgnoreCase);
-        record.ResponseHeaders    = result.ResponseHeaders;
+            .GroupBy(q => q.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Last().Value, StringComparer.OrdinalIgnoreCase);
+        record.ResponseHeaders    = result.ResponseHeaders
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
         record.ContentType        = result.ContentType;
         record.Body               = result.TruncatedBody;
     }
