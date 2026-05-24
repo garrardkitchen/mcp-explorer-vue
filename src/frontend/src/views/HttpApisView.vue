@@ -708,10 +708,9 @@ function groupColor(name: string | null | undefined): string {
 }
 
 function cliInvokeCommand(def: HttpApiDefinition): string {
-  const parts: string[] = ['mcp-http']
-  if (dataPath.value) parts.push(`--data-path "${dataPath.value}"`)
-  parts.push(`http api invoke --name "${def.name.replace(/"/g, '\\"')}"`)
+  const parts: string[] = ['mcp-http', `http api invoke --name "${def.name.replace(/"/g, '\\"')}"`]
   if (def.baseUrl?.includes('host.docker.internal')) parts.push('--use-localhost')
+  if (dataPath.value) parts.push(`--data-path "${dataPath.value}"`)
   return parts.join(' ')
 }
 
@@ -860,7 +859,7 @@ onMounted(async () => {
           <template #body="{ data }">
             <div class="row-actions">
               <Button
-                :icon="copiedCliId === data.id ? 'pi pi-check' : 'pi pi-terminal'"
+                :icon="copiedCliId === data.id ? 'pi pi-check' : 'pi pi-clipboard'"
                 text rounded size="small"
                 v-tooltip.top="'Copy CLI command'"
                 @click="copyCliCommand(data)"
@@ -962,7 +961,7 @@ onMounted(async () => {
             </div>
             <div class="col-actions">
               <Button
-                :icon="copiedCliId === def.id ? 'pi pi-check' : 'pi pi-terminal'"
+                :icon="copiedCliId === def.id ? 'pi pi-check' : 'pi pi-clipboard'"
                 text rounded size="small"
                 v-tooltip.top="'Copy CLI command'"
                 @click="copyCliCommand(def)"
@@ -1134,6 +1133,16 @@ onMounted(async () => {
                   <Column field="errorMessage" header="Error">
                     <template #body="{ data }">
                       <span v-if="data.errorMessage" class="error-text" v-tooltip.top="data.errorMessage">⚠️</span>
+                    </template>
+                  </Column>
+                  <Column field="invokedVia" header="Source">
+                    <template #body="{ data }">
+                      <Tag
+                        v-if="data.invokedVia"
+                        :value="data.invokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'"
+                        :severity="data.invokedVia === 'CLI' ? 'secondary' : 'info'"
+                      />
+                      <span v-else class="text-muted">—</span>
                     </template>
                   </Column>
                   <template #expansion="{ data }">

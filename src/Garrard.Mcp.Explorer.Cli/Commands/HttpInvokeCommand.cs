@@ -88,7 +88,7 @@ public sealed class HttpInvokeCommand : AsyncCommand<HttpInvokeCommand.Settings>
         }
 
         // ── Invocation record ──────────────────────────────────────────────────
-        await _snapshots.AppendInvocationAsync(new Core.Domain.HttpApi.HttpApiInvocationRecord
+        var record = new Core.Domain.HttpApi.HttpApiInvocationRecord
         {
             EndpointId   = def.Id,
             EndpointName = def.Name,
@@ -97,7 +97,9 @@ public sealed class HttpInvokeCommand : AsyncCommand<HttpInvokeCommand.Settings>
             SchemaHash   = _schema.ComputeSchemaHash(schema),
             ErrorMessage = result.ErrorMessage,
             InvokedVia   = Core.Domain.HttpApi.HttpApiInvocationSource.Cli
-        });
+        };
+        CliInvocationHelper.ApplyRequestResponse(record, def, result);
+        await _snapshots.AppendInvocationAsync(record);
 
         return result.IsSuccess ? 0 : 1;
     }

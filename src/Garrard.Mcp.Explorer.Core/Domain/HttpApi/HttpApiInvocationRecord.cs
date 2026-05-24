@@ -22,9 +22,9 @@ public sealed class HttpApiInvocationRecord
     public string RequestMethod { get; set; } = string.Empty;
     public string RequestBaseUrl { get; set; } = string.Empty;
     public string RequestPath { get; set; } = string.Empty;
-    public Dictionary<string, string> RequestHeaders { get; init; } = [];
-    public Dictionary<string, string> RequestQueryParams { get; init; } = [];
-    public Dictionary<string, string> ResponseHeaders { get; init; } = [];
+    public Dictionary<string, string> RequestHeaders { get; set; } = [];
+    public Dictionary<string, string> RequestQueryParams { get; set; } = [];
+    public Dictionary<string, string> ResponseHeaders { get; set; } = [];
     public string? ContentType { get; set; }
     public string? Body { get; set; }
     /// <summary>Whether the invocation was triggered via the web app or CLI. See <see cref="HttpApiInvocationSource"/>.</summary>

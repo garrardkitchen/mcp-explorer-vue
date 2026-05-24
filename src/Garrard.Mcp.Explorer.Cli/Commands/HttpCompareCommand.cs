@@ -68,7 +68,7 @@ public sealed class HttpCompareCommand : AsyncCommand<HttpCompareCommand.Setting
         var schema     = _schemaInference.InferSchema(result.Body);
         var comparison = _schemaComparison.Compare(def, baseline, result.StatusCode, result.LatencyMs, schema, settings.DegradationMultiplier);
 
-        await _snapshots.AppendInvocationAsync(new HttpApiInvocationRecord
+        var invRecord = new HttpApiInvocationRecord
         {
             EndpointId            = def.Id,
             EndpointName          = def.Name,
@@ -77,7 +77,9 @@ public sealed class HttpCompareCommand : AsyncCommand<HttpCompareCommand.Setting
             SchemaHash            = _schemaInference.ComputeSchemaHash(schema),
             SchemaMatchedSnapshot = !comparison.IsBreaking,
             InvokedVia            = HttpApiInvocationSource.Cli
-        });
+        };
+        CliInvocationHelper.ApplyRequestResponse(invRecord, def, result);
+        await _snapshots.AppendInvocationAsync(invRecord);
 
         // ── Print result ───────────────────────────────────────────────────────
         var statusLine = comparison.IsBreaking

@@ -37,3 +37,6 @@ docker-data/
 # User-specific preferences store (if placed in repo root during dev)
 *.json.bak
 McpExplorer/
+
+
+wwwroot/assets/

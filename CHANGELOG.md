@@ -3,6 +3,16 @@
 ## [Unreleased] - 2026-05-24
 
 ### Added
+- **InvokedVia "Source" column in API invocation history**: The per-endpoint history table now shows a "Source" badge (⌨ CLI / 🖥 App) for each invocation entry.
+- **CLI invocations now store full request/response fields**: `http api invoke`, `http compare`, and `http collection run` now populate `RequestMethod`, `RequestBaseUrl`, `RequestPath`, `RequestHeaders`, `RequestQueryParams`, `ResponseHeaders`, `ContentType`, and `Body` in the history record (previously these were blank for CLI-triggered runs).
+
+### Security
+- **Pinned `Microsoft.Kiota.Abstractions` to 1.22.2**: Resolves high-severity GHSA-7j59-v9qr-6fq9 (cross-host redirect leaks Cookie/Proxy-Authorization headers). Transitive dependency via `Microsoft.Graph`; also upgraded `Microsoft.Graph` from 5.77.0 to 5.79.0.
+
+### Fixed
+- **CLI `--data-path` now uses host path when running in Docker**: `GET /api/v1/system/info` now checks `HOST_DATA_PATH` env var first. Both `run.sh` and `docker-compose.yml` inject this as the host-side data directory (`MCP_DATA_PATH` / `$dataRoot`), so copied CLI commands contain the correct host path rather than the container-internal `/data`.
+
+### Added
 - **CLI copy button in both views**: The 🖥 terminal icon "Copy CLI command" button now appears in both the Connections view and the Invoke view (previously only in Connections mode).
 - **`--data-path` in copied CLI command**: The copied `mcp-http` command now includes `--data-path "<path>"` sourced from the backend's active data directory, so the CLI runs against the same data as the app.
 - **`--use-localhost` in copied CLI command**: When the API's base URL contains `host.docker.internal`, `--use-localhost` is automatically appended to the copied command.

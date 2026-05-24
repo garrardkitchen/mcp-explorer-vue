@@ -12,6 +12,7 @@ import ConfirmDialog from 'primevue/confirmdialog'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import { httpApisApi } from '@/api/httpApis'
+import { systemApi } from '@/api/system'
 import { useHttpApisStore } from '@/stores/httpApis'
 import type { HttpApiCollection, HttpApiCollectionRunResult, HttpApiCollectionRunItem } from '@/api/types'
 
@@ -28,6 +29,27 @@ const expandedIds = ref<Set<string>>(new Set())
 function toggleExpand(id: string) {
   if (expandedIds.value.has(id)) expandedIds.value.delete(id)
   else expandedIds.value.add(id)
+}
+
+// ── CLI copy ──────────────────────────────────────────────────────────────────
+const copiedCliId = ref<string | null>(null)
+const dataPath = ref<string | null>(null)
+
+function cliRunCommand(c: HttpApiCollection): string {
+  const parts: string[] = ['mcp-http', `http collection run --name "${c.name.replace(/"/g, '\\"')}"`]
+  if (dataPath.value) parts.push(`--data-path "${dataPath.value}"`)
+  return parts.join(' ')
+}
+
+async function copyCliCommand(c: HttpApiCollection) {
+  try {
+    await navigator.clipboard.writeText(cliRunCommand(c))
+    copiedCliId.value = c.id
+    setTimeout(() => { if (copiedCliId.value === c.id) copiedCliId.value = null }, 2000)
+    toast.add({ severity: 'info', summary: 'CLI command copied', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Copy failed — clipboard unavailable', life: 3000 })
+  }
 }
 
 // ── Form dialog ───────────────────────────────────────────────────────────────
@@ -281,7 +303,9 @@ onMounted(async () => {
   try {
     ;[collections.value] = await Promise.all([
       httpApisApi.getCollections(),
-      store.definitions.length === 0 ? store.loadAll() : Promise.resolve()
+      store.definitions.length === 0 ? store.loadAll() : Promise.resolve(),
+      systemApi.getInfo().catch(() => ({ apiVersion: '', dotnetVersion: '', dataPath: null }))
+        .then(info => { dataPath.value = info.dataPath ?? null }),
     ])
   } finally { loading.value = false }
 })
@@ -360,6 +384,12 @@ onMounted(async () => {
           <div class="col-actions">
             <Button icon="pi pi-pencil" text rounded size="small" title="Edit" @click="openEdit(c)" />
             <Button icon="pi pi-trash" text rounded size="small" severity="danger" title="Delete" @click="confirmDelete(c)" />
+            <Button
+              :icon="copiedCliId === c.id ? 'pi pi-check' : 'pi pi-clipboard'"
+              text rounded size="small"
+              title="Copy CLI command"
+              @click="copyCliCommand(c)"
+            />
             <Button
               icon="pi pi-play"
               size="small"

@@ -125,7 +125,7 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                         Skipped      = false
                     });
 
-                    await _snapshots.AppendInvocationAsync(new HttpApiInvocationRecord
+                    var invRecord = new HttpApiInvocationRecord
                     {
                         EndpointId            = def.Id,
                         EndpointName          = def.Name,
@@ -136,7 +136,9 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
                         CollectionRunId       = runId,
                         ErrorMessage          = result.ErrorMessage,
                         InvokedVia            = HttpApiInvocationSource.Cli
-                    });
+                    };
+                    CliInvocationHelper.ApplyRequestResponse(invRecord, def, result);
+                    await _snapshots.AppendInvocationAsync(invRecord);
 
                     var statusColor = result.IsSuccess ? "green" : "red";
                     var resultLabel = comparison is null ? "[dim]No baseline[/]"
