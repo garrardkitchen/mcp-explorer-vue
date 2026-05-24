@@ -79,6 +79,8 @@ public sealed class HttpApiCollectionsController(
     public async Task<IActionResult> Delete(string id, CancellationToken ct)
     {
         await store.DeleteCollectionAsync(id, ct);
+        // Best-effort cleanup of run history
+        try { await snapshotStore.DeleteCollectionRunHistoryAsync(id, ct); } catch { /* non-critical */ }
         return NoContent();
     }
 
@@ -194,6 +196,28 @@ public sealed class HttpApiCollectionsController(
 
         await store.PatchCollectionRunStatsAsync(id, ranAt, durationMs, successCount, totalCount, runId, HttpApiInvocationSource.App, summaries, ct);
 
+        // Best-effort: append to collection run history (don't fail the run if this throws)
+        try
+        {
+            await snapshotStore.AppendCollectionRunAsync(new HttpApiCollectionRunRecord
+            {
+                RunId            = runId,
+                CollectionId     = id,
+                CollectionName   = collection.Name,
+                RanAt            = ranAt,
+                DurationMs       = durationMs,
+                SuccessCount     = successCount,
+                TotalCount       = totalCount,
+                InvokedVia       = HttpApiInvocationSource.App,
+                EndpointSummaries = summaries
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            // Log but swallow — history is non-critical
+            _ = ex;
+        }
+
         return Ok(new
         {
             runId,
@@ -206,6 +230,13 @@ public sealed class HttpApiCollectionsController(
             endpointSummaries = summaries,
             results
         });
+    }
+
+    [HttpGet("{id}/run-history")]
+    public async Task<IActionResult> GetRunHistory(string id, [FromQuery] int limit = 50, CancellationToken ct = default)
+    {
+        var history = await snapshotStore.GetCollectionRunHistoryAsync(id, limit, ct);
+        return Ok(history);
     }
 
     private static Dictionary<string, string> ToSnapshotDictionary(IEnumerable<(string Name, string Value)> items)

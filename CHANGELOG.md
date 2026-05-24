@@ -3,6 +3,7 @@
 ## [Unreleased] - 2026-05-24
 
 ### Added
+- **Collection run history**: Every collection run (via app or CLI) is now persisted to `HttpApiCollections/{collectionId}/history.jsonl`. Expanding a collection row shows a "Run History" table — When / Duration / Passed / Failed / Source — lazy-loaded on first expand and invalidated after each new run.
 - **InvokedVia "Source" column in API invocation history**: The per-endpoint history table now shows a "Source" badge (⌨ CLI / 🖥 App) for each invocation entry.
 - **CLI invocations now store full request/response fields**: `http api invoke`, `http compare`, and `http collection run` now populate `RequestMethod`, `RequestBaseUrl`, `RequestPath`, `RequestHeaders`, `RequestQueryParams`, `ResponseHeaders`, `ContentType`, and `Body` in the history record (previously these were blank for CLI-triggered runs).
 

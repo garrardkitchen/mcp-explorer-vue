@@ -10,6 +10,7 @@ import type {
   HttpApiCompareResponse,
   HttpApiExportPayload,
   HttpApiCollectionRunResult,
+  HttpApiCollectionRunRecord,
 } from './types'
 
 export const httpApisApi = {
@@ -119,5 +120,11 @@ export const httpApisApi = {
     apiClient.post<HttpApiCollectionRunResult>(
       `/http-api-collections/${encodeURIComponent(id)}/run`,
       inputs && Object.keys(inputs).length > 0 ? { inputs } : {}
+    ).then(r => r.data),
+
+  getCollectionRunHistory: (id: string, limit = 50) =>
+    apiClient.get<HttpApiCollectionRunRecord[]>(
+      `/http-api-collections/${encodeURIComponent(id)}/run-history`,
+      { params: { limit } }
     ).then(r => r.data),
 }

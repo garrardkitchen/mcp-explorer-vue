@@ -177,6 +177,27 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
             HttpApiInvocationSource.Cli,
             summaries);
 
+        // Best-effort: append to collection run history
+        try
+        {
+            await _snapshots.AppendCollectionRunAsync(new Core.Domain.HttpApi.HttpApiCollectionRunRecord
+            {
+                RunId             = runId,
+                CollectionId      = collection.Id,
+                CollectionName    = collection.Name,
+                RanAt             = startedAt,
+                DurationMs        = sw.ElapsedMilliseconds,
+                SuccessCount      = successCount,
+                TotalCount        = totalCount,
+                InvokedVia        = HttpApiInvocationSource.Cli,
+                EndpointSummaries = summaries
+            });
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Warning: failed to save collection run history: {Markup.Escape(ex.Message)}[/]");
+        }
+
         AnsiConsole.Write(resultTable);
         AnsiConsole.MarkupLine($"[bold]Summary:[/] [green]{successCount} passed[/]  [red]{totalCount - successCount} failed[/]  [yellow]{degradeCount} degraded[/]  [dim]{sw.ElapsedMilliseconds} ms[/]");
 

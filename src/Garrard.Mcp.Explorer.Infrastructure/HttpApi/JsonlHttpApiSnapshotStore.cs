@@ -16,6 +16,7 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
 {
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
     private readonly string _baseDir;
+    private readonly string _collectionsDir;
     private readonly int _historyRetention;
     private readonly ILogger<JsonlHttpApiSnapshotStore> _logger;
 
@@ -35,7 +36,8 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
                 "McpExplorer")
             : Path.GetDirectoryName(customPath)!;
 
-        _baseDir = Path.Combine(root, "HttpApis");
+        _baseDir        = Path.Combine(root, "HttpApis");
+        _collectionsDir = Path.Combine(root, "HttpApiCollections");
     }
 
     // ── Snapshots ─────────────────────────────────────────────────────────────
@@ -129,6 +131,44 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
     }
 
 
+
+    // ── Collection run history ────────────────────────────────────────────────
+
+    public async Task AppendCollectionRunAsync(HttpApiCollectionRunRecord record, CancellationToken ct = default)
+    {
+        var path = GetCollectionRunHistoryPath(record.CollectionId);
+        Directory.CreateDirectory(GetCollectionRunDir(record.CollectionId));
+        var line = JsonSerializer.Serialize(record, _json);
+        await File.AppendAllTextAsync(path, line + Environment.NewLine, Encoding.UTF8, ct).ConfigureAwait(false);
+        await TrimIfNeededAsync<HttpApiCollectionRunRecord>(path, _historyRetention, ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<HttpApiCollectionRunRecord>> GetCollectionRunHistoryAsync(
+        string collectionId, int? limit = null, CancellationToken ct = default)
+    {
+        var path = GetCollectionRunHistoryPath(collectionId);
+        var all = limit.HasValue
+            ? await ReadJsonlTailAsync<HttpApiCollectionRunRecord>(path, limit.Value, ct).ConfigureAwait(false)
+            : await ReadJsonlAsync<HttpApiCollectionRunRecord>(path, ct).ConfigureAwait(false);
+        return all.OrderByDescending(r => r.RanAt).ToList();
+    }
+
+    public Task DeleteCollectionRunHistoryAsync(string collectionId, CancellationToken ct = default)
+    {
+        var dir = GetCollectionRunDir(collectionId);
+        if (Directory.Exists(dir))
+        {
+            try { Directory.Delete(dir, recursive: true); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete collection run history for {CollectionId}", collectionId); }
+        }
+        return Task.CompletedTask;
+    }
+
+    private string GetCollectionRunDir(string collectionId)
+        => Path.Combine(_collectionsDir, Sanitize(collectionId));
+
+    private string GetCollectionRunHistoryPath(string collectionId)
+        => Path.Combine(GetCollectionRunDir(collectionId), "history.jsonl");
 
     private string GetEndpointDir(string endpointId)
         => Path.Combine(_baseDir, Sanitize(endpointId));

@@ -14,7 +14,7 @@ import Column from 'primevue/column'
 import { httpApisApi } from '@/api/httpApis'
 import { systemApi } from '@/api/system'
 import { useHttpApisStore } from '@/stores/httpApis'
-import type { HttpApiCollection, HttpApiCollectionRunResult, HttpApiCollectionRunItem } from '@/api/types'
+import type { HttpApiCollection, HttpApiCollectionRunResult, HttpApiCollectionRunItem, HttpApiCollectionRunRecord } from '@/api/types'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -26,9 +26,26 @@ const searchQuery = ref('')
 
 // ── Expand state ──────────────────────────────────────────────────────────────
 const expandedIds = ref<Set<string>>(new Set())
-function toggleExpand(id: string) {
-  if (expandedIds.value.has(id)) expandedIds.value.delete(id)
-  else expandedIds.value.add(id)
+const runHistory = ref<Map<string, HttpApiCollectionRunRecord[]>>(new Map())
+const runHistoryLoading = ref<Set<string>>(new Set())
+
+async function toggleExpand(id: string) {
+  if (expandedIds.value.has(id)) {
+    expandedIds.value.delete(id)
+  } else {
+    expandedIds.value.add(id)
+    if (!runHistory.value.has(id)) {
+      runHistoryLoading.value.add(id)
+      try {
+        const history = await httpApisApi.getCollectionRunHistory(id)
+        runHistory.value.set(id, history)
+      } catch {
+        runHistory.value.set(id, [])
+      } finally {
+        runHistoryLoading.value.delete(id)
+      }
+    }
+  }
 }
 
 // ── CLI copy ──────────────────────────────────────────────────────────────────
@@ -267,6 +284,8 @@ async function doRun(c: HttpApiCollection, inputs?: Record<string, string>) {
     activeRunCollection.value = idx >= 0 ? collections.value[idx] : c
     showRunResultDialog.value = true
     toast.add({ severity: 'success', summary: 'Collection run complete', life: 3000 })
+    // Invalidate cached run history so next expand fetches fresh data
+    runHistory.value.delete(c.id)
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Run failed', detail: e.message, life: 5000 })
   } finally {
@@ -355,7 +374,7 @@ onMounted(async () => {
             <Button
               :icon="expandedIds.has(c.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
               text rounded size="small"
-              :disabled="!c.lastRunEndpointSummaries?.length"
+              :disabled="false"
               @click="toggleExpand(c.id)"
             />
           </div>
@@ -402,35 +421,70 @@ onMounted(async () => {
         </div>
 
         <!-- Expanded endpoint details -->
-        <div v-if="expandedIds.has(c.id) && c.lastRunEndpointSummaries?.length" class="col-expand-panel">
-          <div class="ep-run-meta">
-            <span class="meta-text">Last run: {{ c.lastRunAt ? new Date(c.lastRunAt).toLocaleString() : '—' }}</span>
-            <Tag
-              v-if="c.lastRunInvokedVia"
-              :value="c.lastRunInvokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'"
-              :severity="c.lastRunInvokedVia === 'CLI' ? 'secondary' : 'info'"
-              class="ep-via-tag"
-            />
+        <div v-if="expandedIds.has(c.id)" class="col-expand-panel">
+          <!-- Last run endpoint summary -->
+          <template v-if="c.lastRunEndpointSummaries?.length">
+            <div class="ep-run-meta">
+              <span class="meta-text">Last run: {{ c.lastRunAt ? new Date(c.lastRunAt).toLocaleString() : '—' }}</span>
+              <Tag
+                v-if="c.lastRunInvokedVia"
+                :value="c.lastRunInvokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'"
+                :severity="c.lastRunInvokedVia === 'CLI' ? 'secondary' : 'info'"
+                class="ep-via-tag"
+              />
+            </div>
+            <table class="ep-table">
+              <thead>
+                <tr>
+                  <th>Endpoint</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="ep in c.lastRunEndpointSummaries" :key="ep.endpointId">
+                  <td class="ep-name">{{ ep.endpointName }}</td>
+                  <td>
+                    <span v-if="ep.skipped" class="meta-muted">Skipped</span>
+                    <Tag v-else :value="`${ep.statusCode}`" :severity="statusSeverity(ep.statusCode)" />
+                  </td>
+                  <td class="ep-latency">{{ ep.skipped ? '—' : `${ep.latencyMs} ms` }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+
+          <!-- Run history -->
+          <div class="run-history-section">
+            <div class="run-history-header">Run History</div>
+            <Skeleton v-if="runHistoryLoading.has(c.id)" height="2.5rem" class="mb-1" />
+            <template v-else-if="runHistory.get(c.id)?.length">
+              <table class="ep-table run-history-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Duration</th>
+                    <th>Passed</th>
+                    <th>Failed</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="run in runHistory.get(c.id)" :key="run.runId">
+                    <td class="ep-name">{{ new Date(run.ranAt).toLocaleString() }}</td>
+                    <td class="ep-latency">{{ formatDuration(run.durationMs) }}</td>
+                    <td><Tag :value="`${run.successCount}`" severity="success" /></td>
+                    <td><Tag v-if="run.totalCount - run.successCount > 0" :value="`${run.totalCount - run.successCount}`" severity="danger" /><span v-else class="meta-muted">0</span></td>
+                    <td>
+                      <Tag v-if="run.invokedVia" :value="run.invokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'" :severity="run.invokedVia === 'CLI' ? 'secondary' : 'info'" />
+                      <span v-else class="meta-muted">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <span v-else class="meta-muted">No history yet</span>
           </div>
-          <table class="ep-table">
-            <thead>
-              <tr>
-                <th>Endpoint</th>
-                <th>Status</th>
-                <th>Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="ep in c.lastRunEndpointSummaries" :key="ep.endpointId">
-                <td class="ep-name">{{ ep.endpointName }}</td>
-                <td>
-                  <span v-if="ep.skipped" class="meta-muted">Skipped</span>
-                  <Tag v-else :value="`${ep.statusCode}`" :severity="statusSeverity(ep.statusCode)" />
-                </td>
-                <td class="ep-latency">{{ ep.skipped ? '—' : `${ep.latencyMs} ms` }}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </template>
     </div>
@@ -619,6 +673,11 @@ onMounted(async () => {
 .ep-table tr:last-child td { border-bottom: none; }
 .ep-name { font-weight: 500; }
 .ep-latency { color: var(--text-color-secondary); }
+
+/* ── Run history section ─────────────────────────────────────── */
+.run-history-section { margin-top: 1rem; }
+.run-history-header { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-color-secondary); margin-bottom: 0.4rem; letter-spacing: 0.04em; }
+.run-history-table .ep-name { font-weight: 400; color: var(--text-color); }
 
 /* ── Empty state ──────────────────────────────────────────────── */
 .empty-state { text-align: center; padding: 2rem; color: var(--text-color-secondary); }

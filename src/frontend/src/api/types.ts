@@ -579,6 +579,18 @@ export interface HttpApiExportPayload {
   data: string
 }
 
+export interface HttpApiCollectionRunRecord {
+  runId: string
+  collectionId: string
+  collectionName: string
+  ranAt: string
+  durationMs: number
+  successCount: number
+  totalCount: number
+  invokedVia?: string | null
+  endpointSummaries: HttpApiCollectionEndpointRunSummary[]
+}
+
 export interface HttpApiCollectionRunResult {
   runId: string
   collectionId: string
