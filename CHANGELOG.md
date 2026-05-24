@@ -3,6 +3,10 @@
 ## [Unreleased] - 2026-05-24
 
 ### Added
+- **CLI copy button in both views**: The 🖥 terminal icon "Copy CLI command" button now appears in both the Connections view and the Invoke view (previously only in Connections mode).
+- **`--data-path` in copied CLI command**: The copied `mcp-http` command now includes `--data-path "<path>"` sourced from the backend's active data directory, so the CLI runs against the same data as the app.
+- **`--use-localhost` in copied CLI command**: When the API's base URL contains `host.docker.internal`, `--use-localhost` is automatically appended to the copied command.
+- **`DataPath` in system info**: `GET /api/v1/system/info` now returns `dataPath` — the backend's active data directory — used by the frontend to construct accurate CLI commands.
 - **Invocation source tracking**: All HTTP API invocations (invoke, compare, bookmark, collection run) now record `invokedVia` — either `"App"` or `"CLI"` — in the invocation history record, enabling users to distinguish which surface triggered each request.
 - **Collections full-width table**: The Collections view is redesigned as a full-width grid table showing collection name (with description below), endpoint count, last run time, duration, and % successful alongside Edit / Delete / Run action buttons.
 - **Collections expand panel**: An expand toggle on the left of each collection row reveals a per-endpoint table showing each endpoint's name, status code, and duration from the most recent run.

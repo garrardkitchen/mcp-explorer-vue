@@ -1,0 +1,5 @@
+import{n as e}from"./_plugin-vue_export-helper-DLCbmiWh.js";var t=``,n={getSessions:()=>e.get(`/chat/sessions`).then(e=>e.data),createSession:()=>e.post(`/chat/sessions`).then(e=>e.data),deleteSession:t=>e.delete(`/chat/sessions/${t}`),getMessages:t=>e.get(`/chat/sessions/${t}/messages`).then(e=>e.data),streamMessage:async function*(e,n,r,i,a,o,s){let c=`${t}/api/v1/chat/sessions/${e}/messages`,l=await fetch(c,{method:`POST`,headers:{"Content-Type":`application/json`,Accept:`text/event-stream`},body:JSON.stringify({message:n,modelName:r,connectionNames:i,promptName:o,promptInvocationParams:s}),signal:a});if(!l.ok)throw Error(`Chat API error: ${l.status}`);if(!l.body)throw Error(`No response body`);let u=l.body.getReader(),d=new TextDecoder,f=``;for(;;){let{done:e,value:t}=await u.read();if(e)break;f+=d.decode(t,{stream:!0});let n=f.split(`
+
+`);f=n.pop()??``;for(let e of n){if(!e.trim())continue;let t=e.split(`
+`),n=`message`,r=``;for(let e of t)e.startsWith(`event: `)?n=e.slice(7).trim():e.startsWith(`data: `)&&(r=e.slice(6));if(r)try{let e=JSON.parse(r);e.type=n,yield e}catch{}}}}};export{n as t};
+//# sourceMappingURL=chat-BS9O885I.js.map

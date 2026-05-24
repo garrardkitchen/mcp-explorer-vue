@@ -26,6 +26,7 @@ import AppRegistrationPicker from '@/components/connections/AppRegistrationPicke
 import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
 import { useHttpApisStore } from '@/stores/httpApis'
 import { httpApisApi } from '@/api/httpApis'
+import { systemApi } from '@/api/system'
 import { apiClient } from '@/api/client'
 import type {
   AzureAccountInfo,
@@ -697,6 +698,34 @@ function schemaToString(schema: Record<string, unknown>): string {
   return JSON.stringify(schema, null, 2)
 }
 
+// ── Connections mode: expand + CLI copy ──────────────────────────────────────
+const connExpandedRows = ref<Record<string, boolean>>({})
+const copiedCliId = ref<string | null>(null)
+const dataPath = ref<string | null>(null)
+
+function groupColor(name: string | null | undefined): string {
+  return store.groups.find(g => g.name === name)?.color ?? 'var(--surface-border)'
+}
+
+function cliInvokeCommand(def: HttpApiDefinition): string {
+  const parts: string[] = ['mcp-http']
+  if (dataPath.value) parts.push(`--data-path "${dataPath.value}"`)
+  parts.push(`http api invoke --name "${def.name.replace(/"/g, '\\"')}"`)
+  if (def.baseUrl?.includes('host.docker.internal')) parts.push('--use-localhost')
+  return parts.join(' ')
+}
+
+async function copyCliCommand(def: HttpApiDefinition) {
+  try {
+    await navigator.clipboard.writeText(cliInvokeCommand(def))
+    copiedCliId.value = def.id
+    setTimeout(() => { if (copiedCliId.value === def.id) copiedCliId.value = null }, 2000)
+    toast.add({ severity: 'info', summary: 'CLI command copied', life: 2000 })
+  } catch {
+    toast.add({ severity: 'error', summary: 'Copy failed — clipboard unavailable', life: 3000 })
+  }
+}
+
 // ── Auth mode helpers ─────────────────────────────────────────────────────────
 const AUTH_SEVERITY: Record<string, string> = {
   None: 'secondary', CustomHeaders: 'secondary',
@@ -719,8 +748,16 @@ function methodSeverity(method: string) {
 // ── Mount ─────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   loading.value = true
-  try { await Promise.all([store.loadAll(), store.loadGroups()]) }
-  finally { loading.value = false }
+  try {
+    const [, , info] = await Promise.all([
+      store.loadAll(),
+      store.loadGroups(),
+      systemApi.getInfo().catch(() => ({ apiVersion: '', dotnetVersion: '', dataPath: null })),
+    ])
+    dataPath.value = info.dataPath ?? null
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 
@@ -762,7 +799,8 @@ onMounted(async () => {
     </div>
 
     <div v-if="isConnectionsMode" class="table-wrap">
-      <DataTable :value="filteredDefs" :loading="loading" stripedRows rowHover scrollable scrollHeight="flex">
+      <DataTable :value="filteredDefs" :loading="loading" stripedRows rowHover scrollable scrollHeight="flex"
+                 v-model:expandedRows="connExpandedRows" dataKey="id">
         <template #empty>
           <div class="empty-state">
             <i class="pi pi-send empty-icon" />
@@ -773,50 +811,101 @@ onMounted(async () => {
         <template #loading>
           <div class="p-4"><Skeleton v-for="i in 4" :key="i" height="40px" class="mb-2" /></div>
         </template>
+
+        <Column expander style="width:2.5rem; padding-left:0.5rem; padding-right:0" />
+
+        <Column field="method" header="Method" sortable style="min-width:100px">
+          <template #body="{ data }">
+            <Tag :value="data.method" :severity="methodSeverity(data.method)" />
+          </template>
+        </Column>
+
         <Column field="name" header="Name" sortable style="min-width:220px">
           <template #body="{ data }">
             <div class="table-name-cell">
               <Button
                 :icon="store.isFavourite(data.id) ? 'pi pi-star-fill' : 'pi pi-star'"
                 :severity="store.isFavourite(data.id) ? 'warning' : 'secondary'"
-                text rounded size="small"
-                class="fav-btn"
+                text rounded size="small" class="fav-btn"
                 @click.stop="store.toggleFavourite(data.id)"
               />
               <span class="def-name">{{ data.name }}</span>
             </div>
           </template>
         </Column>
-        <Column field="method" header="Method" sortable style="min-width:120px">
+
+        <Column header="Endpoint" style="width:220px; max-width:220px; min-width:120px">
           <template #body="{ data }">
-            <Tag :value="data.method" :severity="methodSeverity(data.method)" />
+            <span class="conn-url" :title="`${data.baseUrl}${data.path}`">{{ data.baseUrl }}{{ data.path }}</span>
           </template>
         </Column>
-        <Column header="Endpoint" style="min-width:280px">
-          <template #body="{ data }">
-            <span class="mono">{{ data.baseUrl }}{{ data.path }}</span>
-          </template>
-        </Column>
-        <Column field="authenticationMode" header="Auth" style="min-width:180px">
+
+        <Column field="authenticationMode" header="Auth" style="min-width:160px">
           <template #body="{ data }">
             <Tag :value="data.authenticationMode" :severity="AUTH_SEVERITY[data.authenticationMode] ?? 'secondary'" />
           </template>
         </Column>
-        <Column field="groupName" header="Group" sortable style="min-width:140px">
+
+        <Column field="groupName" header="Group" sortable style="min-width:130px">
           <template #body="{ data }">
-            <span v-if="data.groupName">{{ data.groupName }}</span>
+            <span v-if="data.groupName" class="conn-group-pill"
+                  :style="{ backgroundColor: groupColor(data.groupName) + '22', color: groupColor(data.groupName), border: `1px solid ${groupColor(data.groupName)}55` }">
+              {{ data.groupName }}
+            </span>
             <span v-else class="text-muted">—</span>
           </template>
         </Column>
-        <Column header="Actions" style="min-width:200px;text-align:right">
+
+        <Column header="Actions" style="min-width:200px; text-align:right">
           <template #body="{ data }">
             <div class="row-actions">
+              <Button
+                :icon="copiedCliId === data.id ? 'pi pi-check' : 'pi pi-terminal'"
+                text rounded size="small"
+                v-tooltip.top="'Copy CLI command'"
+                @click="copyCliCommand(data)"
+              />
               <Button icon="pi pi-copy" text rounded size="small" v-tooltip.top="'Duplicate'" @click="copyDef(data)" />
               <Button icon="pi pi-pencil" text rounded size="small" v-tooltip.top="'Edit'" @click="openEdit(data)" />
               <Button icon="pi pi-trash" text rounded size="small" severity="danger" v-tooltip.top="'Delete'" @click="confirmDelete(data)" />
             </div>
           </template>
         </Column>
+
+        <template #expansion="{ data }">
+          <div class="conn-expand-panel">
+            <div class="conn-expand-section">
+              <span class="conn-expand-label">Full URL</span>
+              <span class="conn-expand-mono">{{ data.baseUrl }}{{ data.path }}</span>
+            </div>
+            <div v-if="data.note" class="conn-expand-section">
+              <span class="conn-expand-label">Note</span>
+              <span class="conn-expand-note">{{ data.note }}</span>
+            </div>
+            <div v-if="data.headers?.length" class="conn-expand-section">
+              <span class="conn-expand-label">Headers</span>
+              <table class="conn-mini-table">
+                <tr v-for="h in data.headers" :key="h.name">
+                  <td class="conn-key">{{ h.name }}</td>
+                  <td class="conn-val">{{ h.isAuthorization ? '••••••' : h.value }}</td>
+                </tr>
+              </table>
+            </div>
+            <div v-if="data.queryParams?.filter((q: any) => q.enabled).length" class="conn-expand-section">
+              <span class="conn-expand-label">Params</span>
+              <table class="conn-mini-table">
+                <tr v-for="q in data.queryParams.filter((q: any) => q.enabled)" :key="q.name">
+                  <td class="conn-key">{{ q.name }}</td>
+                  <td class="conn-val">{{ q.value }}</td>
+                </tr>
+              </table>
+            </div>
+            <div class="conn-expand-section">
+              <span class="conn-expand-label">CLI</span>
+              <code class="conn-cli-code">{{ cliInvokeCommand(data) }}</code>
+            </div>
+          </div>
+        </template>
       </DataTable>
     </div>
 
@@ -872,6 +961,12 @@ onMounted(async () => {
               />
             </div>
             <div class="col-actions">
+              <Button
+                :icon="copiedCliId === def.id ? 'pi pi-check' : 'pi pi-terminal'"
+                text rounded size="small"
+                v-tooltip.top="'Copy CLI command'"
+                @click="copyCliCommand(def)"
+              />
               <Button
                 label="Invoke"
                 icon="pi pi-play"
@@ -1405,6 +1500,38 @@ onMounted(async () => {
 
 .table-name-cell { display: flex; align-items: center; gap: 0.35rem; }
 .row-actions { display: flex; justify-content: flex-end; gap: 0.2rem; }
+
+/* ── Connections table: URL, group pill, expand panel ──────────────────── */
+.conn-url {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+  font-size: 0.75rem; color: var(--text-color-secondary); font-family: monospace;
+}
+.conn-group-pill {
+  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+}
+.conn-expand-panel {
+  display: flex; flex-direction: column; gap: 0.45rem;
+  padding: 0.6rem 1rem; background: var(--surface-ground); font-size: 0.82rem;
+}
+.conn-expand-section { display: flex; align-items: flex-start; gap: 0.75rem; }
+.conn-expand-label {
+  min-width: 80px; flex-shrink: 0; font-size: 0.7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-color-secondary); padding-top: 0.15rem;
+}
+.conn-expand-mono { font-family: monospace; font-size: 0.78rem; word-break: break-all; }
+.conn-expand-note { color: var(--text-color-secondary); font-style: italic; }
+.conn-mini-table { border-collapse: collapse; font-size: 0.78rem; }
+.conn-key { font-family: monospace; color: var(--text-color-secondary); padding-right: 0.75rem; white-space: nowrap; vertical-align: top; }
+.conn-val { font-family: monospace; word-break: break-all; vertical-align: top; }
+.conn-cli-code {
+  font-family: monospace; font-size: 0.78rem;
+  background: var(--surface-section, var(--surface-b, var(--surface-ground)));
+  padding: 0.2rem 0.5rem; border-radius: 4px;
+  color: var(--primary-color); border: 1px solid var(--surface-border);
+}
 
 .empty-state { text-align: center; padding: 2rem; color: var(--text-color-secondary); }
 .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
