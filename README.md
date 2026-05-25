@@ -18,7 +18,7 @@ A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, pr
 - 🏢 **Azure Entra App Registrations** — browse and select app registrations from your tenant via Microsoft Graph; auto-populates client ID and tenant fields
 - 🛠️ **Tools** — browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
 - 🌐 **HTTP API Explorer** — manage HTTP API connections under Infrastructure, invoke from HTTP API Explorer with runtime `{placeholder}` inputs (supports defaults via `{name:default}`), inspect tabbed request/response history, and auto-redact sensitive values in persisted history details
-- ⌨️ **CLI (`mcp-http`)** — script HTTP API invoke/compare/history and API definition import/export from terminal automation
+- ⌨️ **CLI (`mcp-http`)** — script HTTP API invoke/compare/history and API definition import/export from terminal automation; list MCP connections offline, and connect to MCP servers to list tools/resources/prompts/templates or invoke tools directly
 - 🚇 **Dev Tunnels** — create public DevTunnels for webhook callbacks, inspect live payloads over SSE, scrub event history, and replay captured requests
 - 💬 **Prompts** — list, execute, and evaluate prompts; pipe results directly to an LLM
 - 📄 **Resources & Templates** — browse MCP resources; expand templates with runtime parameters
@@ -55,6 +55,7 @@ flowchart LR
   Browser["🌐 Browser\nVue 3 · Vite · PrimeVue"] --> Deployment["🐳 Deployment\n(single container or compose)"]
   Deployment --> Backend["🏗️ ASP.NET Core 10\nClean Architecture"]
   CLI["⌨️ .NET CLI\nmcp-http"] --> HTTPAPIs["🌐 External HTTP APIs"]
+  CLI --> MCPServers
   CLI --> Storage
   Backend --> MCPServers["🖥️ MCP Servers"]
   Backend --> HTTPAPIs["🌐 External HTTP APIs"]
@@ -383,7 +384,7 @@ src/
 │   ├── Azure/KeyVaultService.cs         #   Key Vault secret resolution
 │   └── Azure/GraphService.cs            #   Microsoft Graph App Registration browser
 ├── Garrard.Mcp.Explorer.Api/            # ASP.NET Core Web API (versioned MCP + HTTP API Explorer controllers)
-├── Garrard.Mcp.Explorer.Cli/            # .NET CLI (mcp-http) for scripted HTTP API operations
+├── Garrard.Mcp.Explorer.Cli/            # .NET CLI (mcp-http) — HTTP API scripting (invoke/compare/history/export) + MCP connection/tool/resource/prompt/template listing and tool invocation
 ├── Garrard.Mcp.Explorer.Gateway/        # YARP reverse proxy + Vue SPA host
 ├── Garrard.Mcp.MessageContentProtection/# Sensitive data detection library
 └── frontend/                            # Vue 3 + Vite + PrimeVue 4 SPA
@@ -473,9 +474,50 @@ dotnet tool update -g Garrard.Mcp.Explorer.Cli --add-source ./nupkg
 #### Usage
 
 ```bash
-# Show all commands
+# Show all commands and branches
 mcp-http --help
+```
 
+#### MCP commands
+
+These commands operate directly on the MCP connections stored in your settings file.
+
+```bash
+# List all saved MCP connections (offline – no network required)
+mcp-http mcp connections
+
+# List all tools exposed by a named MCP server
+mcp-http mcp tools --name "My Server"
+
+# List all resources
+mcp-http mcp resources --name "My Server"
+
+# List all prompts (required arguments shown in bold)
+mcp-http mcp prompts --name "My Server"
+
+# List all resource templates
+mcp-http mcp templates --name "My Server"
+
+# Invoke a tool – parameters as key=value pairs (auto-typed: numbers, booleans, JSON objects)
+mcp-http mcp invoke --name "My Server" --tool echo --param message=hello
+
+# Invoke a tool – parameters as a JSON object
+mcp-http mcp invoke --name "My Server" --tool search --params '{"query":"dotnet","limit":10}'
+
+# Mix both: --params sets defaults, --param overrides individual keys
+mcp-http mcp invoke --name "My Server" --tool search --params '{"query":"dotnet"}' --param limit=5
+
+# Use a custom data directory
+mcp-http --data-path "/home/user/McpExplorerData" mcp connections
+```
+
+> **Name matching** — `--name` performs an exact match first, then falls back to a single case-insensitive partial match. If multiple connections match the partial name, the CLI lists the candidates and exits without connecting.
+>
+> **OAuth connections** — connections that use OAuth authentication require a running API callback endpoint. A warning is printed; the connect attempt still proceeds.
+
+#### HTTP commands
+
+```bash
 # Invoke by API name
 mcp-http http api invoke --name "My API"
 

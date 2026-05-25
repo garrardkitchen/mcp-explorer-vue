@@ -11,6 +11,7 @@
   - `mcp templates --name <connection>` — connect and list all resource templates.
   - `mcp invoke --name <connection> --tool <tool> [--params '{"k":"v"}'] [--param k=v ...]` — connect and invoke a tool, printing the result. `--param` values are auto-parsed as JSON literals (numbers, booleans, arrays, objects) with fallback to string. `--param` and `--params` can be combined; per-key `--param` wins on conflict.
 - CLI: `McpCommandHelper` shared utility — resolves a connection definition by exact then single-partial match, and warns when a connection uses OAuth (which requires a running API callback endpoint).
+- README: updated CLI section with `mcp` command examples, name-matching and OAuth behaviour notes, and reorganised HTTP commands into a separate subsection.
 
 ## [Unreleased] - 2026-05-25 (patch 9)
 
