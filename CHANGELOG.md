@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 11)
+
+### Added
+- Docs: new Hugo documentation pages for HTTP API Explorer (`/docs/http-api-explorer/`) covering Infrastructure connections, auth modes, invoke list, sparkline trend, template placeholders, tabbed history, and CLI integration.
+- Docs: new Hugo pages for Collections (`/docs/http-api-explorer/collections/`) and CLI reference split across two pages — HTTP API & connections commands, and MCP commands.
+- Docs: updated homepage (`layouts/index.html`) with two new "NEW"-badged feature cards (#13 HTTP API Explorer, #14 CLI) and hero-meta badges; feature count bumped to 14.
+- Docs: updated Connections page with Duplicate action section and Raw/Bearer/Basic auth mode table.
+- Docs: Playwright-generated screenshots for all new features (10 images added to `static/images/screenshots/`).
+
 ## [Unreleased] - 2026-05-25 (patch 10)
 
 ### Added
