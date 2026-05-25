@@ -38,10 +38,12 @@ content/
     ├── getting-started/               # Quick Start + Configuration
     ├── connections/                   # Managing connections
     ├── tools/                         # Browsing & invoking tools
-    ├── prompts/                        # Using prompts
+    ├── prompts/                       # Using prompts
     ├── resources/                     # Browsing resources
+    ├── templates/                     # Resource templates
     ├── chat/                          # Chat overview
     ├── workflows/                     # Building workflows
+    ├── elicitations/                  # Dynamic server-initiated inputs
     ├── models/                        # Configuring models
     ├── settings/                      # App settings & themes
     ├── dev-tunnels/                   # Dev Tunnels webhook ingress

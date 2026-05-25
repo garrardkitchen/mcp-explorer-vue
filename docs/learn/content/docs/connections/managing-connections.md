@@ -54,6 +54,16 @@ Click the **trash icon** and confirm the deletion dialog. This is permanent.
 
 ---
 
+## Duplicating a Connection
+
+Click the **Copy** icon on any connection row to open the New Connection dialog pre-populated with all fields from the selected connection and a unique `Copy of …` name. Edit any fields you need to change and click **Save** — the duplicate is added as a new, independent connection.
+
+<img src="/images/screenshots/connections-duplicate.png" alt="Connections list with the Copy icon highlighted on a row, and the resulting New Connection dialog pre-filled with a 'Copy of …' name" style="max-width:700px;border-radius:8px;border:1px solid #e2e8f0;" />
+
+*The Copy icon creates a pre-filled connection form. Useful for testing the same server with different auth modes or headers.*
+
+---
+
 ## Grouping Connections
 
 Assign connections to named groups to keep your list organised. Groups appear as filter tabs above the connections list. Useful when working with many servers across different projects.
@@ -98,6 +108,14 @@ Add any HTTP headers to every request — useful for static bearer tokens, API k
 |--------|---------------|
 | `Authorization` | `Bearer eyJ...` |
 | `X-Api-Key` | `sk-...` |
+
+When adding an `Authorization` header, the form offers three modes to prevent double-prefixing:
+
+| Mode | Behaviour |
+|------|-----------|
+| **Raw** | Value sent exactly as typed — use for custom schemes or pre-formed values |
+| **Bearer** | Automatically prepends `Bearer ` unless already present |
+| **Basic** | Automatically prepends `Basic ` unless already present |
 
 ---
 

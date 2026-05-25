@@ -398,3 +398,240 @@ export interface ElicitationHistoryEntry {
     content?: Record<string, unknown>
   }
 }
+
+// ── HTTP API Explorer types ──────────────────────────────────────────────────
+
+export type HttpApiAuthenticationMode = 'None' | 'ApiKey' | 'Bearer' | 'AzureClientCredentials' | 'CustomHeaders'
+
+export interface HttpApiHeader {
+  name: string
+  value: string
+}
+
+export interface HttpApiQueryParam {
+  name: string
+  value: string
+  enabled: boolean
+}
+
+export interface HttpApiAzureCredentialsOptions {
+  tenantId: string
+  clientId: string
+  clientSecret: string
+  scope: string
+  authorityHost?: string
+  keyVaultSecretRef?: KeyVaultSecretReference
+  subscriptionId?: string
+}
+
+export interface HttpApiApiKeyOptions {
+  headerName: string
+  apiKey: string
+  prefix?: string
+}
+
+export interface HttpApiBearerOptions {
+  token: string
+}
+
+export interface HttpApiDefinition {
+  id: string
+  name: string
+  baseUrl: string
+  method: string
+  path: string
+  authenticationMode: HttpApiAuthenticationMode
+  headers: HttpApiHeader[]
+  queryParams: HttpApiQueryParam[]
+  bodyTemplate?: string | null
+  groupName?: string | null
+  tags: string[]
+  note: string
+  azureCredentials?: HttpApiAzureCredentialsOptions | null
+  apiKeyOptions?: HttpApiApiKeyOptions | null
+  bearerOptions?: HttpApiBearerOptions | null
+  goldenSnapshotId?: string | null
+  createdAt: string
+  lastUpdatedAt?: string | null
+  lastInvokedAt?: string | null
+  lastStatusCode?: number | null
+}
+
+export interface HttpApiCollection {
+  id: string
+  name: string
+  description: string
+  endpointIds: string[]
+  groupName?: string | null
+  createdAt: string
+  lastUpdatedAt?: string | null
+  lastRunAt?: string | null
+  lastRunDurationMs?: number | null
+  lastRunSuccessCount?: number | null
+  lastRunTotalCount?: number | null
+  lastRunId?: string | null
+  lastRunEndpointSummaries?: HttpApiCollectionEndpointRunSummary[] | null
+  lastRunInvokedVia?: string | null
+}
+
+export interface HttpApiCollectionEndpointRunSummary {
+  endpointId: string
+  endpointName: string
+  statusCode: number
+  latencyMs: number
+  isSuccess: boolean
+  skipped: boolean
+  errorMessage?: string | null
+  comparisonHasBaseline?: boolean | null
+  comparisonIsBreaking?: boolean | null
+  comparisonIsDegraded?: boolean | null
+  comparisonRemovedProperties?: string[] | null
+  comparisonAddedProperties?: string[] | null
+  comparisonChangedTypes?: SchemaPropertyChange[] | null
+}
+
+export interface HttpApiGroup {
+  name: string
+  color: string
+  description?: string | null
+}
+
+export interface HttpResponseSnapshot {
+  id: string
+  endpointId: string
+  endpointName: string
+  capturedAt: string
+  statusCode: number
+  latencyMs: number
+  responseHeaders: Record<string, string>
+  inferredSchema: Record<string, unknown>
+  rawBodyTruncated?: string | null
+  contentType?: string | null
+  label?: string | null
+  isGolden: boolean
+}
+
+export interface HttpApiInvocationRecord {
+  id: string
+  endpointId: string
+  endpointName: string
+  invokedAt: string
+  statusCode: number
+  latencyMs: number
+  schemaHash: string
+  schemaMatchedSnapshot?: boolean | null
+  collectionRunId?: string | null
+  errorMessage?: string | null
+  requestMethod?: string
+  requestBaseUrl?: string
+  requestPath?: string
+  requestHeaders?: Record<string, string>
+  requestQueryParams?: Record<string, string>
+  responseHeaders?: Record<string, string>
+  contentType?: string | null
+  body?: string | null
+  invokedVia?: string | null
+}
+
+export interface SchemaPropertyChange {
+  propertyPath: string
+  previousType: string
+  currentType: string
+}
+
+export interface HttpSchemaComparisonResult {
+  endpointId: string
+  endpointName: string
+  snapshotId?: string | null
+  comparedAt: string
+  liveStatusCode: number
+  snapshotStatusCode: number
+  liveLatencyMs: number
+  snapshotLatencyMs: number
+  addedProperties: string[]
+  removedProperties: string[]
+  changedTypes: SchemaPropertyChange[]
+  statusCodeChanged: boolean
+  isBreaking: boolean
+  isDegraded: boolean
+  latencyRatio: number
+}
+
+export interface HttpApiInvokeResponse {
+  statusCode: number
+  latencyMs: number
+  responseHeaders: Record<string, string>
+  contentType?: string | null
+  body?: string | null
+  inferredSchema: Record<string, unknown>
+  schemaHash: string
+  errorMessage?: string | null
+}
+
+export interface HttpApiCompareResponse {
+  comparison: HttpSchemaComparisonResult
+  liveResponse: {
+    statusCode: number
+    latencyMs: number
+    inferredSchema: Record<string, unknown>
+    body?: string | null
+    contentType?: string | null
+  }
+}
+
+export interface HttpApiExportPayload {
+  version: number
+  salt: string
+  nonce: string
+  data: string
+}
+
+export interface HttpApiCollectionRunRecord {
+  runId: string
+  collectionId: string
+  collectionName: string
+  ranAt: string
+  durationMs: number
+  successCount: number
+  totalCount: number
+  invokedVia?: string | null
+  endpointSummaries: HttpApiCollectionEndpointRunSummary[]
+}
+
+export interface HttpApiInvocationSparklinePoint {
+  durationMs: number
+  statusCode: number
+  schemaMatchedSnapshot: boolean | null
+  hasError: boolean
+}
+
+export interface HttpApiCollectionRunSparklinePoint {
+  durationMs: number
+  successCount: number
+  totalCount: number
+}
+
+export interface HttpApiCollectionRunResult {
+  runId: string
+  collectionId: string
+  ranAt: string
+  durationMs: number
+  successCount: number
+  totalCount: number
+  invokedVia: string
+  endpointSummaries: HttpApiCollectionEndpointRunSummary[]
+  results: HttpApiCollectionRunItem[]
+}
+
+export interface HttpApiCollectionRunItem {
+  endpointId: string
+  endpointName: string
+  statusCode: number
+  latencyMs: number
+  isSuccess: boolean
+  comparison?: HttpSchemaComparisonResult | null
+  inferredSchema?: Record<string, unknown>
+  errorMessage?: string | null
+  skipped?: boolean
+  error?: string | null
+}

@@ -1,6 +1,6 @@
 # MCP Explorer
 
-A modern MCP (Model Context Protocol) server explorer — browse tools, prompts, resources, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend and an **ASP.NET Core 10** backend using clean architecture.
+A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, prompts, resources, invoke HTTP APIs, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend and an **ASP.NET Core 10** backend, with a companion **.NET CLI** for scripted HTTP API workflows.
 
 📚 **[Full Documentation](https://mcp-explorer-x-docs.garrardkitchen.com/)** — user guide, feature reference, and configuration
 
@@ -126,6 +126,8 @@ The script runs `devtunnel user login --use-device-code-auth` inside the `api` c
 ## Features
 
 - 🔌 **MCP Connections** — Streamable HTTP connections with custom headers, OAuth, and Azure Client Credentials authentication
+- 🌐 **HTTP API Explorer** — Define/invoke/compare HTTP APIs with runtime templated inputs, tabbed history, and collection runs
+- ⌨️ **CLI (`mcp-http`)** — Script HTTP API invoke/compare/history and definition import/export from terminal automation
 - 🛠️ **Tools** — Browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
 - 💬 **Prompts** — List, execute, and pipe results directly to an LLM
 - 📄 **Resources & Templates** — Browse MCP resources and expand templates with runtime parameters
@@ -153,7 +155,7 @@ The script runs `devtunnel user login --use-device-code-auth` inside the `api` c
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_DATA_PATH` | *(named volume)* | Host directory containing `settings.json` (connections, workflows, models). Mount this to persist data across restarts. macOS: `/Users/<you>/Library/Application Support/McpExplorer` |
+| `MCP_DATA_PATH` | *(named volume)* | Host directory containing persisted app data (`settings.json` plus `HttpApis/*` definition/history files). Mount this to persist data across restarts. macOS: `/Users/<you>/Library/Application Support/McpExplorer` |
 | `PREFERENCES__StoragePath` | `/data/settings.json` | Path to `settings.json` *inside* the container. Only change if you customise the volume target. |
 
 ### Azure (optional — enables Key Vault & App Registration features)

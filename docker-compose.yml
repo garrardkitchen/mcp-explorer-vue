@@ -37,6 +37,9 @@ services:
       # Always tell az CLI (and Azure SDK) to look in /root/.azure inside the container.
       # The host directory is mounted there via the HOST_AZURE_CONFIG_DIR volume below.
       - AZURE_CONFIG_DIR=/root/.azure
+      # Expose the host-side data path so the frontend can generate correct CLI commands.
+      # When MCP_DATA_PATH is set in .env, copied CLI commands will use that host path.
+      - HOST_DATA_PATH=${MCP_DATA_PATH:-}
     volumes:
       # Mount host settings directory into the container.
       # Set MCP_DATA_PATH in .env to your existing settings folder, e.g.:

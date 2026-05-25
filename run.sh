@@ -5,5 +5,6 @@ docker build -t mcp-explorer-x . && docker run --rm -it -p 8091:8080 \
   -e AZURE_CONFIG_DIR=/root/.azure \
   -e HOST_AZURE_CONFIG_DIR=${HOME}/.azure \
   -e PREFERENCES__StoragePath=/data/settings.json \
+  -e HOST_DATA_PATH="${dataRoot}" \
   -e ASPNETCORE_ENVIRONMENT=Production \
   mcp-explorer-x

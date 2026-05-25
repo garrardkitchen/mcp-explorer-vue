@@ -1,5 +1,140 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 11)
+
+### Added
+- Docs: new Hugo documentation pages for HTTP API Explorer (`/docs/http-api-explorer/`) covering Infrastructure connections, auth modes, invoke list, sparkline trend, template placeholders, tabbed history, and CLI integration.
+- Docs: new Hugo pages for Collections (`/docs/http-api-explorer/collections/`) and CLI reference split across two pages — HTTP API & connections commands, and MCP commands.
+- Docs: updated homepage (`layouts/index.html`) with two new "NEW"-badged feature cards (#13 HTTP API Explorer, #14 CLI) and hero-meta badges; feature count bumped to 14.
+- Docs: updated Connections page with Duplicate action section and Raw/Bearer/Basic auth mode table.
+- Docs: Playwright-generated screenshots for all new features (10 images added to `static/images/screenshots/`).
+
+## [Unreleased] - 2026-05-25 (patch 10)
+
+### Added
+- CLI: New top-level `mcp` branch with six sub-commands:
+  - `mcp connections` — list all saved MCP connections offline (name, endpoint, auth, group, created).
+  - `mcp tools --name <connection>` — connect and list all tools exposed by an MCP server.
+  - `mcp resources --name <connection>` — connect and list all resources.
+  - `mcp prompts --name <connection>` — connect and list all prompts (with argument names; required args shown in bold).
+  - `mcp templates --name <connection>` — connect and list all resource templates.
+  - `mcp invoke --name <connection> --tool <tool> [--params '{"k":"v"}'] [--param k=v ...]` — connect and invoke a tool, printing the result. `--param` values are auto-parsed as JSON literals (numbers, booleans, arrays, objects) with fallback to string. `--param` and `--params` can be combined; per-key `--param` wins on conflict.
+- CLI: `McpCommandHelper` shared utility — resolves a connection definition by exact then single-partial match, and warns when a connection uses OAuth (which requires a running API callback endpoint).
+- README: updated CLI section with `mcp` command examples, name-matching and OAuth behaviour notes, and reorganised HTTP commands into a separate subsection.
+
+## [Unreleased] - 2026-05-25 (patch 9)
+
+### Added
+- CLI: ASCII art banner (`FigletText`) + orange version number displayed on `--help`, `--version`, or no-args invocations.
+- CLI: Version string now read from assembly metadata so it stays in sync with `<Version>` in the `.csproj`.
+- CLI (`http api invoke`, `http collection run`): added `WithExample` entries for `--use-localhost` and `--data-path` so both flags appear in the built-in help.
+
+## [Unreleased] - 2026-05-25 (patch 8)
+
+### Added
+- CLI (`mcp-http`) is now packaged as a cross-platform `dotnet` global tool. Added `PackAsTool`, `ToolCommandName`, `PackageId`, `Version`, `Authors`, `Description`, `PackageTags`, `RepositoryUrl`, and `PackageLicenseExpression` to the `.csproj`. Install with `dotnet tool install -g Garrard.Mcp.Explorer.Cli`. Supports Windows, Ubuntu (x64), and macOS (Apple Silicon / x64).
+- README: updated CLI section with `dotnet tool install` instructions, `--data-path` and `--use-localhost` usage examples, global options table, and platform data-path reference.
+
+## [Unreleased] - 2026-05-25 (patch 7)
+
+### Changed
+- Collections expand panel: content is now indented (`padding-left: 2.5rem`) to align with the name column, matching the visual hierarchy of a nested/detail view. Background switched from `--surface-ground` to `--bg-base` (custom theme variable) for a clearly distinct, recessed appearance across all themes. Border updated to use `--border` for consistency with the custom theme system.
+
+## [Unreleased] - 2026-05-25 (patch 6)
+
+### Changed
+- Collections expand panel now matches the Invoke APIs visual style: expanded row highlights with `surface-hover`, expand panel uses `border-top` + uniform padding (`0.75rem 1rem`) instead of an indented `border-bottom` layout. Each collection item wrapped in `.col-item-wrap` so the row-separator border renders correctly with both collapsed and expanded states.
+
+## [Unreleased] - 2026-05-25 (patch 5)
+
+### Fixed
+- Collections page: scrolling now works when many collections are present. Added `flex-shrink: 0` to `.toolbar` and `.col-table` so content overflows the container rather than compressing, allowing the page's `overflow-y: auto` to take effect.
+
+## [Unreleased] - 2026-05-25 (patch 4)
+
+### Added
+- Collection run history rows now have a chevron expand button. Expanding a row shows the same per-endpoint detail table as the run result dialog (status code, latency, result label, schema changes with +/-/~ badges).
+- `HttpApiCollectionEndpointRunSummary` now persists comparison data (`comparisonHasBaseline`, `comparisonIsBreaking`, `comparisonIsDegraded`, removed/added/changed properties) and `errorMessage` — populated from both the API controller and the CLI runner.
+
+## [Unreleased] - 2026-05-25 (patch 3)
+
+### Fixed
+- Remove 4 KB storage truncation on response bodies — `TruncatedBody` now equals `Body` (full response, up to 1 MB). History, snapshots, bookmarks, and CLI invocations now store the complete response body.
+- Collection run results now include `body` per endpoint, matching the single-invoke response shape.
+
+## [Unreleased] - 2026-05-25 (patch 2)
+
+### Added
+- Sparkline "Trend" column to the Invoke APIs mode grid (was only present on the connections DataTable view).
+
+### Changed
+- Invoke APIs page: URL column narrowed (`minmax(0, 1fr)` down from `2.5fr`) to accommodate the new Trend column.
+- Invoke button on row and expanded panel header now icon-only (no "Invoke" label); tooltip retained.
+
+## [Unreleased] - 2026-05-25 (patch)
+
+### Fixed
+- Eliminate double computation of `endpointRunSparkline` and `collectionSparklines` in templates — rely on `SparklineChart`'s built-in empty-state render instead of `v-if`/`v-else` guard.
+
+## [Unreleased] - 2026-05-25
+
+### Added
+- **Sparkline "Trend" columns**: Both the API invoke list and collections list now show a mini bar-chart sparkline for the last 10 runs. Bar height = duration; bar colour indicates health (green = success/schema-match, orange = HTTP error/schema-drift, red = failure/timeout, grey = no comparison). Collections list also shows a Trend column with total collection run durations. Expanding a collection row shows a per-endpoint sparkline built from collection run history (collection-scoped). New batch endpoints: `GET /http-apis/sparklines` and `GET /http-api-collections/sparklines`.
+
+## [Unreleased] - 2026-05-24
+
+### Added
+- **Collection run history**: Every collection run (via app or CLI) is now persisted to `HttpApiCollections/{collectionId}/history.jsonl`. Expanding a collection row shows a "Run History" table — When / Duration / Passed / Failed / Source — lazy-loaded on first expand and invalidated after each new run.
+- **InvokedVia "Source" column in API invocation history**: The per-endpoint history table now shows a "Source" badge (⌨ CLI / 🖥 App) for each invocation entry.
+- **CLI invocations now store full request/response fields**: `http api invoke`, `http compare`, and `http collection run` now populate `RequestMethod`, `RequestBaseUrl`, `RequestPath`, `RequestHeaders`, `RequestQueryParams`, `ResponseHeaders`, `ContentType`, and `Body` in the history record (previously these were blank for CLI-triggered runs).
+
+### Security
+- **Pinned `Microsoft.Kiota.Abstractions` to 1.22.2**: Resolves high-severity GHSA-7j59-v9qr-6fq9 (cross-host redirect leaks Cookie/Proxy-Authorization headers). Transitive dependency via `Microsoft.Graph`; also upgraded `Microsoft.Graph` from 5.77.0 to 5.79.0.
+
+### Fixed
+- **CLI `--data-path` now uses host path when running in Docker**: `GET /api/v1/system/info` now checks `HOST_DATA_PATH` env var first. Both `run.sh` and `docker-compose.yml` inject this as the host-side data directory (`MCP_DATA_PATH` / `$dataRoot`), so copied CLI commands contain the correct host path rather than the container-internal `/data`.
+
+### Added
+- **CLI copy button in both views**: The 🖥 terminal icon "Copy CLI command" button now appears in both the Connections view and the Invoke view (previously only in Connections mode).
+- **`--data-path` in copied CLI command**: The copied `mcp-http` command now includes `--data-path "<path>"` sourced from the backend's active data directory, so the CLI runs against the same data as the app.
+- **`--use-localhost` in copied CLI command**: When the API's base URL contains `host.docker.internal`, `--use-localhost` is automatically appended to the copied command.
+- **`DataPath` in system info**: `GET /api/v1/system/info` now returns `dataPath` — the backend's active data directory — used by the frontend to construct accurate CLI commands.
+- **Invocation source tracking**: All HTTP API invocations (invoke, compare, bookmark, collection run) now record `invokedVia` — either `"App"` or `"CLI"` — in the invocation history record, enabling users to distinguish which surface triggered each request.
+- **Collections full-width table**: The Collections view is redesigned as a full-width grid table showing collection name (with description below), endpoint count, last run time, duration, and % successful alongside Edit / Delete / Run action buttons.
+- **Collections expand panel**: An expand toggle on the left of each collection row reveals a per-endpoint table showing each endpoint's name, status code, and duration from the most recent run.
+- **Collection run stats persistence**: Running a collection (via app or CLI) now persists aggregate stats (`lastRunAt`, `lastRunDurationMs`, `lastRunSuccessCount`, `lastRunTotalCount`, `lastRunEndpointSummaries`) on the collection object, making stats available across sessions without replaying history.
+- **CLI collection run stats**: `http collection run` (formerly `http run-collection`) now tracks elapsed duration, records per-endpoint results, and persists run stats to the data store — closing a gap where CLI runs were never saved.
+
+## [Unreleased] - 2026-05-23
+
+### Added
+- **CLI command restructure**: Reorganised all `http` commands into two sub-branches — `http api` (list, invoke, compare, history, export, import) and `http collection` (list, run). Replaces the flat `http invoke`, `http run-collection`, etc. and removes the separate top-level `apis` branch.
+- **CLI `--data-path` global option**: Pass `--data-path <dir>` before any subcommand to point the CLI at a different data directory (e.g. the Docker container's `MCP_DATA_PATH`). Resolves the mismatch where the CLI defaulted to `~/.local/share/McpExplorer` while the Docker app used `~/Library/Application Support/McpExplorerv2`.
+- **HTTP API list favourite toggle**: Favourite star (⭐) now renders on every row; dimmed when not a favourite and clickable to toggle with a tooltip, instead of only appearing when already favourited.
+
+### Added
+- **HTTP API invocation templates**: Add runtime placeholder inputs using `{name}` and `{name:default}` syntax so invoke requests can prompt for values and apply defaults when omitted.
+- **HTTP API history inspection**: Capture invocation response details (body/content-type/headers) and show expandable response inspection rows in HTTP API history views.
+
+### Changed
+- **Navigation**: Add an Infrastructure entry for HTTP connections and keep invoke-focused HTTP API actions under the HTTP API Explorer section.
+- **HTTP API list UX**: Show Infrastructure HTTP API connections in a management table aligned with the MCP Connections list, and restyle invoke-side API selection to mirror the MCP Tools list feel.
+- **Invocation detail UX**: Convert expanded history details to tabbed request/response views (Request, Response Headers, Response Body) for faster inspection.
+- **README architecture docs**: Refresh system and clean-architecture diagrams to explicitly include HTTP API Explorer surfaces and the `mcp-http` CLI.
+- **README coverage**: Update root and Docker README content for HTTP API Explorer + CLI coverage, and refresh docs-site README structure mapping for current documentation sections.
+
+### Fixed
+- **HTTP API response body truncation**: Separate live response body (capped at 1 MB) from snapshot storage body (capped at 4 KB), so large responses display in full rather than as cut-off escaped strings.
+- **HTTP API definition dialog**: Keep auth option sections stable when changing auth mode and add Authorization header Raw/Bearer/Basic UX parity with Connections.
+- **HTTP API invoke tabs**: Bind tab panel state explicitly so switching to History no longer traps navigation away from the other tabs.
+- **Authorization header coercion**: Preserve raw Authorization values unless the selected mode is explicit Basic/Bearer, avoiding malformed double-scheme values during mode switching.
+- **HTTP API invocation history security**: Redact sensitive values (headers, query parameters, and body fields) before writing invocation records to history files and serving history APIs.
+- **HTTP API redirect handling**: Allow non-GET/HEAD redirects for 307/308 responses in the explicit redirect flow to avoid regressions for method-preserving endpoint redirects.
+- **HTTP API URL history redaction**: Redact URL user-info, sensitive query values, and sensitive/high-entropy path segments before persisting request base URL/path in invocation history.
+- **HTTP API redirect header redaction**: Sanitize URL-bearing response headers (`Location`, `Content-Location`) before persisting invocation history records.
+- **Container localhost rewrite**: Limit loopback host rewriting to `http://` URLs so HTTPS requests keep `localhost` hostnames for certificate validation.
+- **HTTP API global history reads**: Limit per-endpoint history deserialization when a `limit` is supplied so global history requests stay bounded as record payloads grow.
+
 ## [Unreleased] - 2026-05-18
 
 ### Added

@@ -3,6 +3,7 @@ using Garrard.Mcp.Explorer.Infrastructure.Azure;
 using Garrard.Mcp.Explorer.Infrastructure.Connections;
 using Garrard.Mcp.Explorer.Infrastructure.DevTunnels;
 using Garrard.Mcp.Explorer.Infrastructure.Elicitation;
+using Garrard.Mcp.Explorer.Infrastructure.HttpApi;
 using Garrard.Mcp.Explorer.Infrastructure.LlmProviders;
 using Garrard.Mcp.Explorer.Infrastructure.Mcp;
 using Garrard.Mcp.Explorer.Infrastructure.Persistence;
@@ -62,6 +63,21 @@ public static class ServiceCollectionExtensions
         // Workflows
         services.AddScoped<IWorkflowService, WorkflowService>();
         services.AddScoped<LoadTestService>();
+
+        // HTTP API Explorer
+        services.AddSingleton<IHttpApiStore, HttpApiStore>();
+        services.AddSingleton<IHttpApiSnapshotStore, JsonlHttpApiSnapshotStore>();
+        services.AddSingleton<ISchemaInferenceService, SchemaInferenceService>();
+        services.AddSingleton<ISchemaComparisonService, SchemaComparisonService>();
+        services.AddSingleton<IHttpApiExportService, HttpApiExportService>();
+        services.AddHttpClient("HttpApiInvoker", client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                // Redirects are handled explicitly in HttpApiInvoker so the app can
+                // stop before HTTP endpoints silently upgrade into HTTPS.
+                AllowAutoRedirect = false
+            });
+        services.AddScoped<IHttpApiInvoker, HttpApiInvoker>();
 
         return services;
     }

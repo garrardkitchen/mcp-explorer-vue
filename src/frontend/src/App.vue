@@ -35,6 +35,7 @@ const navGroups = [
     accent: 'blue',
     items: [
       { name: 'connections', label: 'Connections', icon: 'pi-server' },
+      { name: 'http-api-connections', label: 'HTTP Connections', icon: 'pi-link' },
     ],
   },
   {
@@ -61,6 +62,15 @@ const navGroups = [
       { name: 'resources',          label: 'Resources',    icon: 'pi-database'  },
       { name: 'resource-templates', label: 'Templates',    icon: 'pi-copy'      },
       { name: 'elicitations',       label: 'Elicitations', icon: 'pi-bell'      },
+    ],
+  },
+  {
+    label: 'HTTP API Explorer',
+    accent: 'emerald',
+    items: [
+      { name: 'http-apis',             label: 'Invoke APIs',  icon: 'pi-send'  },
+      { name: 'http-api-collections',  label: 'Collections',  icon: 'pi-list'  },
+      { name: 'http-api-history',      label: 'History',      icon: 'pi-clock' },
     ],
   },
   {
