@@ -449,19 +449,48 @@ dotnet out/gateway/Garrard.Mcp.Explorer.Gateway.dll
 
 ### CLI (mcp-http)
 
-```bash
-# Build the CLI
-dotnet build src/Garrard.Mcp.Explorer.Cli/
+The CLI ships as a [.NET global tool](https://learn.microsoft.com/en-us/dotnet/core/tools/global-tools) and runs on **Windows**, **Ubuntu (x64)**, and **macOS (Apple Silicon / x64)**. Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
-# Show commands
-dotnet run --project src/Garrard.Mcp.Explorer.Cli -- --help
+#### Install from NuGet.org
+
+```bash
+dotnet tool install -g Garrard.Mcp.Explorer.Cli
+```
+
+#### Install from a local build
+
+```bash
+# 1 – pack
+dotnet pack src/Garrard.Mcp.Explorer.Cli -c Release -o ./nupkg
+
+# 2 – install
+dotnet tool install -g Garrard.Mcp.Explorer.Cli --add-source ./nupkg
+
+# update an existing installation
+dotnet tool update -g Garrard.Mcp.Explorer.Cli --add-source ./nupkg
+```
+
+#### Usage
+
+```bash
+# Show all commands
+mcp-http --help
 
 # Invoke by API name
-dotnet run --project src/Garrard.Mcp.Explorer.Cli -- http invoke --name "My API"
+mcp-http http api invoke --name "My API"
 
 # Run collection and fail on schema breaks
-dotnet run --project src/Garrard.Mcp.Explorer.Cli -- http run-collection --name "Regression Suite" --fail-on-breaking
+mcp-http http collection run --name "Regression Suite" --fail-on-breaking
 ```
+
+#### Data path
+
+| Platform | Default data directory |
+|----------|----------------------|
+| Windows  | `%LOCALAPPDATA%\McpExplorer\` |
+| Linux / macOS | `~/.local/share/McpExplorer/` |
+
+Override with `--data-path <dir>` or the `PREFERENCES__StoragePath` environment variable.
 
 ## Docker
 

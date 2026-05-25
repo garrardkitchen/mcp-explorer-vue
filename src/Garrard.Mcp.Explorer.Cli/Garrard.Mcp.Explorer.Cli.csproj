@@ -5,6 +5,17 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- dotnet tool packaging -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mcp-http</ToolCommandName>
+    <PackageId>Garrard.Mcp.Explorer.Cli</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>garrardkitchen</Authors>
+    <Description>MCP Explorer CLI — invoke, compare, and manage HTTP APIs from the command line. Supports Windows, Linux, and macOS (Apple Silicon).</Description>
+    <PackageTags>mcp;http;api;cli;devtools</PackageTags>
+    <RepositoryUrl>https://github.com/garrardkitchen/mcp-explorer-vue</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

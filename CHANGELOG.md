@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 8)
+
+### Added
+- CLI (`mcp-http`) is now packaged as a cross-platform `dotnet` global tool. Added `PackAsTool`, `ToolCommandName`, `PackageId`, `Version`, `Authors`, `Description`, `PackageTags`, `RepositoryUrl`, and `PackageLicenseExpression` to the `.csproj`. Install with `dotnet tool install -g Garrard.Mcp.Explorer.Cli`. Supports Windows, Ubuntu (x64), and macOS (Apple Silicon / x64).
+- README: updated CLI section with `dotnet tool install` instructions, data-path table, and platform support note.
+
 ## [Unreleased] - 2026-05-25 (patch 7)
 
 ### Changed
