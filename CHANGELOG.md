@@ -1,10 +1,17 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 9)
+
+### Added
+- CLI: ASCII art banner (`FigletText`) + orange version number displayed on `--help`, `--version`, or no-args invocations.
+- CLI: Version string now read from assembly metadata so it stays in sync with `<Version>` in the `.csproj`.
+- CLI (`http api invoke`, `http collection run`): added `WithExample` entries for `--use-localhost` and `--data-path` so both flags appear in the built-in help.
+
 ## [Unreleased] - 2026-05-25 (patch 8)
 
 ### Added
 - CLI (`mcp-http`) is now packaged as a cross-platform `dotnet` global tool. Added `PackAsTool`, `ToolCommandName`, `PackageId`, `Version`, `Authors`, `Description`, `PackageTags`, `RepositoryUrl`, and `PackageLicenseExpression` to the `.csproj`. Install with `dotnet tool install -g Garrard.Mcp.Explorer.Cli`. Supports Windows, Ubuntu (x64), and macOS (Apple Silicon / x64).
-- README: updated CLI section with `dotnet tool install` instructions, data-path table, and platform support note.
+- README: updated CLI section with `dotnet tool install` instructions, `--data-path` and `--use-localhost` usage examples, global options table, and platform data-path reference.
 
 ## [Unreleased] - 2026-05-25 (patch 7)
 

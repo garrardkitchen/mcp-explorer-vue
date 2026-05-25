@@ -479,9 +479,25 @@ mcp-http --help
 # Invoke by API name
 mcp-http http api invoke --name "My API"
 
-# Run collection and fail on schema breaks
+# Invoke from a different data directory (e.g. running outside Docker)
+mcp-http --data-path "/home/user/McpExplorerData" http api invoke --name "My API"
+
+# Invoke against localhost when the API was saved with a host.docker.internal base URL
+mcp-http http api invoke --name "My API" --use-localhost
+
+# Run a collection and fail CI on schema breaks
 mcp-http http collection run --name "Regression Suite" --fail-on-breaking
+
+# Run a collection using localhost URLs from a custom data directory
+mcp-http --data-path "/home/user/McpExplorerData" http collection run --name "Regression Suite" --use-localhost --fail-on-breaking
 ```
+
+#### Global options
+
+| Option | Scope | Description |
+|--------|-------|-------------|
+| `--data-path <dir>` | All commands | Override the data directory. Pass the folder that contains `settings.json` (e.g. the host path you mount into Docker). |
+| `--use-localhost` | `http api invoke`, `http collection run` | Replace `host.docker.internal` with `localhost` in the API base URL — useful when running the CLI directly on the host against a locally running service. |
 
 #### Data path
 

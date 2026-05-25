@@ -4,6 +4,7 @@ using Garrard.Mcp.Explorer.Infrastructure.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Spectre.Console;
 using Spectre.Console.Cli;
 using Spectre.Console.Cli.Help;
 
@@ -11,6 +12,7 @@ using Spectre.Console.Cli.Help;
 // Usage: mcp-http --data-path "/path/to/McpExplorerv2" http run-collection …
 // Strips the option from args so Spectre.Console doesn't error on an unknown flag.
 var argsList = args.ToList();
+var originalArgsEmpty = args.Length == 0;
 string? dataPathOverride = null;
 var dpIdx = argsList.IndexOf("--data-path");
 if (dpIdx >= 0 && dpIdx + 1 < argsList.Count)
@@ -18,6 +20,16 @@ if (dpIdx >= 0 && dpIdx + 1 < argsList.Count)
     dataPathOverride = argsList[dpIdx + 1];
     argsList.RemoveRange(dpIdx, 2);
     args = [.. argsList];
+}
+
+// ── Banner (shown on --help, --version, or no args) ──────────────────────────
+var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
+var showBanner = originalArgsEmpty || args.Any(a => a is "--help" or "-h" or "--version" or "-v");
+if (showBanner && !Console.IsOutputRedirected)
+{
+    AnsiConsole.Write(new FigletText("mcp-http").Color(Color.GreenYellow));
+    //https://spectreconsole.net/console/reference/color-reference
+    AnsiConsole.MarkupLine($"version: [bold orange1]{version}[/] [gray82]MCP Explorer CLI[/]\n");
 }
 
 // ── Dependency injection container ───────────────────────────────────────────
@@ -49,7 +61,7 @@ var app = new CommandApp(registrar);
 app.Configure(config =>
 {
     config.SetApplicationName("mcp-http");
-    config.SetApplicationVersion("1.0.0");
+    config.SetApplicationVersion(version);
     // Note: --data-path <dir> is a global pre-option processed before Spectre.Console.
     // It overrides the data directory (equivalent to MCP_DATA_PATH used by Docker).
     config.Settings.HelpProviderStyles = new HelpProviderStyle
@@ -109,7 +121,9 @@ app.Configure(config =>
 
             api.AddCommand<HttpInvokeCommand>("invoke")
                 .WithDescription("Invoke an HTTP API endpoint by name or ID and display the response with inferred schema.")
-                .WithExample("http", "api", "invoke", "--name", "My API");
+                .WithExample("http", "api", "invoke", "--name", "My API")
+                .WithExample("http", "api", "invoke", "--name", "My API", "--use-localhost")
+                .WithExample("--data-path", "/path/to/data", "http", "api", "invoke", "--name", "My API");
 
             api.AddCommand<HttpCompareCommand>("compare")
                 .WithDescription("Invoke an endpoint and compare the response schema against its saved baseline snapshot.")
@@ -138,7 +152,9 @@ app.Configure(config =>
 
             collection.AddCommand<HttpRunCollectionCommand>("run")
                 .WithDescription("Run all endpoints in a collection, compare against baselines, and print a summary table.")
-                .WithExample("http", "collection", "run", "--name", "Regression Suite", "--fail-on-breaking");
+                .WithExample("http", "collection", "run", "--name", "Regression Suite", "--fail-on-breaking")
+                .WithExample("http", "collection", "run", "--name", "Regression Suite", "--use-localhost", "--fail-on-breaking")
+                .WithExample("--data-path", "/path/to/data", "http", "collection", "run", "--name", "Regression Suite", "--fail-on-breaking");
         });
     });
 });
