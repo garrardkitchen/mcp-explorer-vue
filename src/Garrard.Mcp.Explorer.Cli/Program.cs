@@ -157,6 +157,36 @@ app.Configure(config =>
                 .WithExample("--data-path", "/path/to/data", "http", "collection", "run", "--name", "Regression Suite", "--fail-on-breaking");
         });
     });
+
+    config.AddBranch("mcp", mcp =>
+    {
+        mcp.SetDescription("MCP connection commands");
+
+        mcp.AddCommand<McpConnectionsCommand>("connections")
+            .WithDescription("List all saved MCP connections.")
+            .WithExample("mcp", "connections");
+
+        mcp.AddCommand<McpToolsCommand>("tools")
+            .WithDescription("Connect to an MCP server and list its available tools.")
+            .WithExample("mcp", "tools", "--name", "My Server");
+
+        mcp.AddCommand<McpResourcesCommand>("resources")
+            .WithDescription("Connect to an MCP server and list its available resources.")
+            .WithExample("mcp", "resources", "--name", "My Server");
+
+        mcp.AddCommand<McpPromptsCommand>("prompts")
+            .WithDescription("Connect to an MCP server and list its available prompts.")
+            .WithExample("mcp", "prompts", "--name", "My Server");
+
+        mcp.AddCommand<McpTemplatesCommand>("templates")
+            .WithDescription("Connect to an MCP server and list its available resource templates.")
+            .WithExample("mcp", "templates", "--name", "My Server");
+
+        mcp.AddCommand<McpInvokeCommand>("invoke")
+            .WithDescription("Connect to an MCP server and invoke a tool.")
+            .WithExample("mcp", "invoke", "--name", "My Server", "--tool", "echo", "--param", "message=hello")
+            .WithExample("mcp", "invoke", "--name", "My Server", "--tool", "search", "--params", "{\"query\":\"dotnet\"}");
+    });
 });
 
 return await app.RunAsync(args);

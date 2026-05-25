@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 10)
+
+### Added
+- CLI: New top-level `mcp` branch with six sub-commands:
+  - `mcp connections` — list all saved MCP connections offline (name, endpoint, auth, group, created).
+  - `mcp tools --name <connection>` — connect and list all tools exposed by an MCP server.
+  - `mcp resources --name <connection>` — connect and list all resources.
+  - `mcp prompts --name <connection>` — connect and list all prompts (with argument names; required args shown in bold).
+  - `mcp templates --name <connection>` — connect and list all resource templates.
+  - `mcp invoke --name <connection> --tool <tool> [--params '{"k":"v"}'] [--param k=v ...]` — connect and invoke a tool, printing the result. `--param` values are auto-parsed as JSON literals (numbers, booleans, arrays, objects) with fallback to string. `--param` and `--params` can be combined; per-key `--param` wins on conflict.
+- CLI: `McpCommandHelper` shared utility — resolves a connection definition by exact then single-partial match, and warns when a connection uses OAuth (which requires a running API callback endpoint).
+
 ## [Unreleased] - 2026-05-25 (patch 9)
 
 ### Added
