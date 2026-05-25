@@ -444,8 +444,9 @@ onMounted(async () => {
       </div>
 
       <template v-for="c in filteredCollections" :key="c.id">
+        <div class="col-item-wrap">
         <!-- Main row -->
-        <div class="col-row">
+        <div class="col-row" :class="{ 'col-row--expanded': expandedIds.has(c.id) }">
           <div class="col-expand">
             <Button
               :icon="expandedIds.has(c.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
@@ -614,6 +615,7 @@ onMounted(async () => {
             <span v-else class="meta-muted">No history yet</span>
           </div>
         </div>
+        </div>
       </template>
     </div>
 
@@ -750,18 +752,20 @@ onMounted(async () => {
   gap: 0.5rem;
 }
 
+.col-item-wrap { border-bottom: 1px solid var(--surface-border); }
+.col-item-wrap:last-child { border-bottom: none; }
+
 .col-row {
   display: grid;
   grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 7rem 9rem;
   align-items: center;
   padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--surface-border);
   gap: 0.5rem;
   background: var(--surface-card);
   transition: background 0.1s;
 }
-.col-row:last-child { border-bottom: none; }
 .col-row:hover { background: var(--surface-hover); }
+.col-row--expanded { background: var(--surface-hover); }
 
 .col-expand { display: flex; justify-content: center; }
 .col-name-cell { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
@@ -782,9 +786,9 @@ onMounted(async () => {
 
 /* ── Expand panel ─────────────────────────────────────────────── */
 .col-expand-panel {
-  padding: 0.5rem 0.75rem 0.5rem 3rem;
-  background: var(--surface-ground);
-  border-bottom: 1px solid var(--surface-border);
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border);
 }
 
 .ep-run-meta {

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 7)
+
+### Changed
+- Collections expand panel: content is now indented (`padding-left: 2.5rem`) to align with the name column, matching the visual hierarchy of a nested/detail view. Background switched from `--surface-ground` to `--bg-base` (custom theme variable) for a clearly distinct, recessed appearance across all themes. Border updated to use `--border` for consistency with the custom theme system.
+
+## [Unreleased] - 2026-05-25 (patch 6)
+
+### Changed
+- Collections expand panel now matches the Invoke APIs visual style: expanded row highlights with `surface-hover`, expand panel uses `border-top` + uniform padding (`0.75rem 1rem`) instead of an indented `border-bottom` layout. Each collection item wrapped in `.col-item-wrap` so the row-separator border renders correctly with both collapsed and expanded states.
+
 ## [Unreleased] - 2026-05-25 (patch 5)
 
 ### Fixed
