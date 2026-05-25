@@ -14,7 +14,9 @@ import Column from 'primevue/column'
 import { httpApisApi } from '@/api/httpApis'
 import { systemApi } from '@/api/system'
 import { useHttpApisStore } from '@/stores/httpApis'
-import type { HttpApiCollection, HttpApiCollectionRunResult, HttpApiCollectionRunItem, HttpApiCollectionRunRecord } from '@/api/types'
+import SparklineChart from '@/components/common/SparklineChart.vue'
+import type { SparklineBar } from '@/components/common/SparklineChart.vue'
+import type { HttpApiCollection, HttpApiCollectionRunResult, HttpApiCollectionRunItem, HttpApiCollectionRunRecord, HttpApiCollectionRunSparklinePoint } from '@/api/types'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -28,6 +30,50 @@ const searchQuery = ref('')
 const expandedIds = ref<Set<string>>(new Set())
 const runHistory = ref<Map<string, HttpApiCollectionRunRecord[]>>(new Map())
 const runHistoryLoading = ref<Set<string>>(new Set())
+
+// ── Sparklines ────────────────────────────────────────────────────────────────
+const collectionSparklines = ref<Map<string, SparklineBar[]>>(new Map())
+
+function collectionSparklineColor(pt: HttpApiCollectionRunSparklinePoint): string {
+  if (pt.totalCount === 0) return '#6b7280'
+  const ratio = pt.successCount / pt.totalCount
+  if (ratio >= 1.0) return '#22c55e'   // green — all passed
+  if (ratio >= 0.5) return '#f97316'   // orange — partial
+  return '#ef4444'                      // red — mostly failed
+}
+
+function buildCollectionSparkline(points: HttpApiCollectionRunSparklinePoint[]): SparklineBar[] {
+  return points.map(pt => ({ value: pt.durationMs, color: collectionSparklineColor(pt) }))
+}
+
+async function loadCollectionSparklines() {
+  try {
+    const data = await httpApisApi.getCollectionSparklines()
+    const map = new Map<string, SparklineBar[]>()
+    for (const [id, points] of Object.entries(data)) {
+      map.set(id, buildCollectionSparkline(points))
+    }
+    collectionSparklines.value = map
+  } catch {
+    // non-critical — sparklines degrade gracefully
+  }
+}
+
+/** Build an endpoint-level sparkline from collection run history for a specific endpoint. */
+function endpointRunSparkline(collectionId: string, endpointId: string): SparklineBar[] {
+  const history = runHistory.value.get(collectionId) ?? []
+  return history
+    .slice()
+    .sort((a, b) => new Date(a.ranAt).getTime() - new Date(b.ranAt).getTime())
+    .map(run => {
+      const ep = run.endpointSummaries.find(e => e.endpointId === endpointId)
+      if (!ep || ep.skipped) return { value: 0, color: '#6b7280' }
+      return {
+        value: ep.latencyMs,
+        color: ep.isSuccess ? '#22c55e' : ep.statusCode >= 400 ? '#f97316' : '#ef4444'
+      }
+    })
+}
 
 async function toggleExpand(id: string) {
   if (expandedIds.value.has(id)) {
@@ -286,6 +332,7 @@ async function doRun(c: HttpApiCollection, inputs?: Record<string, string>) {
     toast.add({ severity: 'success', summary: 'Collection run complete', life: 3000 })
     // Invalidate cached run history so next expand fetches fresh data
     runHistory.value.delete(c.id)
+    loadCollectionSparklines() // refresh sparklines async, non-blocking
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Run failed', detail: e.message, life: 5000 })
   } finally {
@@ -326,6 +373,7 @@ onMounted(async () => {
       systemApi.getInfo().catch(() => ({ apiVersion: '', dotnetVersion: '', dataPath: null }))
         .then(info => { dataPath.value = info.dataPath ?? null }),
     ])
+    await loadCollectionSparklines()
   } finally { loading.value = false }
 })
 </script>
@@ -364,6 +412,7 @@ onMounted(async () => {
         <div class="col-h-lastrun">Last Run</div>
         <div class="col-h-duration">Duration</div>
         <div class="col-h-success">% Success</div>
+        <div class="col-h-trend">Trend</div>
         <div class="col-h-actions">Actions</div>
       </div>
 
@@ -399,6 +448,9 @@ onMounted(async () => {
               :severity="successSeverity(successPercent(c))"
             />
             <span v-else class="meta-muted">—</span>
+          </div>
+          <div class="col-trend">
+            <SparklineChart :bars="collectionSparklines.get(c.id) ?? []" />
           </div>
           <div class="col-actions">
             <Button icon="pi pi-pencil" text rounded size="small" title="Edit" @click="openEdit(c)" />
@@ -439,6 +491,7 @@ onMounted(async () => {
                   <th>Endpoint</th>
                   <th>Status</th>
                   <th>Duration</th>
+                  <th>Trend</th>
                 </tr>
               </thead>
               <tbody>
@@ -449,6 +502,9 @@ onMounted(async () => {
                     <Tag v-else :value="`${ep.statusCode}`" :severity="statusSeverity(ep.statusCode)" />
                   </td>
                   <td class="ep-latency">{{ ep.skipped ? '—' : `${ep.latencyMs} ms` }}</td>
+                  <td>
+                    <SparklineChart :bars="endpointRunSparkline(c.id, ep.endpointId)" />
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -609,7 +665,7 @@ onMounted(async () => {
 
 .col-header {
   display: grid;
-  grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 9rem;
+  grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 7rem 9rem;
   align-items: center;
   padding: 0.45rem 0.75rem;
   background: var(--surface-ground);
@@ -624,7 +680,7 @@ onMounted(async () => {
 
 .col-row {
   display: grid;
-  grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 9rem;
+  grid-template-columns: 2.5rem 1fr 6rem 11rem 6rem 6rem 7rem 9rem;
   align-items: center;
   padding: 0.6rem 0.75rem;
   border-bottom: 1px solid var(--surface-border);
@@ -641,6 +697,7 @@ onMounted(async () => {
 .col-desc { font-size: 0.76rem; color: var(--text-color-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-count { display: flex; }
 .col-lastrun, .col-duration, .col-success { display: flex; align-items: center; }
+.col-trend { display: flex; align-items: center; }
 .col-actions { display: flex; align-items: center; gap: 0.2rem; justify-content: flex-end; }
 
 .meta-text { font-size: 0.78rem; color: var(--text-color-secondary); }
@@ -648,7 +705,7 @@ onMounted(async () => {
 
 /* Header cell labels */
 .col-h-expand, .col-h-name, .col-h-count, .col-h-lastrun,
-.col-h-duration, .col-h-success, .col-h-actions { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-h-duration, .col-h-success, .col-h-trend, .col-h-actions { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-h-actions { text-align: right; }
 
 /* ── Expand panel ─────────────────────────────────────────────── */

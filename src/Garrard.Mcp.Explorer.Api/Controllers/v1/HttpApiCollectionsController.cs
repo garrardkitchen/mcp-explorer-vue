@@ -239,6 +239,23 @@ public sealed class HttpApiCollectionsController(
         return Ok(history);
     }
 
+    [HttpGet("sparklines")]
+    public async Task<IActionResult> GetSparklines([FromQuery] int limit = 10, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var data = await snapshotStore.GetCollectionSparklineDataAsync(limit, ct);
+        var result = data.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(r => new
+            {
+                durationMs = r.DurationMs,
+                successCount = r.SuccessCount,
+                totalCount = r.TotalCount
+            }).ToList()
+        );
+        return Ok(result);
+    }
+
     private static Dictionary<string, string> ToSnapshotDictionary(IEnumerable<(string Name, string Value)> items)
     {
         return items

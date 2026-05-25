@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 2)
+
+### Added
+- Sparkline "Trend" column to the Invoke APIs mode grid (was only present on the connections DataTable view).
+
+### Changed
+- Invoke APIs page: URL column narrowed (`minmax(0, 1fr)` down from `2.5fr`) to accommodate the new Trend column.
+- Invoke button on row and expanded panel header now icon-only (no "Invoke" label); tooltip retained.
+
+## [Unreleased] - 2026-05-25 (patch)
+
+### Fixed
+- Eliminate double computation of `endpointRunSparkline` and `collectionSparklines` in templates — rely on `SparklineChart`'s built-in empty-state render instead of `v-if`/`v-else` guard.
+
+## [Unreleased] - 2026-05-25
+
+### Added
+- **Sparkline "Trend" columns**: Both the API invoke list and collections list now show a mini bar-chart sparkline for the last 10 runs. Bar height = duration; bar colour indicates health (green = success/schema-match, orange = HTTP error/schema-drift, red = failure/timeout, grey = no comparison). Collections list also shows a Trend column with total collection run durations. Expanding a collection row shows a per-endpoint sparkline built from collection run history (collection-scoped). New batch endpoints: `GET /http-apis/sparklines` and `GET /http-api-collections/sparklines`.
+
 ## [Unreleased] - 2026-05-24
 
 ### Added

@@ -330,6 +330,24 @@ public sealed class HttpApisController(
         return Ok(history);
     }
 
+    [HttpGet("sparklines")]
+    public async Task<IActionResult> GetSparklines([FromQuery] int limit = 10, CancellationToken ct = default)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        var data = await snapshotStore.GetEndpointSparklineDataAsync(limit, ct);
+        var result = data.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(r => new
+            {
+                durationMs = r.LatencyMs,
+                statusCode = r.StatusCode,
+                schemaMatchedSnapshot = r.SchemaMatchedSnapshot,
+                hasError = !string.IsNullOrEmpty(r.ErrorMessage) || r.StatusCode == 0
+            }).ToList()
+        );
+        return Ok(result);
+    }
+
     // ── Groups ────────────────────────────────────────────────────────────────
 
     [HttpGet("groups")]

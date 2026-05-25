@@ -11,6 +11,8 @@ import type {
   HttpApiExportPayload,
   HttpApiCollectionRunResult,
   HttpApiCollectionRunRecord,
+  HttpApiInvocationSparklinePoint,
+  HttpApiCollectionRunSparklinePoint,
 } from './types'
 
 export const httpApisApi = {
@@ -125,6 +127,18 @@ export const httpApisApi = {
   getCollectionRunHistory: (id: string, limit = 50) =>
     apiClient.get<HttpApiCollectionRunRecord[]>(
       `/http-api-collections/${encodeURIComponent(id)}/run-history`,
+      { params: { limit } }
+    ).then(r => r.data),
+
+  getEndpointSparklines: (limit = 10) =>
+    apiClient.get<Record<string, HttpApiInvocationSparklinePoint[]>>(
+      '/http-apis/sparklines',
+      { params: { limit } }
+    ).then(r => r.data),
+
+  getCollectionSparklines: (limit = 10) =>
+    apiClient.get<Record<string, HttpApiCollectionRunSparklinePoint[]>>(
+      '/http-api-collections/sparklines',
       { params: { limit } }
     ).then(r => r.data),
 }

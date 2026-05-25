@@ -21,6 +21,8 @@ import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
 import JsonViewer from '@/components/common/JsonViewer.vue'
+import SparklineChart from '@/components/common/SparklineChart.vue'
+import type { SparklineBar } from '@/components/common/SparklineChart.vue'
 import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
 import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
@@ -41,6 +43,7 @@ import type {
   HttpResponseSnapshot,
   HttpApiInvocationRecord,
   HttpSchemaComparisonResult,
+  HttpApiInvocationSparklinePoint,
 } from '@/api/types'
 
 const toast = useToast()
@@ -52,6 +55,34 @@ const route = useRoute()
 const loading = ref(false)
 const searchQuery = ref('')
 const selectedGroup = ref<string | null>(null)
+
+// ── Sparklines ───────────────────────────────────────────────────────────────
+const endpointSparklines = ref<Map<string, SparklineBar[]>>(new Map())
+
+function endpointSparklineColor(pt: HttpApiInvocationSparklinePoint): string {
+  if (pt.hasError || pt.statusCode === 0) return '#ef4444'   // red — error/timeout
+  if (pt.statusCode >= 400) return '#f97316'                  // orange — HTTP error
+  if (pt.schemaMatchedSnapshot === false) return '#f97316'    // orange — schema drift
+  if (pt.schemaMatchedSnapshot === true) return '#22c55e'     // green — all good
+  return '#6b7280'                                            // grey — no comparison
+}
+
+function buildEndpointSparkline(points: HttpApiInvocationSparklinePoint[]): SparklineBar[] {
+  return points.map(pt => ({ value: pt.durationMs, color: endpointSparklineColor(pt) }))
+}
+
+async function loadEndpointSparklines() {
+  try {
+    const data = await httpApisApi.getEndpointSparklines()
+    const map = new Map<string, SparklineBar[]>()
+    for (const [id, points] of Object.entries(data)) {
+      map.set(id, buildEndpointSparkline(points))
+    }
+    endpointSparklines.value = map
+  } catch {
+    // non-critical — sparklines degrade gracefully
+  }
+}
 const showFavsFirst = ref(false)
 
 // ── Form dialog ──────────────────────────────────────────────────────────────
@@ -389,6 +420,7 @@ async function executeInvoke(inputs?: Record<string, string>) {
       defInStore.lastInvokedAt = new Date().toISOString()
     }
     await loadHistory(id)
+    loadEndpointSparklines() // refresh sparklines async, non-blocking
   } catch (e: any) {
     if (invokeTarget.value?.id === id)
       toast.add({ severity: 'error', summary: 'Invocation failed', detail: e.message, life: 5000 })
@@ -754,6 +786,7 @@ onMounted(async () => {
       systemApi.getInfo().catch(() => ({ apiVersion: '', dotnetVersion: '', dataPath: null })),
     ])
     dataPath.value = info.dataPath ?? null
+    await loadEndpointSparklines()
   } finally {
     loading.value = false
   }
@@ -855,6 +888,12 @@ onMounted(async () => {
           </template>
         </Column>
 
+        <Column header="Trend" style="width:110px; min-width:90px">
+          <template #body="{ data }">
+            <SparklineChart :bars="endpointSparklines.get(data.id) ?? []" />
+          </template>
+        </Column>
+
         <Column header="Actions" style="min-width:200px; text-align:right">
           <template #body="{ data }">
             <div class="row-actions">
@@ -918,6 +957,7 @@ onMounted(async () => {
         <div class="col-url">URL</div>
         <div class="col-auth">Auth</div>
         <div class="col-status">Status</div>
+        <div class="col-trend">Trend</div>
         <div class="col-actions"></div>
       </div>
 
@@ -959,6 +999,9 @@ onMounted(async () => {
                 :severity="statusSeverity(def.lastStatusCode)"
               />
             </div>
+            <div class="col-trend">
+              <SparklineChart :bars="endpointSparklines.get(def.id) ?? []" />
+            </div>
             <div class="col-actions">
               <Button
                 :icon="copiedCliId === def.id ? 'pi pi-check' : 'pi pi-clipboard'"
@@ -967,9 +1010,9 @@ onMounted(async () => {
                 @click="copyCliCommand(def)"
               />
               <Button
-                label="Invoke"
                 icon="pi pi-play"
                 size="small"
+                v-tooltip.top="'Invoke'"
                 :loading="invoking && invokeTarget?.id === def.id"
                 @click="invokeAndExpand(def)"
               />
@@ -981,7 +1024,7 @@ onMounted(async () => {
             <div class="api-detail-panel__header">
               <span class="api-detail-panel__title">{{ def.name }}</span>
               <div class="api-detail-panel__actions">
-                <Button label="Invoke" icon="pi pi-play" size="small" :loading="invoking" @click="doInvoke" />
+                <Button icon="pi pi-play" size="small" v-tooltip.top="'Invoke'" :loading="invoking" @click="doInvoke" />
                 <Button label="Bookmark" icon="pi pi-bookmark" severity="secondary" outlined size="small" @click="() => doBookmark()" />
                 <Button label="Compare" icon="pi pi-sync" severity="info" outlined size="small" :loading="comparing" @click="() => doCompare()" />
               </div>
@@ -1489,14 +1532,14 @@ onMounted(async () => {
 .group-chip { cursor: pointer; }
 
 .api-table { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--surface-border); border-radius: 8px; background: var(--surface-card); }
-.api-table__header { display: grid; grid-template-columns: 2.5rem 84px minmax(0, 1.5fr) minmax(0, 2.5fr) 168px 80px 104px; align-items: center; gap: 0.5rem; padding: 0.35rem 0.75rem; font-size: 0.72rem; font-weight: 600; color: var(--text-color-secondary); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--surface-border); position: sticky; top: 0; background: var(--surface-card); z-index: 1; }
+.api-table__header { display: grid; grid-template-columns: 2.5rem 84px minmax(0, 1.5fr) minmax(0, 1fr) 168px 80px 90px 72px; align-items: center; gap: 0.5rem; padding: 0.35rem 0.75rem; font-size: 0.72rem; font-weight: 600; color: var(--text-color-secondary); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--surface-border); position: sticky; top: 0; background: var(--surface-card); z-index: 1; }
 .api-row-wrap { border-bottom: 1px solid var(--surface-border); }
 .api-row-wrap:last-child { border-bottom: none; }
-.api-row { display: grid; grid-template-columns: 2.5rem 84px minmax(0, 1.5fr) minmax(0, 2.5fr) 168px 80px 104px; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; transition: background 0.12s; }
+.api-row { display: grid; grid-template-columns: 2.5rem 84px minmax(0, 1.5fr) minmax(0, 1fr) 168px 80px 90px 72px; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; transition: background 0.12s; }
 .api-row:hover { background: var(--surface-hover); }
 .api-row--expanded { background: var(--surface-hover); }
 .col-expand { display: flex; align-items: center; justify-content: center; }
-.col-method, .col-auth, .col-status, .col-actions { display: flex; align-items: center; }
+.col-method, .col-auth, .col-status, .col-trend, .col-actions { display: flex; align-items: center; }
 .col-actions { justify-content: flex-end; }
 .col-name { display: flex; align-items: center; gap: 0.3rem; min-width: 0; font-weight: 600; font-size: 0.9rem; overflow: hidden; }
 .col-url { min-width: 0; display: flex; align-items: center; }

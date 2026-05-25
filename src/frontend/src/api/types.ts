@@ -591,6 +591,19 @@ export interface HttpApiCollectionRunRecord {
   endpointSummaries: HttpApiCollectionEndpointRunSummary[]
 }
 
+export interface HttpApiInvocationSparklinePoint {
+  durationMs: number
+  statusCode: number
+  schemaMatchedSnapshot: boolean | null
+  hasError: boolean
+}
+
+export interface HttpApiCollectionRunSparklinePoint {
+  durationMs: number
+  successCount: number
+  totalCount: number
+}
+
 export interface HttpApiCollectionRunResult {
   runId: string
   collectionId: string

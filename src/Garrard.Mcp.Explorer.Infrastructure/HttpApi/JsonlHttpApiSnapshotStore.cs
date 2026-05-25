@@ -164,6 +164,46 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
         return Task.CompletedTask;
     }
 
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<HttpApiInvocationRecord>>> GetEndpointSparklineDataAsync(
+        int limit = 10, CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, IReadOnlyList<HttpApiInvocationRecord>>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(_baseDir)) return result;
+
+        foreach (var dir in Directory.EnumerateDirectories(_baseDir))
+        {
+            var histPath = Path.Combine(dir, "history.jsonl");
+            if (!File.Exists(histPath)) continue;
+            var records = await ReadJsonlTailAsync<HttpApiInvocationRecord>(histPath, limit, ct).ConfigureAwait(false);
+            if (records.Count == 0) continue;
+            var endpointId = records.FirstOrDefault(r => !string.IsNullOrEmpty(r.EndpointId))?.EndpointId;
+            if (string.IsNullOrEmpty(endpointId)) continue;
+            result[endpointId] = records.OrderBy(r => r.InvokedAt).ToList();
+        }
+
+        return result;
+    }
+
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<HttpApiCollectionRunRecord>>> GetCollectionSparklineDataAsync(
+        int limit = 10, CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, IReadOnlyList<HttpApiCollectionRunRecord>>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(_collectionsDir)) return result;
+
+        foreach (var dir in Directory.EnumerateDirectories(_collectionsDir))
+        {
+            var histPath = Path.Combine(dir, "history.jsonl");
+            if (!File.Exists(histPath)) continue;
+            var records = await ReadJsonlTailAsync<HttpApiCollectionRunRecord>(histPath, limit, ct).ConfigureAwait(false);
+            if (records.Count == 0) continue;
+            var collectionId = records.FirstOrDefault(r => !string.IsNullOrEmpty(r.CollectionId))?.CollectionId;
+            if (string.IsNullOrEmpty(collectionId)) continue;
+            result[collectionId] = records.OrderBy(r => r.RanAt).ToList();
+        }
+
+        return result;
+    }
+
     private string GetCollectionRunDir(string collectionId)
         => Path.Combine(_collectionsDir, Sanitize(collectionId));
 
