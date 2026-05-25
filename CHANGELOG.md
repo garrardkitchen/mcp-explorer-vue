@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 5)
+
+### Fixed
+- Collections page: scrolling now works when many collections are present. Added `flex-shrink: 0` to `.toolbar` and `.col-table` so content overflows the container rather than compressing, allowing the page's `overflow-y: auto` to take effect.
+
+## [Unreleased] - 2026-05-25 (patch 4)
+
+### Added
+- Collection run history rows now have a chevron expand button. Expanding a row shows the same per-endpoint detail table as the run result dialog (status code, latency, result label, schema changes with +/-/~ badges).
+- `HttpApiCollectionEndpointRunSummary` now persists comparison data (`comparisonHasBaseline`, `comparisonIsBreaking`, `comparisonIsDegraded`, removed/added/changed properties) and `errorMessage` — populated from both the API controller and the CLI runner.
+
 ## [Unreleased] - 2026-05-25 (patch 3)
 
 ### Fixed

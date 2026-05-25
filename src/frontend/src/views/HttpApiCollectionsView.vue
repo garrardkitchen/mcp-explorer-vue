@@ -30,6 +30,15 @@ const searchQuery = ref('')
 const expandedIds = ref<Set<string>>(new Set())
 const runHistory = ref<Map<string, HttpApiCollectionRunRecord[]>>(new Map())
 const runHistoryLoading = ref<Set<string>>(new Set())
+const expandedHistoryRunIds = ref<Set<string>>(new Set())
+
+function toggleHistoryRow(runId: string) {
+  if (expandedHistoryRunIds.value.has(runId)) {
+    expandedHistoryRunIds.value.delete(runId)
+  } else {
+    expandedHistoryRunIds.value.add(runId)
+  }
+}
 
 // ── Sparklines ────────────────────────────────────────────────────────────────
 const collectionSparklines = ref<Map<string, SparklineBar[]>>(new Map())
@@ -363,6 +372,24 @@ function itemLabel(item: HttpApiCollectionRunItem) {
   return '🟢 OK'
 }
 
+import type { HttpApiCollectionEndpointRunSummary } from '@/api/types'
+
+function summaryItemLabel(ep: HttpApiCollectionEndpointRunSummary) {
+  if (ep.skipped) return '⏭ Skipped'
+  if (!ep.isSuccess) return '🔴 Failed'
+  if (ep.comparisonHasBaseline && ep.comparisonIsBreaking) return '🔴 Breaking'
+  if (ep.comparisonHasBaseline && ep.comparisonIsDegraded) return '🟡 Degraded'
+  return '🟢 OK'
+}
+
+function summaryItemSeverity(ep: HttpApiCollectionEndpointRunSummary) {
+  if (ep.skipped) return 'secondary'
+  if (!ep.isSuccess) return 'danger'
+  if (ep.comparisonHasBaseline && ep.comparisonIsBreaking) return 'danger'
+  if (ep.comparisonHasBaseline && ep.comparisonIsDegraded) return 'warn'
+  return 'success'
+}
+
 // ── Mount ──────────────────────────────────────────────────────────────────────
 onMounted(async () => {
   loading.value = true
@@ -518,6 +545,7 @@ onMounted(async () => {
               <table class="ep-table run-history-table">
                 <thead>
                   <tr>
+                    <th style="width:2rem"></th>
                     <th>When</th>
                     <th>Duration</th>
                     <th>Passed</th>
@@ -526,16 +554,60 @@ onMounted(async () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="run in runHistory.get(c.id)" :key="run.runId">
-                    <td class="ep-name">{{ new Date(run.ranAt).toLocaleString() }}</td>
-                    <td class="ep-latency">{{ formatDuration(run.durationMs) }}</td>
-                    <td><Tag :value="`${run.successCount}`" severity="success" /></td>
-                    <td><Tag v-if="run.totalCount - run.successCount > 0" :value="`${run.totalCount - run.successCount}`" severity="danger" /><span v-else class="meta-muted">0</span></td>
-                    <td>
-                      <Tag v-if="run.invokedVia" :value="run.invokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'" :severity="run.invokedVia === 'CLI' ? 'secondary' : 'info'" />
-                      <span v-else class="meta-muted">—</span>
-                    </td>
-                  </tr>
+                  <template v-for="run in runHistory.get(c.id)" :key="run.runId">
+                    <tr :class="{ 'run-row--expanded': expandedHistoryRunIds.has(run.runId) }">
+                      <td>
+                        <Button
+                          text rounded size="small"
+                          :icon="expandedHistoryRunIds.has(run.runId) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+                          @click="toggleHistoryRow(run.runId)"
+                        />
+                      </td>
+                      <td class="ep-name">{{ new Date(run.ranAt).toLocaleString() }}</td>
+                      <td class="ep-latency">{{ formatDuration(run.durationMs) }}</td>
+                      <td><Tag :value="`${run.successCount}`" severity="success" /></td>
+                      <td><Tag v-if="run.totalCount - run.successCount > 0" :value="`${run.totalCount - run.successCount}`" severity="danger" /><span v-else class="meta-muted">0</span></td>
+                      <td>
+                        <Tag v-if="run.invokedVia" :value="run.invokedVia === 'CLI' ? '⌨ CLI' : '🖥 App'" :severity="run.invokedVia === 'CLI' ? 'secondary' : 'info'" />
+                        <span v-else class="meta-muted">—</span>
+                      </td>
+                    </tr>
+                    <tr v-if="expandedHistoryRunIds.has(run.runId)" class="run-detail-row">
+                      <td colspan="6" class="run-detail-cell">
+                        <table class="ep-table ep-detail-table">
+                          <thead>
+                            <tr>
+                              <th>Endpoint</th>
+                              <th>Status</th>
+                              <th>Latency</th>
+                              <th>Result</th>
+                              <th>Schema changes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="ep in run.endpointSummaries" :key="ep.endpointId">
+                              <td class="ep-name">{{ ep.endpointName }}</td>
+                              <td>
+                                <Tag v-if="!ep.skipped" :value="`${ep.statusCode}`" :severity="statusSeverity(ep.statusCode)" />
+                                <span v-else class="meta-muted">—</span>
+                              </td>
+                              <td class="ep-latency">{{ ep.skipped ? '—' : `${ep.latencyMs} ms` }}</td>
+                              <td><Tag :value="summaryItemLabel(ep)" :severity="summaryItemSeverity(ep)" /></td>
+                              <td>
+                                <span v-if="ep.comparisonHasBaseline">
+                                  <span v-if="ep.comparisonRemovedProperties?.length" class="change-badge removed">-{{ ep.comparisonRemovedProperties.length }}</span>
+                                  <span v-if="ep.comparisonAddedProperties?.length" class="change-badge added">+{{ ep.comparisonAddedProperties.length }}</span>
+                                  <span v-if="ep.comparisonChangedTypes?.length" class="change-badge changed">~{{ ep.comparisonChangedTypes.length }}</span>
+                                  <span v-if="!ep.comparisonIsBreaking && !ep.comparisonIsDegraded">✅</span>
+                                </span>
+                                <span v-else class="meta-muted">No baseline</span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  </template>
                 </tbody>
               </table>
             </template>
@@ -656,12 +728,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.collections-view { display: flex; flex-direction: column; height: 100%; gap: 0.75rem; padding: 1rem; }
-.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.collections-view { display: flex; flex-direction: column; height: 100%; overflow-y: auto; gap: 0.75rem; padding: 1rem; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-shrink: 0; }
 .skeleton-list { display: flex; flex-direction: column; gap: 0.4rem; }
 
 /* ── Table layout ─────────────────────────────────────────────── */
-.col-table { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 8px; overflow: hidden; }
+.col-table { display: flex; flex-direction: column; border: 1px solid var(--surface-border); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
 
 .col-header {
   display: grid;
@@ -735,6 +807,13 @@ onMounted(async () => {
 .run-history-section { margin-top: 1rem; }
 .run-history-header { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-color-secondary); margin-bottom: 0.4rem; letter-spacing: 0.04em; }
 .run-history-table .ep-name { font-weight: 400; color: var(--text-color); }
+.run-row--expanded td { background: var(--surface-hover); }
+.run-detail-row { background: var(--surface-section, var(--surface-ground)); }
+.run-detail-cell { padding: 0.5rem 0.5rem 0.75rem 2.5rem !important; }
+.ep-detail-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.ep-detail-table th { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--text-color-secondary); padding: 0.2rem 0.5rem; border-bottom: 1px solid var(--surface-border); }
+.ep-detail-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--surface-border); }
+.ep-detail-table tr:last-child td { border-bottom: none; }
 
 /* ── Empty state ──────────────────────────────────────────────── */
 .empty-state { text-align: center; padding: 2rem; color: var(--text-color-secondary); }

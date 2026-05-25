@@ -481,6 +481,13 @@ export interface HttpApiCollectionEndpointRunSummary {
   latencyMs: number
   isSuccess: boolean
   skipped: boolean
+  errorMessage?: string | null
+  comparisonHasBaseline?: boolean | null
+  comparisonIsBreaking?: boolean | null
+  comparisonIsDegraded?: boolean | null
+  comparisonRemovedProperties?: string[] | null
+  comparisonAddedProperties?: string[] | null
+  comparisonChangedTypes?: SchemaPropertyChange[] | null
 }
 
 export interface HttpApiGroup {

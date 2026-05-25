@@ -117,12 +117,19 @@ public sealed class HttpRunCollectionCommand : AsyncCommand<HttpRunCollectionCom
 
                     summaries.Add(new Core.Domain.HttpApi.HttpApiCollectionEndpointRunSummary
                     {
-                        EndpointId   = def.Id,
-                        EndpointName = def.Name,
-                        StatusCode   = result.StatusCode,
-                        LatencyMs    = result.LatencyMs,
-                        IsSuccess    = isCountedSuccess,
-                        Skipped      = false
+                        EndpointId                  = def.Id,
+                        EndpointName                = def.Name,
+                        StatusCode                  = result.StatusCode,
+                        LatencyMs                   = result.LatencyMs,
+                        IsSuccess                   = isCountedSuccess,
+                        Skipped                     = false,
+                        ErrorMessage                = result.ErrorMessage,
+                        ComparisonHasBaseline       = comparison is not null,
+                        ComparisonIsBreaking        = comparison?.IsBreaking,
+                        ComparisonIsDegraded        = comparison?.IsDegraded,
+                        ComparisonRemovedProperties = comparison?.RemovedProperties,
+                        ComparisonAddedProperties   = comparison?.AddedProperties,
+                        ComparisonChangedTypes      = comparison?.ChangedTypes
                     });
 
                     var invRecord = new HttpApiInvocationRecord

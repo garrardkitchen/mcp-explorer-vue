@@ -148,12 +148,19 @@ public sealed class HttpApiCollectionsController(
 
             summaries.Add(new HttpApiCollectionEndpointRunSummary
             {
-                EndpointId   = def.Id,
-                EndpointName = def.Name,
-                StatusCode   = invokeResult.StatusCode,
-                LatencyMs    = invokeResult.LatencyMs,
-                IsSuccess    = isCountedSuccess,
-                Skipped      = false
+                EndpointId                  = def.Id,
+                EndpointName                = def.Name,
+                StatusCode                  = invokeResult.StatusCode,
+                LatencyMs                   = invokeResult.LatencyMs,
+                IsSuccess                   = isCountedSuccess,
+                Skipped                     = false,
+                ErrorMessage                = invokeResult.ErrorMessage,
+                ComparisonHasBaseline       = comparison is not null,
+                ComparisonIsBreaking        = comparison?.IsBreaking,
+                ComparisonIsDegraded        = comparison?.IsDegraded,
+                ComparisonRemovedProperties = comparison?.RemovedProperties,
+                ComparisonAddedProperties   = comparison?.AddedProperties,
+                ComparisonChangedTypes      = comparison?.ChangedTypes
             });
 
             await snapshotStore.AppendInvocationAsync(new HttpApiInvocationRecord

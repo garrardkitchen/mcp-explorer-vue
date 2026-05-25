@@ -12,4 +12,11 @@ public sealed class HttpApiCollectionEndpointRunSummary
     public long LatencyMs { get; set; }
     public bool IsSuccess { get; set; }
     public bool Skipped { get; set; }
+    public string? ErrorMessage { get; set; }
+    public bool? ComparisonHasBaseline { get; set; }
+    public bool? ComparisonIsBreaking { get; set; }
+    public bool? ComparisonIsDegraded { get; set; }
+    public List<string>? ComparisonRemovedProperties { get; set; }
+    public List<string>? ComparisonAddedProperties { get; set; }
+    public List<SchemaPropertyChange>? ComparisonChangedTypes { get; set; }
 }
