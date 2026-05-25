@@ -186,7 +186,8 @@ public sealed class HttpApiCollectionsController(
                 isSuccess    = invokeResult.IsSuccess,
                 comparison,
                 inferredSchema = schema,
-                errorMessage = invokeResult.ErrorMessage
+                errorMessage = invokeResult.ErrorMessage,
+                body         = invokeResult.Body
             });
         }
 

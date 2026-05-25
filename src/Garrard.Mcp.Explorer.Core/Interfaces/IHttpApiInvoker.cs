@@ -22,7 +22,7 @@ public sealed class HttpApiInvokeResult
     public string? ContentType { get; set; }
     /// <summary>Full response body (up to 1 MB) for live display.</summary>
     public string? Body { get; set; }
-    /// <summary>Body truncated to 4 KB for snapshot/history storage.</summary>
+    /// <summary>Full response body — same as <see cref="Body"/>; retained for compatibility.</summary>
     public string? TruncatedBody { get; set; }
     public string? ErrorMessage { get; set; }
     public bool IsSuccess => StatusCode is >= 200 and < 300;

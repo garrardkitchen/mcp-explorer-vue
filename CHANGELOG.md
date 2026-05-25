@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25 (patch 3)
+
+### Fixed
+- Remove 4 KB storage truncation on response bodies — `TruncatedBody` now equals `Body` (full response, up to 1 MB). History, snapshots, bookmarks, and CLI invocations now store the complete response body.
+- Collection run results now include `body` per endpoint, matching the single-invoke response shape.
+
 ## [Unreleased] - 2026-05-25 (patch 2)
 
 ### Added

@@ -19,9 +19,7 @@ namespace Garrard.Mcp.Explorer.Infrastructure.HttpApi;
 /// </summary>
 public sealed class HttpApiInvoker : IHttpApiInvoker
 {
-    // Snapshot/history storage cap — intentionally small to prevent the store growing excessively.
-    private const int MaxStorageBodyBytes = 4096;
-    // Display cap for the live response returned to the caller (1 MB).
+    // Cap for both display and storage — no separate truncation for history.
     private const int MaxDisplayBodyBytes = 1024 * 1024;
     private static readonly string DefaultUserAgent = $"MCP Explorer/{ResolveVersion()}";
 
@@ -57,7 +55,7 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
 
             sw.Stop();
 
-            var (body, truncatedBody) = await ReadBodyAsync(response, ct).ConfigureAwait(false);
+            var body = await ReadBodyAsync(response, ct).ConfigureAwait(false);
             var headers = response.Headers.Concat(response.Content.Headers)
                 .ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase);
 
@@ -68,7 +66,7 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
                 ResponseHeaders = headers,
                 ContentType     = response.Content.Headers.ContentType?.MediaType,
                 Body            = body,
-                TruncatedBody   = truncatedBody
+                TruncatedBody   = body
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -279,15 +277,12 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
         return await _keyVaultSecretResolver.ResolveAsync(opts.KeyVaultSecretRef, ct).ConfigureAwait(false);
     }
 
-    private static async Task<(string? body, string? truncatedBody)> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task<string?> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
     {
         var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-        if (bytes.Length == 0) return (null, null);
-        var displayLen  = Utf8SafeLength(bytes, MaxDisplayBodyBytes);
-        var storageLen  = Utf8SafeLength(bytes, MaxStorageBodyBytes);
-        var body          = Encoding.UTF8.GetString(bytes, 0, displayLen);
-        var truncatedBody = storageLen == displayLen ? body : Encoding.UTF8.GetString(bytes, 0, storageLen);
-        return (body, truncatedBody);
+        if (bytes.Length == 0) return null;
+        var len = Utf8SafeLength(bytes, MaxDisplayBodyBytes);
+        return Encoding.UTF8.GetString(bytes, 0, len);
     }
 
     /// <summary>
