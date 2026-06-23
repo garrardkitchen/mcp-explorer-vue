@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased] - 2026-06-23 (patch 13)
+
+### Security
+- Frontend dependencies: resolved 6 npm audit vulnerabilities by updating lockfile-resolved packages, including `axios` (1.14.0 → 1.18.1), `dompurify` (3.3.3 → 3.4.11), `vite` (8.0.7 → 8.1.0), `postcss` (8.5.8 → 8.5.15), `form-data` (4.0.5 → 4.0.6), and `follow-redirects` (1.15.11 → 1.16.0).
+
 ## [Unreleased] - 2026-06-23 (patch 12)
 
 ### Changed
