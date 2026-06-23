@@ -63,7 +63,7 @@ mcp-http --data-path "/home/user/McpExplorerData" http api list
 
 ## `http runbook` **(NEW)**
 
-Execute a YAML-declared HTTP runbook to invoke saved endpoints with optional scheduling and chained step inputs.
+Execute a YAML-declared HTTP runbook to invoke saved endpoints with validation, assertions, optional scheduling, and chained step inputs.
 
 ```bash
 mcp-http http runbook --file ./http-runbook.yaml
@@ -77,9 +77,9 @@ mcp-http http runbook --file ./http-runbook.yaml --validate-only
 | Option | Description |
 |--------|-------------|
 | `--file <path>` | Path to a YAML runbook file |
-| `--validate-only` | Validate YAML/schema and exit without invoking endpoints |
+| `--validate-only` | Validate YAML syntax + structure and exit without invoking endpoints |
 
-Runbook steps can reference endpoint `name` (exact/partial) or `endpointId`, chain values with template tokens like `{{ steps.first.body.value }}`, and use schedule settings (`repeat`, `everySeconds`, `forSeconds`) for repeated execution.
+Runbook steps can reference endpoint `name` (exact/partial) or `endpointId`, chain values with template tokens like `{{ steps.first.body.value }}`, and use schedule settings (`repeat`, `everySeconds`, `forSeconds`) for repeated execution. Add `assert` blocks to evaluate result success/failure and use `continueOnAssertFailure` (runbook or step level) to continue or stop on assertion failure.
 
 ---
 

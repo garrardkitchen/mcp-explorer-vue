@@ -6,6 +6,7 @@ public sealed class McpRunbook
 {
     public string Version { get; set; } = "1";
     public string? DefaultConnection { get; set; }
+    public bool ContinueOnAssertFailure { get; set; }
     public List<McpRunbookConnection> Connections { get; set; } = [];
     public List<McpRunbookStep> Steps { get; set; } = [];
     public McpRunbookSchedule Schedule { get; set; } = new();
@@ -58,6 +59,8 @@ public sealed class McpRunbookStep
     public string Tool { get; set; } = string.Empty;
     public string? Connection { get; set; }
     public Dictionary<string, object?> Params { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public RunbookAssertion? Assert { get; set; }
+    public bool? ContinueOnAssertFailure { get; set; }
     public int MaxRetries { get; set; }
     public bool ContinueOnError { get; set; }
 }

@@ -52,10 +52,11 @@ public class HttpRunbookExecutorTests
             ]
         };
 
-        var results = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
+        var execution = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
 
         Assert.Equal("hello", secondInputs!["value"]);
-        Assert.True(results.ContainsKey("second"));
+        Assert.True(execution.Results.ContainsKey("second"));
+        Assert.Equal(0, execution.FailureCount);
     }
 
     [Fact]
@@ -81,5 +82,39 @@ public class HttpRunbookExecutorTests
         await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
 
         invoker.Verify(i => i.InvokeAsync(It.IsAny<HttpApiDefinition>(), It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AssertionFailureCanContinue_WhenConfigured()
+    {
+        var endpoint = new HttpApiDefinition { Id = "e1", Name = "Weather API", BaseUrl = "https://example", Path = "/weather" };
+        var store = new Mock<IHttpApiStore>();
+        store.Setup(s => s.GetAllDefinitionsAsync(It.IsAny<CancellationToken>())).ReturnsAsync([endpoint]);
+
+        var invoker = new Mock<IHttpApiInvoker>();
+        invoker
+            .Setup(i => i.InvokeAsync(It.IsAny<HttpApiDefinition>(), It.IsAny<IReadOnlyDictionary<string, string?>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HttpApiInvokeResult { StatusCode = 500, Body = "{\"error\":\"boom\"}", TruncatedBody = "{\"error\":\"boom\"}" });
+
+        var executor = new HttpRunbookExecutor(store.Object, invoker.Object, new McpRunbookTemplateResolver());
+
+        var runbook = new HttpRunbook
+        {
+            ContinueOnAssertFailure = true,
+            Steps =
+            [
+                new HttpRunbookStep
+                {
+                    Id = "step1",
+                    Endpoint = "Weather API",
+                    Assert = new RunbookAssertion { Path = "isSuccess", Operator = "equals", Value = true }
+                }
+            ]
+        };
+
+        var execution = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
+
+        Assert.Equal(1, execution.FailureCount);
+        Assert.True(execution.Results.ContainsKey("step1"));
     }
 }

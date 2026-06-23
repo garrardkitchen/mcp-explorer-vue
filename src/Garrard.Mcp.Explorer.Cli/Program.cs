@@ -112,7 +112,7 @@ app.Configure(config =>
         http.SetDescription("HTTP API Explorer commands");
 
         http.AddCommand<HttpRunbookCommand>("runbook")
-            .WithDescription("Execute HTTP API calls from a YAML runbook file with scheduling and step chaining.")
+            .WithDescription("Execute HTTP API calls from a YAML runbook file with validation, assertions, scheduling, and step chaining.")
             .WithExample("http", "runbook", "--file", "runbook.yaml")
             .WithExample("http", "runbook", "--file", "runbook.yaml", "--validate-only");
 
@@ -193,7 +193,7 @@ app.Configure(config =>
             .WithExample("mcp", "invoke", "--name", "My Server", "--tool", "search", "--params", "{\"query\":\"dotnet\"}");
 
         mcp.AddCommand<McpRunbookCommand>("runbook")
-            .WithDescription("Execute MCP tool calls from a YAML runbook file with auth, chaining, and scheduling.")
+            .WithDescription("Execute MCP tool calls from a YAML runbook file with validation, assertions, auth, chaining, and scheduling.")
             .WithExample("mcp", "runbook", "--file", "runbook.yaml")
             .WithExample("mcp", "runbook", "--file", "runbook.yaml", "--validate-only");
     });

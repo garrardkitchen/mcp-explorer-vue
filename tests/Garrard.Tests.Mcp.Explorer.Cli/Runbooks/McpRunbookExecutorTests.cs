@@ -60,10 +60,11 @@ public class McpRunbookExecutorTests
             ]
         };
 
-        var results = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
+        var execution = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
 
         Assert.Equal("hello", secondParams!["value"]?.ToString());
-        Assert.True(results.ContainsKey("second"));
+        Assert.True(execution.Results.ContainsKey("second"));
+        Assert.Equal(0, execution.FailureCount);
     }
 
     [Fact]
@@ -104,5 +105,54 @@ public class McpRunbookExecutorTests
         await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
 
         connectionService.Verify(s => s.InvokeToolAsync("local", "tool1", It.IsAny<Dictionary<string, object?>>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AssertionFailureCanContinue_WhenConfigured()
+    {
+        var connectionService = new Mock<IConnectionService>();
+        connectionService.Setup(s => s.ConnectAsync(It.IsAny<Garrard.Mcp.Explorer.Core.Domain.Connections.ConnectionDefinition>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IActiveConnection>());
+        connectionService.Setup(s => s.InvokeToolAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"status\":\"ok\"}");
+
+        var prefsStore = new Mock<IUserPreferencesStore>();
+        prefsStore.Setup(p => p.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new UserPreferences());
+        var secretResolver = new Mock<IKeyVaultSecretResolver>(MockBehavior.Strict);
+
+        var executor = new McpRunbookExecutor(
+            connectionService.Object,
+            prefsStore.Object,
+            new McpRunbookConnectionFactory(secretResolver.Object),
+            new McpRunbookTemplateResolver());
+
+        var runbook = new McpRunbook
+        {
+            DefaultConnection = "local",
+            ContinueOnAssertFailure = true,
+            Connections =
+            [
+                new McpRunbookConnection
+                {
+                    Name = "local",
+                    Endpoint = "https://example",
+                    Auth = new McpRunbookAuth { Type = "bearer", Token = "t" }
+                }
+            ],
+            Steps =
+            [
+                new McpRunbookStep
+                {
+                    Id = "step1",
+                    Tool = "tool1",
+                    Assert = new RunbookAssertion { Path = "status", Operator = "equals", Value = "failed" }
+                }
+            ]
+        };
+
+        var execution = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
+
+        Assert.Equal(1, execution.FailureCount);
+        Assert.True(execution.Results.ContainsKey("step1"));
     }
 }

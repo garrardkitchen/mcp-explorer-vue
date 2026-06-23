@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 [![Docker Hub](https://img.shields.io/docker/pulls/garrardkitchen/mcp-explorer-x.svg)](https://hub.docker.com/r/garrardkitchen/mcp-explorer-x)
 
-A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, prompts, resources, invoke HTTP APIs, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core 10** backend, with a companion **.NET CLI** for scripted HTTP API workflows.
+A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, prompts, resources, invoke HTTP APIs, and chat with LLMs over live MCP connections. Built with a **Vue 3 / Vite / PrimeVue** frontend + **ASP.NET Core 10** backend, with a companion **.NET CLI** for scripted HTTP API and YAML runbook workflows.
 
 > [!NOTE]
 > 🔄 **This is a ground-up rewrite** of the original [MCP Explorer](https://mcp-explorer-docs.garrardkitchen.com/) (Blazor Server UI), migrated to Vue 3 + Vite + PrimeVue with a clean-architecture ASP.NET Core 10 backend, Docker-first deployment, and Azure Key Vault / Entra ID integration.
@@ -18,7 +18,7 @@ A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, pr
 - 🏢 **Azure Entra App Registrations** — browse and select app registrations from your tenant via Microsoft Graph; auto-populates client ID and tenant fields
 - 🛠️ **Tools** — browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
 - 🌐 **HTTP API Explorer** — manage HTTP API connections under Infrastructure, invoke from HTTP API Explorer with runtime `{placeholder}` inputs (supports defaults via `{name:default}`), inspect tabbed request/response history, and auto-redact sensitive values in persisted history details
-- ⌨️ **CLI (`mcp-http`)** — script HTTP API invoke/compare/history and API definition import/export from terminal automation; list MCP connections offline, and connect to MCP servers to list tools/resources/prompts/templates or invoke tools directly
+- ⌨️ **CLI (`mcp-http`)** — script HTTP API invoke/compare/history, YAML runbook validate/execute (MCP + HTTP), and API definition import/export from terminal automation; list MCP connections offline, and connect to MCP servers to list tools/resources/prompts/templates or invoke tools directly
 - 🚇 **Dev Tunnels** — create public DevTunnels for webhook callbacks, inspect live payloads over SSE, scrub event history, and replay captured requests
 - 💬 **Prompts** — list, execute, and evaluate prompts; pipe results directly to an LLM
 - 📄 **Resources & Templates** — browse MCP resources; expand templates with runtime parameters
@@ -509,6 +509,10 @@ mcp-http mcp invoke --name "My Server" --tool search --params '{"query":"dotnet"
 
 # Use a custom data directory
 mcp-http --data-path "/home/user/McpExplorerData" mcp connections
+
+# Run and validate an MCP YAML runbook
+mcp-http mcp runbook --file ./mcp-runbook.yaml
+mcp-http mcp runbook --file ./mcp-runbook.yaml --validate-only
 ```
 
 > **Name matching** — `--name` performs an exact match first, then falls back to a single case-insensitive partial match. If multiple connections match the partial name, the CLI lists the candidates and exits without connecting.
@@ -532,7 +536,25 @@ mcp-http http collection run --name "Regression Suite" --fail-on-breaking
 
 # Run a collection using localhost URLs from a custom data directory
 mcp-http --data-path "/home/user/McpExplorerData" http collection run --name "Regression Suite" --use-localhost --fail-on-breaking
+
+# Run and validate an HTTP YAML runbook
+mcp-http http runbook --file ./http-runbook.yaml
+mcp-http http runbook --file ./http-runbook.yaml --validate-only
 ```
+
+#### Runbook assertions
+
+Both `mcp runbook` and `http runbook` support per-step assertions:
+
+```yaml
+assert:
+  path: isSuccess
+  operator: equals
+  value: true
+```
+
+Use `continueOnAssertFailure: true` at runbook or step level to continue after failed assertions; otherwise execution stops on first assertion failure.
+Commands exit with code `1` if any assertion fails.
 
 #### Global options
 

@@ -39,4 +39,25 @@ schedule:
         Assert.Contains(errors, e => e.Contains("invalid", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, e => e.Contains("endpoint", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Validate_InvalidAssertionOperator_ReturnsErrors()
+    {
+        var runbook = new HttpRunbook
+        {
+            Steps =
+            [
+                new HttpRunbookStep
+                {
+                    Id = "step1",
+                    Endpoint = "Weather API",
+                    Assert = new RunbookAssertion { Operator = "matches", Value = "ok" }
+                }
+            ]
+        };
+
+        var errors = HttpRunbookValidator.Validate(runbook);
+
+        Assert.Contains(errors, e => e.Contains("assert.operator", StringComparison.OrdinalIgnoreCase));
+    }
 }

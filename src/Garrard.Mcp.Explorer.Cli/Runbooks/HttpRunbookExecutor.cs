@@ -20,7 +20,7 @@ public sealed class HttpRunbookExecutor
         _templateResolver = templateResolver;
     }
 
-    public async Task<IReadOnlyDictionary<string, object?>> ExecuteAsync(
+    public async Task<RunbookExecutionSummary> ExecuteAsync(
         HttpRunbook runbook,
         Action<string>? progress,
         CancellationToken cancellationToken)
@@ -29,6 +29,7 @@ public sealed class HttpRunbookExecutor
         var delay = HttpRunbookSchedulePlanner.ComputeDelay(runbook.Schedule);
 
         var results = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var failureCount = 0;
 
         for (var runIndex = 0; runIndex < runCount; runIndex++)
         {
@@ -49,13 +50,28 @@ public sealed class HttpRunbookExecutor
                     cancellationToken).ConfigureAwait(false);
 
                 results[step.Id] = stepResult;
+
+                if (step.Assert is not null)
+                {
+                    var assertion = RunbookAssertionEvaluator.Evaluate(stepResult, step.Assert);
+                    if (!assertion.IsSuccess)
+                    {
+                        failureCount++;
+                        var message = $"[{step.Id}] {assertion.Message}";
+                        progress?.Invoke(message);
+
+                        var continueOnAssertFailure = step.ContinueOnAssertFailure ?? runbook.ContinueOnAssertFailure;
+                        if (!continueOnAssertFailure)
+                            throw new InvalidOperationException(message);
+                    }
+                }
             }
 
             if (delay.HasValue && runIndex < runCount - 1)
                 await Task.Delay(delay.Value, cancellationToken).ConfigureAwait(false);
         }
 
-        return results;
+        return new RunbookExecutionSummary(results, failureCount);
     }
 
     private async Task<object?> ExecuteWithRetriesAsync(

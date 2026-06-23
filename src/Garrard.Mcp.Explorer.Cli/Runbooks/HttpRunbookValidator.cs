@@ -5,6 +5,13 @@ namespace Garrard.Mcp.Explorer.Cli.Runbooks;
 public static class HttpRunbookValidator
 {
     private static readonly Regex StepIdPattern = new("^[a-zA-Z0-9_-]+$", RegexOptions.Compiled);
+    private static readonly HashSet<string> SupportedAssertionOperators =
+    [
+        "equals",
+        "notequals",
+        "contains",
+        "exists"
+    ];
 
     public static IReadOnlyList<string> Validate(HttpRunbook runbook)
     {
@@ -33,6 +40,8 @@ public static class HttpRunbookValidator
 
             if (step.MaxRetries < 0)
                 errors.Add($"Step '{step.Id}' maxRetries cannot be negative.");
+
+            ValidateAssertion(step.Id, step.Assert, errors);
         }
 
         var repeat = runbook.Schedule.Repeat ?? 1;
@@ -49,5 +58,18 @@ public static class HttpRunbookValidator
             errors.Add("schedule.forSeconds requires schedule.everySeconds.");
 
         return errors;
+    }
+
+    private static void ValidateAssertion(string stepId, RunbookAssertion? assertion, List<string> errors)
+    {
+        if (assertion is null)
+            return;
+
+        var op = (assertion.Operator ?? string.Empty).Trim();
+        if (!SupportedAssertionOperators.Contains(op, StringComparer.OrdinalIgnoreCase))
+            errors.Add($"Step '{stepId}' assert.operator '{assertion.Operator}' is not supported.");
+
+        if (!op.Equals("exists", StringComparison.OrdinalIgnoreCase) && assertion.Value is null)
+            errors.Add($"Step '{stepId}' assert.value is required for operator '{assertion.Operator}'.");
     }
 }

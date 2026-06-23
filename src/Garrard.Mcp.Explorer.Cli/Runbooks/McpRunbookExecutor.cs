@@ -24,7 +24,7 @@ public sealed class McpRunbookExecutor
         _templateResolver = templateResolver;
     }
 
-    public async Task<IReadOnlyDictionary<string, object?>> ExecuteAsync(
+    public async Task<RunbookExecutionSummary> ExecuteAsync(
         McpRunbook runbook,
         Action<string>? progress,
         CancellationToken cancellationToken)
@@ -34,6 +34,7 @@ public sealed class McpRunbookExecutor
 
         var results = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var connections = await ResolveConnectionsAsync(runbook, cancellationToken).ConfigureAwait(false);
+        var failureCount = 0;
 
         try
         {
@@ -57,6 +58,21 @@ public sealed class McpRunbookExecutor
                         cancellationToken).ConfigureAwait(false);
 
                     results[step.Id] = stepResult;
+
+                    if (step.Assert is not null)
+                    {
+                        var assertion = RunbookAssertionEvaluator.Evaluate(stepResult, step.Assert);
+                        if (!assertion.IsSuccess)
+                        {
+                            failureCount++;
+                            var message = $"[{step.Id}] {assertion.Message}";
+                            progress?.Invoke(message);
+
+                            var continueOnAssertFailure = step.ContinueOnAssertFailure ?? runbook.ContinueOnAssertFailure;
+                            if (!continueOnAssertFailure)
+                                throw new InvalidOperationException(message);
+                        }
+                    }
                 }
 
                 if (delay.HasValue && runIndex < runCount - 1)
@@ -78,7 +94,7 @@ public sealed class McpRunbookExecutor
             }
         }
 
-        return results;
+        return new RunbookExecutionSummary(results, failureCount);
     }
 
     private async Task<Dictionary<string, ConnectionDefinition>> ResolveConnectionsAsync(McpRunbook runbook, CancellationToken cancellationToken)

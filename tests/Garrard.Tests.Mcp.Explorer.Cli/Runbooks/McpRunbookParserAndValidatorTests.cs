@@ -48,4 +48,35 @@ schedule:
         Assert.Contains(errors, e => e.Contains("Default connection", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, e => e.Contains("invalid", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Validate_InvalidAssertionOperator_ReturnsErrors()
+    {
+        var runbook = new McpRunbook
+        {
+            DefaultConnection = "local",
+            Connections =
+            [
+                new McpRunbookConnection
+                {
+                    Name = "local",
+                    Endpoint = "https://example",
+                    Auth = new McpRunbookAuth { Type = "bearer", Token = "token" }
+                }
+            ],
+            Steps =
+            [
+                new McpRunbookStep
+                {
+                    Id = "step1",
+                    Tool = "echo",
+                    Assert = new RunbookAssertion { Operator = "matches", Value = "ok" }
+                }
+            ]
+        };
+
+        var errors = McpRunbookValidator.Validate(runbook);
+
+        Assert.Contains(errors, e => e.Contains("assert.operator", StringComparison.OrdinalIgnoreCase));
+    }
 }

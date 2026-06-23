@@ -26,7 +26,7 @@ public sealed class HttpRunbookCommand : AsyncCommand<HttpRunbookCommand.Setting
         public string? File { get; init; }
 
         [CommandOption("--validate-only")]
-        [Description("Validate the runbook and exit")]
+        [Description("Validate syntax and structure, then exit")]
         public bool ValidateOnly { get; init; }
     }
 
@@ -54,6 +54,7 @@ public sealed class HttpRunbookCommand : AsyncCommand<HttpRunbookCommand.Setting
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Failed to parse runbook:[/] {Markup.Escape(ex.Message)}");
+            PrintHints(RunbookValidationHints.BuildParseHints(ex));
             return 1;
         }
 
@@ -63,24 +64,51 @@ public sealed class HttpRunbookCommand : AsyncCommand<HttpRunbookCommand.Setting
             AnsiConsole.MarkupLine("[red]Runbook validation failed:[/]");
             foreach (var error in errors)
                 AnsiConsole.MarkupLine($"  • {Markup.Escape(error)}");
+
+            PrintHints(RunbookValidationHints.BuildValidationHints(errors));
             return 1;
         }
 
         if (settings.ValidateOnly)
         {
-            AnsiConsole.MarkupLine("[green]Runbook is valid.[/]");
+            AnsiConsole.MarkupLine($"[green]Runbook syntax and structure are valid.[/] Steps: {runbook.Steps.Count}");
             return 0;
         }
 
-        var results = await _executor.ExecuteAsync(runbook, message =>
+        RunbookExecutionSummary execution;
+        try
         {
-            if (!Console.IsOutputRedirected)
-                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(message)}[/]");
-        }, cancellationToken).ConfigureAwait(false);
+            execution = await _executor.ExecuteAsync(runbook, message =>
+            {
+                if (!Console.IsOutputRedirected)
+                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(message)}[/]");
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLine($"[red]Runbook execution failed:[/] {Markup.Escape(ex.Message)}");
+            return 1;
+        }
 
-        var json = JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(execution.Results, new JsonSerializerOptions { WriteIndented = true });
         AnsiConsole.Write(new Panel(new Text(json)).Header("Runbook results").Border(BoxBorder.Rounded));
 
+        if (execution.FailureCount > 0)
+        {
+            AnsiConsole.MarkupLine($"[red]Assertions failed:[/] {execution.FailureCount}. Review assertion paths/operators/values.");
+            return 1;
+        }
+
         return 0;
+    }
+
+    private static void PrintHints(IReadOnlyList<string> hints)
+    {
+        if (hints.Count == 0)
+            return;
+
+        AnsiConsole.MarkupLine("[yellow]Helpful hints:[/]");
+        foreach (var hint in hints)
+            AnsiConsole.MarkupLine($"  • {Markup.Escape(hint)}");
     }
 }
