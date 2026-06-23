@@ -94,7 +94,7 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
         while (true)
         {
             using var request = await BuildRequestAsync(def, requestUri, requestMethod, includeBody, ct).ConfigureAwait(false);
-            var response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
 
             if (!TryGetRedirectUri(request.Method, requestUri, response, out var redirectUri, out var redirectMethod, out var shouldIncludeBody)
                 || redirectCount++ >= 10)
@@ -279,7 +279,20 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
 
     private static async Task<string?> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        var buffer = new byte[Math.Min(MaxDisplayBodyBytes + 1, 81920)];
+        using var memory = new MemoryStream(capacity: MaxDisplayBodyBytes + 1);
+
+        while (memory.Length <= MaxDisplayBodyBytes)
+        {
+            var remaining = (MaxDisplayBodyBytes + 1) - (int)memory.Length;
+            if (remaining <= 0) break;
+            var read = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, remaining)), ct).ConfigureAwait(false);
+            if (read == 0) break;
+            await memory.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+        }
+
+        var bytes = memory.ToArray();
         if (bytes.Length == 0) return null;
         var len = Utf8SafeLength(bytes, MaxDisplayBodyBytes);
         return Encoding.UTF8.GetString(bytes, 0, len);

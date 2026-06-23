@@ -35,6 +35,7 @@ public sealed class DevTunnelService : IDevTunnelService
     private readonly string _statePath;
     private readonly int _capturePort;
     private readonly int _maxCaptureBytes;
+    private readonly int _maxReplayResponseBytes;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _startGates = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _stateGate = new(1, 1);
     private readonly ConcurrentDictionary<string, HostedTunnelRuntime> _hostedTunnels = new(StringComparer.OrdinalIgnoreCase);
@@ -55,6 +56,7 @@ public sealed class DevTunnelService : IDevTunnelService
         _logger = logger;
         _capturePort = Math.Max(1, configuration.GetValue("DevTunnels:CapturePort", 5000));
         _maxCaptureBytes = Math.Max(1, configuration.GetValue("DevTunnels:MaxCaptureBytes", 1024 * 1024));
+        _maxReplayResponseBytes = Math.Max(1, configuration.GetValue("DevTunnels:MaxReplayResponseBytes", _maxCaptureBytes));
 
         var configuredPath = configuration["DevTunnels:DataPath"]
             ?? Environment.GetEnvironmentVariable("DEVTUNNELS__DataPath");
@@ -367,8 +369,8 @@ public sealed class DevTunnelService : IDevTunnelService
         timeoutCts.CancelAfter(replaySettings.Timeout);
         using var handler = CreateReplayHandler(request);
         using var httpClient = new HttpClient(handler, disposeHandler: true);
-        using var response = await httpClient.SendAsync(message, timeoutCts.Token).ConfigureAwait(false);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
+        var responseBody = await ReadBodyWithLimitAsync(response.Content, _maxReplayResponseBytes, cancellationToken).ConfigureAwait(false);
         var duration = DateTime.UtcNow - startedAt;
 
         var headers = RedactHeaders(response.Headers
@@ -380,8 +382,33 @@ public sealed class DevTunnelService : IDevTunnelService
             ReasonPhrase: response.ReasonPhrase,
             Headers: headers,
             BodyText: responseBody,
-            BodySize: response.Content.Headers.ContentLength ?? Encoding.UTF8.GetByteCount(responseBody),
+            BodySize: response.Content.Headers.ContentLength ?? Encoding.UTF8.GetByteCount(responseBody ?? string.Empty),
             Duration: duration);
+    }
+
+    private static async Task<string?> ReadBodyWithLimitAsync(HttpContent content, int maxBytes, CancellationToken cancellationToken)
+    {
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var memory = new MemoryStream(capacity: maxBytes + 1);
+        var buffer = new byte[Math.Min(maxBytes + 1, 81920)];
+
+        while (memory.Length <= maxBytes)
+        {
+            var remaining = (maxBytes + 1) - (int)memory.Length;
+            if (remaining <= 0) break;
+
+            var read = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, remaining)), cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            await memory.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        if (memory.Length == 0) return null;
+
+        var bytes = memory.ToArray();
+        var decodeLength = Math.Min(bytes.Length, maxBytes);
+        while (decodeLength > 0 && (bytes[decodeLength - 1] & 0xC0) == 0x80) decodeLength--;
+        if (decodeLength > 0 && (bytes[decodeLength - 1] & 0xC0) == 0xC0) decodeLength--;
+        return Encoding.UTF8.GetString(bytes, 0, decodeLength);
     }
 
     public async Task RestartPersistedRunningTunnelsAsync(CancellationToken cancellationToken)

@@ -144,7 +144,7 @@ public sealed class SecretProtector : ISecretProtector
             TryHardenPermissions(keyPath);
             return key;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return DeriveLegacyKey();
         }
@@ -154,12 +154,8 @@ public sealed class SecretProtector : ISecretProtector
     {
         if (OperatingSystem.IsWindows())
         {
-            try
-            {
-                var protectedKey = ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser);
-                return Combine(ProtectedKeyMarker, protectedKey);
-            }
-            catch { }
+            var protectedKey = ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser);
+            return Combine(ProtectedKeyMarker, protectedKey);
         }
         return Combine(PlainKeyMarker, key);
     }

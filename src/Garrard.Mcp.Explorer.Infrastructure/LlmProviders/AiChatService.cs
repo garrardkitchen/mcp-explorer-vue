@@ -69,8 +69,8 @@ public sealed class AiChatService : IAiChatService
         if (tools.Count > 0)
             chatOptions.Tools = tools;
 
-        _logger.LogInformation("Streaming '{Message}' with model {Model}, {ToolCount} tools",
-            message, model.ModelName, tools.Count);
+        _logger.LogInformation("Streaming chat with model {Model}, {ToolCount} tools, messageLength={MessageLength}",
+            model.ModelName, tools.Count, message.Length);
 
         var toolToConnection = BuildToolConnectionMap(connectionNames);
         var announcedCalls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

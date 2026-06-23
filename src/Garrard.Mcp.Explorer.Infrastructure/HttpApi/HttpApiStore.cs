@@ -23,7 +23,7 @@ public sealed class HttpApiStore : IHttpApiStore
 
     private readonly string _filePath;
     private readonly ILogger<HttpApiStore> _logger;
-    private static readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly SemaphoreSlim _lock = new(1, 1);
 
     public HttpApiStore(IConfiguration configuration, ILogger<HttpApiStore> logger)
     {

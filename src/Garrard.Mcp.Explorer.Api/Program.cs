@@ -3,6 +3,7 @@ using Garrard.Mcp.Explorer.Api.Middleware;
 using Garrard.Mcp.Explorer.Infrastructure.DependencyInjection;
 using Garrard.Mcp.Explorer.Infrastructure.Mcp;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +39,15 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .AllowCredentials());
 });
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("WebhookCapture", limiterOptions =>
+    {
+        limiterOptions.Window = TimeSpan.FromSeconds(10);
+        limiterOptions.PermitLimit = 60;
+        limiterOptions.QueueLimit = 0;
+    });
+});
 
 builder.Services.AddSingleton<ConnectionUpdateService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionUpdateService>());
@@ -53,6 +63,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
     app.UseCors("DevCors");
 }
+
+app.UseRateLimiter();
 
 app.MapGet("/oauth/callback", (HttpContext httpContext, OAuthCallbackService oauthCallback) =>
 {

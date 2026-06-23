@@ -131,6 +131,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         int? thinkingMilliseconds = null;
         bool firstToken = false;
         ChatTokenUsage? tokenUsage = null;
+        var clientDisconnected = false;
 
         try
         {
@@ -178,6 +179,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         catch (OperationCanceledException)
         {
             // Client disconnected — save partial content if any
+            clientDisconnected = true;
         }
         catch (Exception ex)
         {
@@ -203,9 +205,16 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         session.LastActivityUtc = DateTime.UtcNow;
 
         // Persist updated session
-        await preferencesStore.SaveAsync(prefs, cancellationToken);
-
-        await Response.Body.FlushAsync(cancellationToken);
+        if (clientDisconnected)
+        {
+            using var persistCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await preferencesStore.SaveAsync(prefs, persistCts.Token);
+        }
+        else
+        {
+            await preferencesStore.SaveAsync(prefs, cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
     }
 
     private string? DecryptToolParameters(string? paramsJson)

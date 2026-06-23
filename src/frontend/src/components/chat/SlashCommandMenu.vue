@@ -75,9 +75,19 @@ watch(selectedIndex, async () => {
 })
 
 function highlight(text: string): string {
-  if (!props.query) return text
+  const safeText = escapeHtml(text)
+  if (!props.query) return safeText
   const q = props.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return text.replace(new RegExp(`(${q})`, 'gi'), '<span class="match">$1</span>')
+  return safeText.replace(new RegExp(`(${q})`, 'gi'), '<span class="match">$1</span>')
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 function navigate(delta: number) {

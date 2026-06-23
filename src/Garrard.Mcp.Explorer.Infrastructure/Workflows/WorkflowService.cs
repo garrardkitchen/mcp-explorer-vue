@@ -218,6 +218,7 @@ public sealed class WorkflowService : IWorkflowService
 
         using var durationCts = new CancellationTokenSource(TimeSpan.FromSeconds(durationSeconds));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, durationCts.Token);
+        using var snapshotCts = new CancellationTokenSource();
 
         var semaphore = new SemaphoreSlim(maxParallelExecutions);
         var tasks = new List<Task>();
@@ -225,9 +226,9 @@ public sealed class WorkflowService : IWorkflowService
         // Snapshot timer — fires every second
         var snapshotTimer = progressCallback is not null ? Task.Run(async () =>
         {
-            while (!linked.Token.IsCancellationRequested)
+            while (!snapshotCts.Token.IsCancellationRequested)
             {
-                await Task.Delay(1000, linked.Token).ConfigureAwait(false);
+                await Task.Delay(1000, snapshotCts.Token).ConfigureAwait(false);
                 var elapsed = (DateTime.UtcNow - started).TotalMilliseconds;
                 var pct = Math.Min(100.0, elapsed / (durationSeconds * 1000.0) * 100.0);
                 var snap = new LoadTestSnapshot
@@ -250,38 +251,53 @@ public sealed class WorkflowService : IWorkflowService
             }
         }, CancellationToken.None) : Task.CompletedTask;
 
-        while (!linked.Token.IsCancellationRequested && DateTime.UtcNow < endTime)
+        try
         {
-            await semaphore.WaitAsync(linked.Token).ConfigureAwait(false);
-
-            Interlocked.Increment(ref totalRequests);
-            Interlocked.Increment(ref active);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-
-            var t = Task.Run(async () =>
+            while (!linked.Token.IsCancellationRequested && DateTime.UtcNow < endTime)
             {
                 try
                 {
-                    await ExecuteAsync(workflowId, connectionName, runtimeParameters,
-                        null, false, linked.Token).ConfigureAwait(false);
-                    Interlocked.Increment(ref successful);
-                    durations.Add(sw.Elapsed.TotalMilliseconds);
+                    await semaphore.WaitAsync(linked.Token).ConfigureAwait(false);
                 }
-                catch
+                catch (OperationCanceledException)
                 {
-                    Interlocked.Increment(ref failed);
+                    break;
                 }
-                finally
-                {
-                    Interlocked.Decrement(ref active);
-                    semaphore.Release();
-                }
-            }, linked.Token);
 
-            tasks.Add(t);
+                Interlocked.Increment(ref totalRequests);
+                Interlocked.Increment(ref active);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                var t = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await ExecuteAsync(workflowId, connectionName, runtimeParameters,
+                            null, false, linked.Token).ConfigureAwait(false);
+                        Interlocked.Increment(ref successful);
+                        durations.Add(sw.Elapsed.TotalMilliseconds);
+                    }
+                    catch
+                    {
+                        Interlocked.Increment(ref failed);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref active);
+                        semaphore.Release();
+                    }
+                }, linked.Token);
+
+                tasks.Add(t);
+            }
+        }
+        finally
+        {
+            snapshotCts.Cancel();
         }
 
         try { await Task.WhenAll(tasks).ConfigureAwait(false); } catch { /* ignore */ }
+        try { await snapshotTimer.ConfigureAwait(false); } catch { /* ignore */ }
 
         var completed = DateTime.UtcNow;
         var elapsed2 = (completed - started).TotalSeconds;

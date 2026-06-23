@@ -16,7 +16,7 @@ public sealed class ConnectionExportService : IConnectionExportService
     private const int SaltBytes       = 16;
     private const int NonceBytes      = 12;   // GCM standard nonce
     private const int TagBytes        = 16;   // GCM auth tag
-    private const int Pbkdf2Iters     = 100_000;
+    private const int Pbkdf2Iters     = 600_000;
 
     private static readonly JsonSerializerOptions _json = new()
     {

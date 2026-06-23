@@ -18,6 +18,7 @@ public sealed class ElicitationService : IElicitationService
 
     private readonly ILogger<ElicitationService> _logger;
     private readonly TimeSpan? _timeout;
+    private readonly int _maxHistoryEntries;
 
     private readonly ConcurrentDictionary<string, PendingElicitationContext> _pending =
         new(StringComparer.OrdinalIgnoreCase);
@@ -32,6 +33,7 @@ public sealed class ElicitationService : IElicitationService
         _logger = logger;
         var timeoutSeconds = configuration.GetValue<int?>("Elicitation:TimeoutSeconds") ?? 0;
         _timeout = timeoutSeconds > 0 ? TimeSpan.FromSeconds(timeoutSeconds) : null;
+        _maxHistoryEntries = Math.Max(1, configuration.GetValue("Elicitation:MaxHistoryEntries", 200));
     }
 
     /// <summary>
@@ -99,7 +101,10 @@ public sealed class ElicitationService : IElicitationService
                 result.Content != null ? new Dictionary<string, JsonElement>(result.Content) : null);
 
             lock (_historyLock)
+            {
                 _history.Add(new ElicitationHistoryEntry(request with { Status = finalStatus }, response));
+                TrimHistoryIfNeeded();
+            }
 
             return result;
         }
@@ -109,8 +114,11 @@ public sealed class ElicitationService : IElicitationService
 
             var response = new ElicitationResponse(requestId, DateTime.UtcNow, "reject", null);
             lock (_historyLock)
+            {
                 _history.Add(new ElicitationHistoryEntry(
                     request with { Status = ElicitationStatus.Rejected }, response));
+                TrimHistoryIfNeeded();
+            }
 
             return new ElicitResult { Action = "reject" };
         }
@@ -156,5 +164,11 @@ public sealed class ElicitationService : IElicitationService
     {
         public ElicitationRequest Request { get; } = request;
         public TaskCompletionSource<ElicitResult> CompletionSource { get; } = completionSource;
+    }
+
+    private void TrimHistoryIfNeeded()
+    {
+        if (_history.Count <= _maxHistoryEntries) return;
+        _history.RemoveRange(0, _history.Count - _maxHistoryEntries);
     }
 }
