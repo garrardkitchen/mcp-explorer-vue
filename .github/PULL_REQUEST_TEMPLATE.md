@@ -44,7 +44,7 @@ Fixes # <!-- issue number, if applicable -->
 - [ ] My branch targets `main`
 - [ ] I have followed [Conventional Commits](https://www.conventionalcommits.org/) in my commit messages
 - [ ] I have added or updated tests for changed behaviour
-- [ ] All existing tests pass (`dotnet test`)
+- [ ] All existing tests pass (`dotnet test` and `dotnet test tests/Garrard.Tests.Mcp.Explorer.Cli/Garrard.Tests.Mcp.Explorer.Cli.csproj`)
 - [ ] I have not committed secrets, credentials, or personal data
 - [ ] I have updated documentation if relevant
 - [ ] I have applied a version label if needed (`release_major` / `release_minor`)

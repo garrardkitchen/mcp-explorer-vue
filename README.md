@@ -760,7 +760,7 @@ Theme is persisted to `POST /api/v1/preferences/theme` and cached in `localStora
 
 1. Read [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full guide.
 2. Fork and create a feature branch using [Conventional Commits](https://www.conventionalcommits.org/).
-3. Run `dotnet test` — all tests must pass.
+3. Run `dotnet test` and `dotnet test tests/Garrard.Tests.Mcp.Explorer.Cli/Garrard.Tests.Mcp.Explorer.Cli.csproj` — all tests must pass.
 4. Run `npm run build` in `src/frontend` — zero errors.
 5. Open a PR using the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
 

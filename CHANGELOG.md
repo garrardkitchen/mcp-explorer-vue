@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] - 2026-06-23 (patch 12)
+
+### Changed
+- Docs/Contributing: Updated test guidance to require both `dotnet test` and the explicit CLI test project run (`dotnet test tests/Garrard.Tests.Mcp.Explorer.Cli/Garrard.Tests.Mcp.Explorer.Cli.csproj`) so contributor validation matches repository test coverage.
+- PR template: Updated the "All existing tests pass" checklist item to include the explicit CLI test command alongside root solution tests.
+
 ## [Unreleased] - 2026-05-25 (patch 11)
 
 ### Added
