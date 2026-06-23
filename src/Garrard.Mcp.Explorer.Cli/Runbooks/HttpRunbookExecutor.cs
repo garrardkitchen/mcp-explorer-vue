@@ -138,7 +138,14 @@ public sealed class HttpRunbookExecutor
             {
                 null => null,
                 string s => s,
-                JsonElement jsonElement => jsonElement.GetRawText(),
+                JsonElement jsonElement => jsonElement.ValueKind switch
+                {
+                    JsonValueKind.String => jsonElement.GetString(),
+                    JsonValueKind.True => "true",
+                    JsonValueKind.False => "false",
+                    JsonValueKind.Null => null,
+                    _ => jsonElement.GetRawText()
+                },
                 _ => JsonSerializer.Serialize(value)
             };
         }
