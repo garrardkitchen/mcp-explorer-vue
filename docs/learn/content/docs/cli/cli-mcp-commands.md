@@ -183,3 +183,25 @@ mcp-http mcp invoke \
 ```
 
 Effective parameters sent to the tool: `{ database: "prod", timeout: 30, limit: 100, verbose: true }`.
+
+---
+
+## `mcp runbook` **(NEW)**
+
+Execute a YAML-declared MCP runbook with connection config, auth, scheduling, and chained step outputs.
+
+```bash
+mcp-http mcp runbook --file ./runbook.yaml
+
+# Validate only
+mcp-http mcp runbook --file ./runbook.yaml --validate-only
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--file <path>` | Path to a YAML runbook file |
+| `--validate-only` | Validate YAML/schema and exit without invoking tools |
+
+For full YAML schema examples and security guidance, see [CLI — YAML MCP Runbooks (NEW)]({{< relref "docs/cli/cli-yaml-runbooks.md" >}}).

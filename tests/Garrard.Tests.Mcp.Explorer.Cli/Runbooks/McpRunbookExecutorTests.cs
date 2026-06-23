@@ -15,11 +15,13 @@ public class McpRunbookExecutorTests
             .ReturnsAsync(Mock.Of<IActiveConnection>());
 
         Dictionary<string, object?>? secondParams = null;
+        var call = 0;
         connectionService
-            .SetupSequence(s => s.InvokeToolAsync("local", It.IsAny<string>(), It.IsAny<Dictionary<string, object?>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync("{\"message\":\"hello\"}")
-            .ReturnsAsync((string _, string __, Dictionary<string, object?> p, CancellationToken ___) =>
+            .Setup(s => s.InvokeToolAsync("local", It.IsAny<string>(), It.IsAny<Dictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+            .Returns((string _, string __, Dictionary<string, object?> p, CancellationToken ___) =>
             {
+                call++;
+                if (call == 1) return Task.FromResult("{\"message\":\"hello\"}");
                 secondParams = p;
                 return Task.FromResult("ok");
             });
@@ -60,7 +62,7 @@ public class McpRunbookExecutorTests
 
         var results = await executor.ExecuteAsync(runbook, _ => { }, CancellationToken.None);
 
-        Assert.Equal("hello", secondParams!["value"]);
+        Assert.Equal("hello", secondParams!["value"]?.ToString());
         Assert.True(results.ContainsKey("second"));
     }
 

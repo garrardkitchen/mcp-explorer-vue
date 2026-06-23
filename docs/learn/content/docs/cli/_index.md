@@ -4,4 +4,4 @@ description: "Script HTTP API workflows and interact with MCP servers directly f
 weight: 14
 ---
 
-`mcp-http` is a cross-platform **.NET global tool** for scripting HTTP API and MCP workflows from the terminal. Invoke endpoints, compare schemas, export definitions, list MCP connections, and call MCP tools — all without opening the browser.
+`mcp-http` is a cross-platform **.NET global tool** for scripting HTTP API and MCP workflows from the terminal. Invoke endpoints, compare schemas, export definitions, list MCP connections, call MCP tools, and run **NEW YAML MCP runbooks** — all without opening the browser.

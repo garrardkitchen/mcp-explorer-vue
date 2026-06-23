@@ -24,7 +24,7 @@ public class McpRunbookSchedulingAndTemplateTests
     public void ResolveObject_ReplacesStepResultTokens()
     {
         var resolver = new McpRunbookTemplateResolver();
-        var previousResult = JsonSerializer.Deserialize<JsonElement>("{" + "\"user\":{\"name\":\"Garrard\"}}" );
+        var previousResult = JsonSerializer.Deserialize<JsonElement>("""{"user":{"name":"Garrard"}}""");
 
         var parameters = new Dictionary<string, object?>
         {
@@ -36,7 +36,7 @@ public class McpRunbookSchedulingAndTemplateTests
             new Dictionary<string, object?> { ["first"] = previousResult },
             iterationIndex: 0)!;
 
-        Assert.Equal("Garrard", resolved["name"]);
+        Assert.Equal("Garrard", resolved["name"]?.ToString());
     }
 
     [Fact]
