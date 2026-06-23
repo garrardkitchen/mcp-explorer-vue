@@ -98,31 +98,31 @@ public sealed class SecretProtector : ISecretProtector
             var plainBytes = decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
             return Encoding.UTF8.GetString(plainBytes);
         }
-
-        private static string DecryptV2(string payload, byte[] key)
-        {
-            var data = Convert.FromBase64String(payload);
-            if (data.Length < GcmNonceSize + GcmTagSize + 1)
-                throw new CryptographicException("Secret payload is invalid.");
-
-            var nonce = new byte[GcmNonceSize];
-            var tag = new byte[GcmTagSize];
-            var cipher = new byte[data.Length - GcmNonceSize - GcmTagSize];
-
-            Buffer.BlockCopy(data, 0, nonce, 0, nonce.Length);
-            Buffer.BlockCopy(data, nonce.Length, tag, 0, tag.Length);
-            Buffer.BlockCopy(data, nonce.Length + tag.Length, cipher, 0, cipher.Length);
-
-            var plaintext = new byte[cipher.Length];
-            using var aes = new AesGcm(key, GcmTagSize);
-            aes.Decrypt(nonce, cipher, tag, plaintext);
-            return Encoding.UTF8.GetString(plaintext);
-        }
         catch
         {
             var legacy = TryLegacyDecrypt(ciphertext);
             return legacy ?? ciphertext;
         }
+    }
+
+    private static string DecryptV2(string payload, byte[] key)
+    {
+        var data = Convert.FromBase64String(payload);
+        if (data.Length < GcmNonceSize + GcmTagSize + 1)
+            throw new CryptographicException("Secret payload is invalid.");
+
+        var nonce = new byte[GcmNonceSize];
+        var tag = new byte[GcmTagSize];
+        var cipher = new byte[data.Length - GcmNonceSize - GcmTagSize];
+
+        Buffer.BlockCopy(data, 0, nonce, 0, nonce.Length);
+        Buffer.BlockCopy(data, nonce.Length, tag, 0, tag.Length);
+        Buffer.BlockCopy(data, nonce.Length + tag.Length, cipher, 0, cipher.Length);
+
+        var plaintext = new byte[cipher.Length];
+        using var aes = new AesGcm(key, GcmTagSize);
+        aes.Decrypt(nonce, cipher, tag, plaintext);
+        return Encoding.UTF8.GetString(plaintext);
     }
 
     private static byte[] GetOrCreateKey(string directory)

@@ -15,6 +15,8 @@ public sealed class WebhookCaptureControllerTests
     public async Task Capture_MapsRequestIntoWebhookCaptureRequest()
     {
         var serviceMock = new Mock<IDevTunnelService>();
+        serviceMock.Setup(s => s.GetAsync("tunnel-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DevTunnel("tunnel-1", "Tunnel 1", TunnelAccess.Anonymous, TunnelStatus.Running, null, null, DateTime.UtcNow, null, null, null, false, 0, null));
         var controller = new WebhookCaptureController(serviceMock.Object, CreateConfiguration());
 
         var context = new DefaultHttpContext();
@@ -70,6 +72,8 @@ public sealed class WebhookCaptureControllerTests
     public async Task Capture_WhenPayloadExceedsConfiguredLimit_Returns413()
     {
         var serviceMock = new Mock<IDevTunnelService>();
+        serviceMock.Setup(s => s.GetAsync("tunnel-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DevTunnel("tunnel-1", "Tunnel 1", TunnelAccess.Anonymous, TunnelStatus.Running, null, null, DateTime.UtcNow, null, null, null, false, 0, null));
         var controller = new WebhookCaptureController(serviceMock.Object, CreateConfiguration(maxCaptureBytes: 4))
         {
             ControllerContext = new ControllerContext
