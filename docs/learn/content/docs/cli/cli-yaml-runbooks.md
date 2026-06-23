@@ -1,18 +1,24 @@
 ---
-title: "CLI — YAML MCP Runbooks (NEW)"
-description: "Declare MCP connections, auth, scheduling, and chained tool calls in YAML for mcp-http mcp runbook."
+title: "CLI — YAML Runbooks (MCP + HTTP) (NEW)"
+description: "Declare MCP and HTTP runbooks in YAML with scheduling and chained outputs for mcp-http."
 weight: 3
 ---
 
-## NEW: `mcp runbook`
+## NEW: `mcp runbook` and `http runbook`
 
-Use a YAML file to declare MCP server connection details, authentication, parameters, scheduling, and multi-step chaining.
+Use YAML files to declare either MCP tool workflows or HTTP endpoint workflows with scheduling and multi-step chaining.
 
 ```bash
 mcp-http mcp runbook --file ./runbook.yaml
 ```
 
 Validate only (no calls):
+
+```bash
+mcp-http http runbook --file ./http-runbook.yaml --validate-only
+```
+
+MCP validate-only:
 
 ```bash
 mcp-http mcp runbook --file ./runbook.yaml --validate-only
@@ -75,3 +81,25 @@ schedule:
 - Use `--validate-only` in CI before execution.
 - Use least-privilege app registrations and vault access policies.
 - Avoid logging raw secret values; redact sensitive output in pipelines.
+
+
+---
+
+## Example HTTP runbook
+
+```yaml
+version: "1"
+steps:
+  - id: first
+    endpoint: Weather API
+    inputs:
+      city: London
+
+  - id: second
+    endpoint: Weather API
+    inputs:
+      previousCity: "{{ steps.first.body.city }}"
+
+schedule:
+  repeat: 2
+```

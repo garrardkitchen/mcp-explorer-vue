@@ -111,6 +111,11 @@ app.Configure(config =>
     {
         http.SetDescription("HTTP API Explorer commands");
 
+        http.AddCommand<HttpRunbookCommand>("runbook")
+            .WithDescription("Execute HTTP API calls from a YAML runbook file with scheduling and step chaining.")
+            .WithExample("http", "runbook", "--file", "runbook.yaml")
+            .WithExample("http", "runbook", "--file", "runbook.yaml", "--validate-only");
+
         http.AddBranch("api", api =>
         {
             api.SetDescription("HTTP API definition commands");
