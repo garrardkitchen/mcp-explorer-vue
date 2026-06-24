@@ -1,0 +1,31 @@
+# MS Learn MCP — Azure service limits runbook
+#
+# Queries the Microsoft Learn MCP server for service limits on two Azure services
+# in a single pass (schedule.repeat: 1).
+#
+# Run:
+#   mcp-http mcp runbook --file samples/mcp/mslearn-service-limits.yaml
+
+version: "1"
+defaultConnection: mslearn
+
+connections:
+  - name: mslearn
+    endpoint: https://learn.microsoft.com/api/mcp
+    auth:
+      type: custom
+      headers: []   # MS Learn MCP is publicly accessible — no auth required
+
+schedule:
+  repeat: 1
+
+steps:
+  - id: keyvault-service-limits
+    tool: microsoft_docs_search
+    params:
+      query: "Azure Key Vault service limits and quotas"
+
+  - id: servicebus-service-limits
+    tool: microsoft_docs_search
+    params:
+      query: "Azure Service Bus service limits and quotas"
