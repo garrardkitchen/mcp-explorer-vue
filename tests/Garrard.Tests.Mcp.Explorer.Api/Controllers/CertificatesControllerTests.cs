@@ -11,9 +11,11 @@ public sealed class CertificatesControllerTests
 {
     private readonly Mock<ICertificateService> _certServiceMock = new();
     private readonly Mock<ICertificateUploadService> _uploadServiceMock = new();
+    private readonly Mock<ICertificateRenewalService> _renewalServiceMock = new();
+    private readonly Garrard.Mcp.Explorer.Infrastructure.Certificates.CertificateNotificationState _notificationState = new();
 
     private CertificatesController CreateController()
-        => new(_certServiceMock.Object, _uploadServiceMock.Object);
+        => new(_certServiceMock.Object, _uploadServiceMock.Object, _renewalServiceMock.Object, _notificationState);
 
     private static CertificateInfo SampleCert(string name = "test-cert") => new()
     {

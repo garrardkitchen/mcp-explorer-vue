@@ -2,6 +2,7 @@ using Asp.Versioning;
 using Garrard.Mcp.Explorer.Api.Dtos.Certificates;
 using Garrard.Mcp.Explorer.Core.Domain.Certificates;
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Garrard.Mcp.Explorer.Infrastructure.Certificates;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
@@ -15,8 +16,31 @@ namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 [Route("api/v{version:apiVersion}/[controller]")]
 public sealed class CertificatesController(
     ICertificateService certificateService,
-    ICertificateUploadService uploadService) : ControllerBase
+    ICertificateUploadService uploadService,
+    ICertificateRenewalService renewalService,
+    CertificateNotificationState notificationState) : ControllerBase
 {
+    /// <summary>Latest expiry-monitor snapshot (expiring/expired certs + stale uploads).</summary>
+    [HttpGet("notifications")]
+    public IActionResult GetNotifications() => Ok(notificationState.Current);
+
+    /// <summary>
+    /// One-click rotation: generate a successor, upload it everywhere the old cert was
+    /// uploaded, repoint referencing connections, optionally remove the old key credentials.
+    /// </summary>
+    [HttpPost("{name}/renew")]
+    public async Task<IActionResult> Renew(string name, [FromBody] RenewCertificateRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await renewalService.RenewAsync(name, request.RemoveOldKeyCredential, cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     // ── Listing ──────────────────────────────────────────────────────────────
 
     [HttpGet]

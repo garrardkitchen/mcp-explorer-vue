@@ -61,6 +61,9 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IHttpApiStore>(),
             sp.GetService<ILogger<CertificateService>>()));
         services.AddSingleton<ICertificateUploadService, GraphKeyCredentialService>();
+        services.AddSingleton<ICertificateRenewalService, CertificateRenewalService>();
+        services.AddSingleton<CertificateNotificationState>();
+        services.AddHostedService<CertificateExpiryMonitor>();
 
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<IConnectionService>(sp => sp.GetRequiredService<ConnectionService>());

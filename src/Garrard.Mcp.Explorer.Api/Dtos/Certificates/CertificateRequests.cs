@@ -15,6 +15,8 @@ public sealed record TestTokenRequest(string TenantId, string ClientId, string S
 
 public sealed record RemoveKeyCredentialRequest(string AppId, string KeyId);
 
+public sealed record RenewCertificateRequest(bool RemoveOldKeyCredential = false);
+
 public sealed record CreateCsrApiRequest(string Name, string? SubjectCn, int KeySize = 2048);
 
 public sealed record ImportIssuedCertificateRequest(string CertificatePem);

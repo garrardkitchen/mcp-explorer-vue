@@ -42,6 +42,10 @@ export const certificatesApi = {
   removeKeyCredential: (appId: string, keyId: string) =>
     apiClient.delete('/certificates/key-credentials', { data: { appId, keyId } }),
 
+  /** One-click rotation: new cert, re-upload, repoint connections, optional old-credential cleanup. */
+  renew: (name: string, removeOldKeyCredential: boolean) =>
+    apiClient.post<CertOperationResult>(`/certificates/${enc(name)}/renew`, { removeOldKeyCredential }).then(r => r.data),
+
   /** Dry-run token acquisition with ClientCertificateCredential. */
   testToken: (name: string, tenantId: string, clientId: string, scope: string) =>
     apiClient.post<CertOperationResult>(`/certificates/${enc(name)}/test-token`, { tenantId, clientId, scope })

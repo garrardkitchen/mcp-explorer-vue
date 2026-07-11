@@ -39,6 +39,9 @@ public interface ICertificateService
     /// <summary>Removes an upload record (after the key credential is deleted in Azure).</summary>
     Task RemoveUploadRecordAsync(string name, string keyId, CancellationToken cancellationToken = default);
 
+    /// <summary>Marks a certificate as superseded by its renewal successor.</summary>
+    Task MarkSupersededAsync(string name, string renewedBy, CancellationToken cancellationToken = default);
+
     /// <summary>Certificates expiring within <paramref name="days"/> (including already expired), excluding superseded ones.</summary>
     Task<IReadOnlyList<CertificateInfo>> GetExpiringAsync(int days = 30, CancellationToken cancellationToken = default);
 

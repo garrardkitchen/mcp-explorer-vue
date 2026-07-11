@@ -109,6 +109,8 @@
                       :disabled="data.certificate.state === 'CsrPending'" @click="openUpload(data.certificate)" />
               <Button icon="pi pi-download" text size="small" v-tooltip="'Download public cert (PEM)'"
                       :disabled="data.certificate.state === 'CsrPending'" @click="downloadPem(data.certificate)" />
+              <Button icon="pi pi-refresh" text size="small" v-tooltip="'Renew & re-upload'"
+                      :disabled="data.certificate.state !== 'Active'" @click="openRenew(data.certificate)" />
               <Button icon="pi pi-trash" text size="small" severity="danger"
                       v-tooltip="usageCount(data) ? 'In use — detach it from connections first' : 'Delete'"
                       :disabled="usageCount(data) > 0" @click="confirmDelete(data.certificate)" />
@@ -156,11 +158,16 @@
                     <Button label="Verify" icon="pi pi-sync" text size="small"
                             :loading="verifying === verifyKey(data.certificate.name, u.appId)"
                             @click="verifyUpload(data.certificate.name, u.appId)" />
+                    <Button label="Manage" icon="pi pi-list" text size="small"
+                            v-tooltip="'List and clean up key credentials on this app registration'"
+                            @click="openKeyCredentials(u.appId, u.displayName)" />
                   </div>
                 </div>
                 <p v-else class="muted-sm">Not uploaded to any app registration yet.</p>
 
                 <div class="detail-actions">
+                  <Button label="Renew & re-upload" icon="pi pi-refresh" size="small" severity="secondary" outlined
+                          :disabled="data.certificate.state !== 'Active'" @click="openRenew(data.certificate)" />
                   <Button label="Export PFX" icon="pi pi-download" size="small" severity="secondary" outlined
                           :disabled="data.certificate.state === 'CsrPending'" @click="openPfxExport(data.certificate)" />
                 </div>
@@ -228,6 +235,60 @@
       </template>
     </Dialog>
 
+    <!-- ── Renew dialog ── -->
+    <Dialog v-model:visible="renewDialog" :header="`Renew ${renewTarget?.name}`" modal :style="{ width: '560px' }">
+      <div class="renew-body">
+        <p class="muted-sm">
+          Renewing generates a fresh certificate with the same subject and key size, uploads it to
+          every app registration this one was uploaded to, and repoints the
+          {{ renewUsageLabel }} to the new certificate. The old certificate keeps working until
+          everything has succeeded, then is marked superseded.
+        </p>
+        <label class="cleanup-check">
+          <Checkbox v-model="renewRemoveOld" binary />
+          <span>Also remove the old key credential(s) from Azure after the upload succeeds</span>
+        </label>
+        <StepProgress v-if="renewBusy || renewSteps" :steps="renewSteps" :busy="renewBusy"
+                      busy-label="Renewing certificate…" @retry="runRenew" />
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="renewDialog = false" />
+        <Button label="Renew" icon="pi pi-refresh" :disabled="renewBusy" :loading="renewBusy" @click="runRenew" />
+      </template>
+    </Dialog>
+
+    <!-- ── Key credentials dialog (stale cleanup) ── -->
+    <Dialog v-model:visible="kcDialog" :header="`Key credentials on ${kcAppLabel}`" modal :style="{ width: '640px' }">
+      <div class="kc-body">
+        <p class="muted-sm">
+          Every certificate key credential currently on the app registration. Stale entries are
+          expired in Azure or belong to a superseded local certificate — safe to remove.
+        </p>
+        <div v-if="kcLoading" class="muted-sm"><i class="pi pi-spin pi-spinner" /> Loading key credentials…</div>
+        <p v-else-if="kcError" class="kc-error"><i class="pi pi-exclamation-triangle" /> {{ kcError }}</p>
+        <p v-else-if="!kcItems.length" class="muted-sm">No certificate key credentials on this app registration.</p>
+        <div v-else class="kc-list">
+          <div v-for="k in kcItems" :key="k.keyId" class="kc-row" :class="{ stale: k.isStale }">
+            <div class="kc-main">
+              <span class="kc-name">{{ k.displayName || '(unnamed)' }}</span>
+              <span class="mono kc-meta">
+                {{ k.customKeyIdentifierHex ? shortThumb(k.customKeyIdentifierHex) : 'no thumbprint' }}
+                · expires {{ formatDate(k.endDateTime) }}
+                <template v-if="k.localCertificateName"> · local: {{ k.localCertificateName }}</template>
+              </span>
+            </div>
+            <Tag v-if="k.isStale" value="Stale ⚠" severity="warn" />
+            <Tag v-else-if="k.localCertificateName" value="Current ✓" severity="success" />
+            <Button icon="pi pi-trash" text size="small" severity="danger" v-tooltip="'Remove this key credential from Azure'"
+                    :loading="kcRemoving === k.keyId" @click="removeKeyCredential(k.keyId)" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="kcDialog = false" />
+      </template>
+    </Dialog>
+
     <!-- ── PFX export dialog ── -->
     <Dialog v-model:visible="pfxDialog" :header="`Export ${pfxTarget?.name}.pfx`" modal :style="{ width: '440px' }">
       <div class="pfx-body">
@@ -247,8 +308,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import Dialog from 'primevue/dialog'
@@ -263,7 +325,7 @@ import StepProgress from '@/components/certificates/StepProgress.vue'
 import { certificatesApi } from '@/api/certificates'
 import { extractApiError } from '@/api/client'
 import { useCertificatesStore } from '@/stores/certificates'
-import type { AzureAppRegistration, CertUploadStatus, CertificateInfo, CertificateWithUsage, StepResult } from '@/api/types'
+import type { AzureAppRegistration, CertUploadStatus, CertificateInfo, CertificateWithUsage, GraphKeyCredentialInfo, StepResult } from '@/api/types'
 
 const store = useCertificatesStore()
 const toast = useToast()
@@ -419,6 +481,102 @@ async function verifyUpload(name: string, appId: string) {
   finally {
     verifying.value = null
   }
+}
+
+// ── Renew ───────────────────────────────────────────────────────────────────
+
+const renewDialog = ref(false)
+const renewTarget = ref<CertificateInfo | null>(null)
+const renewRemoveOld = ref(false)
+const renewBusy = ref(false)
+const renewSteps = ref<StepResult[] | null>(null)
+
+const renewUsageLabel = computed(() => {
+  const item = store.items.find(i => i.certificate.name === renewTarget.value?.name)
+  const total = item ? item.usedByConnections.length + item.usedByHttpApis.length : 0
+  return total === 1 ? '1 referencing connection' : `${total} referencing connections`
+})
+
+function openRenew(cert: CertificateInfo) {
+  renewTarget.value = cert
+  renewRemoveOld.value = false
+  renewSteps.value = null
+  renewDialog.value = true
+}
+
+async function runRenew() {
+  if (!renewTarget.value) return
+  renewBusy.value = true
+  renewSteps.value = null
+  try {
+    const result = await certificatesApi.renew(renewTarget.value.name, renewRemoveOld.value)
+    renewSteps.value = result.steps
+    if (result.success) {
+      toast.add({ severity: 'success', summary: 'Certificate renewed', detail: `${renewTarget.value.name} → ${result.certificate?.name}`, life: 5000 })
+      await store.load()
+    }
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Renewal failed', detail: extractApiError(err), life: 6000 })
+  }
+  finally {
+    renewBusy.value = false
+  }
+}
+
+// ── Key credentials (stale cleanup) ─────────────────────────────────────────
+
+const kcDialog = ref(false)
+const kcAppId = ref('')
+const kcAppLabel = ref('')
+const kcItems = ref<GraphKeyCredentialInfo[]>([])
+const kcLoading = ref(false)
+const kcError = ref<string | null>(null)
+const kcRemoving = ref<string | null>(null)
+
+async function openKeyCredentials(appId: string, displayName?: string) {
+  kcAppId.value = appId
+  kcAppLabel.value = displayName || appId
+  kcDialog.value = true
+  await loadKeyCredentials()
+}
+
+async function loadKeyCredentials() {
+  kcLoading.value = true
+  kcError.value = null
+  try {
+    kcItems.value = await certificatesApi.listKeyCredentials(kcAppId.value)
+  }
+  catch (err) {
+    kcError.value = extractApiError(err)
+  }
+  finally {
+    kcLoading.value = false
+  }
+}
+
+function removeKeyCredential(keyId: string) {
+  confirm.require({
+    message: 'Remove this key credential from the app registration? Anything still authenticating with it will stop working.',
+    header: 'Remove Key Credential',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Remove', severity: 'danger' },
+    accept: async () => {
+      kcRemoving.value = keyId
+      try {
+        await certificatesApi.removeKeyCredential(kcAppId.value, keyId)
+        toast.add({ severity: 'success', summary: 'Key credential removed', life: 3000 })
+        await Promise.all([loadKeyCredentials(), store.load()])
+      }
+      catch (err) {
+        toast.add({ severity: 'error', summary: 'Removal failed', detail: extractApiError(err), life: 6000 })
+      }
+      finally {
+        kcRemoving.value = null
+      }
+    },
+  })
 }
 
 // ── Downloads ───────────────────────────────────────────────────────────────
@@ -695,10 +853,69 @@ function confirmDelete(cert: CertificateInfo) {
 .field-error { color: var(--danger); font-size: 11px; }
 
 .upload-dialog-body,
-.pfx-body {
+.pfx-body,
+.renew-body,
+.kc-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.cleanup-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.kc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius-sm);
+  padding: 8px 10px;
+}
+
+.kc-row.stale {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+
+.kc-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.kc-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.kc-meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.kc-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .selected-app { font-size: 11.5px; color: var(--text-secondary); }

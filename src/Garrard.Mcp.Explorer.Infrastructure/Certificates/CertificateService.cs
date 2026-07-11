@@ -343,6 +343,17 @@ public sealed class CertificateService : ICertificateService
         await _audit.AppendAsync("remove-key-credential", name, $"keyId={keyId}", cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task MarkSupersededAsync(string name, string renewedBy, CancellationToken cancellationToken = default)
+    {
+        await MutateMetadataAsync(name, info => info with
+        {
+            State = CertificateState.Superseded,
+            RenewedBy = renewedBy,
+        }, cancellationToken).ConfigureAwait(false);
+
+        await _audit.AppendAsync("supersede", name, $"renewedBy={renewedBy}", cancellationToken).ConfigureAwait(false);
+    }
+
     // ── CSR flow ─────────────────────────────────────────────────────────────
 
     public async Task<OperationResult> CreateCsrAsync(CreateCsrRequest request, CancellationToken cancellationToken = default)
