@@ -15,6 +15,13 @@ public sealed record AzureClientCredentialsOptions
     public KeyVaultSecretReference? KeyVaultSecretRef { get; init; }
 
     /// <summary>
+    /// When set, authentication uses <c>ClientCertificateCredential</c> with a certificate
+    /// from the local store instead of a client secret. Takes precedence over both
+    /// <see cref="ClientSecret"/> and <see cref="KeyVaultSecretRef"/>.
+    /// </summary>
+    public CertificateReference? CertificateRef { get; init; }
+
+    /// <summary>
     /// The Azure subscription ID used for Key Vault browsing in the UI.
     /// Not used in the authentication flow — persisted for UX convenience only.
     /// </summary>

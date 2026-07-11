@@ -1,5 +1,6 @@
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Garrard.Mcp.Explorer.Infrastructure.Azure;
+using Garrard.Mcp.Explorer.Infrastructure.Certificates;
 using Garrard.Mcp.Explorer.Infrastructure.Connections;
 using Garrard.Mcp.Explorer.Infrastructure.DevTunnels;
 using Garrard.Mcp.Explorer.Infrastructure.Elicitation;
@@ -52,6 +53,13 @@ public static class ServiceCollectionExtensions
         // Azure context & Key Vault
         services.AddSingleton<IKeyVaultSecretResolver, KeyVaultSecretResolver>();
         services.AddSingleton<IAzureContextService, AzureContextService>();
+
+        // Certificates — the store lives alongside settings.json (certs/ subfolder)
+        services.AddSingleton<ICertificateService>(sp => new CertificateService(
+            string.IsNullOrWhiteSpace(customPath) ? null : customPath,
+            sp.GetRequiredService<IUserPreferencesStore>(),
+            sp.GetRequiredService<IHttpApiStore>(),
+            sp.GetService<ILogger<CertificateService>>()));
 
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<IConnectionService>(sp => sp.GetRequiredService<ConnectionService>());
