@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Garrard.Mcp.Explorer.Core.Domain.HttpApi;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +20,7 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
     private readonly string _collectionsDir;
     private readonly int _historyRetention;
     private readonly ILogger<JsonlHttpApiSnapshotStore> _logger;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _fileLocks = new(StringComparer.OrdinalIgnoreCase);
 
     public JsonlHttpApiSnapshotStore(IConfiguration configuration, ILogger<JsonlHttpApiSnapshotStore> logger)
     {
@@ -77,8 +79,11 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
         var path = GetHistoryPath(record.EndpointId);
         EnsureDir(record.EndpointId);
         var line = JsonSerializer.Serialize(record, _json);
-        await File.AppendAllTextAsync(path, line + Environment.NewLine, Encoding.UTF8, ct).ConfigureAwait(false);
-        await TrimIfNeededAsync<HttpApiInvocationRecord>(path, _historyRetention, ct).ConfigureAwait(false);
+        await ExecuteWithFileLockAsync(path, async token =>
+        {
+            await File.AppendAllTextAsync(path, line + Environment.NewLine, Encoding.UTF8, token).ConfigureAwait(false);
+            await TrimIfNeededAsync<HttpApiInvocationRecord>(path, _historyRetention, token).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<HttpApiInvocationRecord>> GetHistoryAsync(
@@ -139,8 +144,11 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
         var path = GetCollectionRunHistoryPath(record.CollectionId);
         Directory.CreateDirectory(GetCollectionRunDir(record.CollectionId));
         var line = JsonSerializer.Serialize(record, _json);
-        await File.AppendAllTextAsync(path, line + Environment.NewLine, Encoding.UTF8, ct).ConfigureAwait(false);
-        await TrimIfNeededAsync<HttpApiCollectionRunRecord>(path, _historyRetention, ct).ConfigureAwait(false);
+        await ExecuteWithFileLockAsync(path, async token =>
+        {
+            await File.AppendAllTextAsync(path, line + Environment.NewLine, Encoding.UTF8, token).ConfigureAwait(false);
+            await TrimIfNeededAsync<HttpApiCollectionRunRecord>(path, _historyRetention, token).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<HttpApiCollectionRunRecord>> GetCollectionRunHistoryAsync(
@@ -298,5 +306,19 @@ public sealed class JsonlHttpApiSnapshotStore : IHttpApiSnapshotStore
     {
         var invalid = Path.GetInvalidFileNameChars();
         return new string(value.Select(c => invalid.Contains(c) ? '-' : c).ToArray());
+    }
+
+    private async Task ExecuteWithFileLockAsync(string path, Func<CancellationToken, Task> action, CancellationToken ct)
+    {
+        var gate = _fileLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await action(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 }

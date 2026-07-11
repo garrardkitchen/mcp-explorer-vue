@@ -2,7 +2,9 @@ using Asp.Versioning;
 using Garrard.Mcp.Explorer.Api.Middleware;
 using Garrard.Mcp.Explorer.Infrastructure.DependencyInjection;
 using Garrard.Mcp.Explorer.Infrastructure.Mcp;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +40,27 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .AllowCredentials());
 });
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Partitioned per tunnel so one noisy webhook source can't starve capture for every other tunnel.
+    options.AddPolicy("WebhookCapture", context =>
+    {
+        var tunnelId = context.Request.RouteValues.TryGetValue("tunnelId", out var value)
+            ? value?.ToString()
+            : null;
+        var partitionKey = string.IsNullOrEmpty(tunnelId)
+            ? context.Connection.RemoteIpAddress?.ToString() ?? "unknown"
+            : tunnelId;
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromSeconds(10),
+            PermitLimit = 60,
+            QueueLimit = 0
+        });
+    });
+});
 
 builder.Services.AddSingleton<ConnectionUpdateService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ConnectionUpdateService>());
@@ -53,6 +76,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
     app.UseCors("DevCors");
 }
+
+app.UseRateLimiter();
 
 app.MapGet("/oauth/callback", (HttpContext httpContext, OAuthCallbackService oauthCallback) =>
 {

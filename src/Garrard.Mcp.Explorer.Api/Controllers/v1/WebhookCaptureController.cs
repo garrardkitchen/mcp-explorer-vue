@@ -4,6 +4,7 @@ using Garrard.Mcp.Explorer.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 
 namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
@@ -18,12 +19,17 @@ public sealed class WebhookCaptureController(IDevTunnelService devTunnelService,
 
     [Route("{tunnelId}")]
     [Route("{tunnelId}/{**path}")]
+    [EnableRateLimiting("WebhookCapture")]
     [AcceptVerbs("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")]
     [RequestSizeLimit(2 * 1024 * 1024)]
     public async Task<IActionResult> Capture(string tunnelId, string? path, CancellationToken cancellationToken)
     {
         try
         {
+            var tunnel = await devTunnelService.GetAsync(tunnelId, cancellationToken).ConfigureAwait(false);
+            if (tunnel is null)
+                return NotFound();
+
             if (Request.ContentLength is > 0 && Request.ContentLength > _maxCaptureBytes)
             {
                 return StatusCode(StatusCodes.Status413PayloadTooLarge, new

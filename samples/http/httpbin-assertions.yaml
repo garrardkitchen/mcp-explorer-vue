@@ -1,0 +1,52 @@
+## HTTP runbook — assertion demo (httpbin.org)
+#
+# Demonstrates both a passing assertion (statusCode equals 200) and an
+# intentional failing assertion (statusCode equals 999) so you can see how
+# assertion failures are surfaced in the runbook output.
+#
+# continueOnAssertFailure: true at the runbook level means both steps always
+# run, even when one assertion fails.
+#
+# Run:
+#   mcp-http http runbook --file samples/http/httpbin-assertions.yaml
+#
+# Expected outcome:
+#   - Step "assert-success" → assertion PASSES  (HTTP 200)
+#   - Step "assert-failure" → assertion FAILS   (HTTP 200 ≠ 999)
+#   - Exit code 1 due to the failure assertion
+
+version: "1"
+defaultConnection: HttpBin Status
+continueOnAssertFailure: true
+connections:
+  - name: HttpBin Status
+    endpoint: https://httpbin.org/status/{code}
+    auth:
+      type: custom
+      headers: []
+
+schedule:
+  repeat: 1
+
+steps:
+  # ── Success assertion ─────────────────────────────────────────────────────────
+  # Requests an HTTP 200 from httpbin and asserts the response statusCode is 200.
+  - id: assert-success
+    inputs:
+      code: "200"
+    assert:
+      path: statusCode
+      operator: equals
+      value: 200
+
+  # ── Failure assertion (intentional) ──────────────────────────────────────────
+  # Requests an HTTP 200 but asserts statusCode equals 999 — this will always
+  # fail, illustrating how assertion failures are reported.
+  - id: assert-failure
+    inputs:
+      code: "200"
+    continueOnAssertFailure: true
+    assert:
+      path: statusCode
+      operator: equals
+      value: 999

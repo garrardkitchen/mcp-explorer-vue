@@ -75,9 +75,23 @@ watch(selectedIndex, async () => {
 })
 
 function highlight(text: string): string {
-  if (!props.query) return text
+  if (!props.query) return escapeHtml(text)
+  // Match on the raw text and escape each segment separately, so the regex can
+  // never match inside an HTML entity produced by escaping (e.g. "amp" in "&amp;").
   const q = props.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return text.replace(new RegExp(`(${q})`, 'gi'), '<span class="match">$1</span>')
+  return text
+    .split(new RegExp(`(${q})`, 'gi'))
+    .map((segment, i) => i % 2 === 1 ? `<span class="match">${escapeHtml(segment)}</span>` : escapeHtml(segment))
+    .join('')
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 function navigate(delta: number) {

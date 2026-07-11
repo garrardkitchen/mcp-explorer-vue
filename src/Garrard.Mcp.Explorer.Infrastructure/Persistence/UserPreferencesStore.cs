@@ -28,7 +28,7 @@ public sealed class UserPreferencesStore : IUserPreferencesStore
     private readonly string _directory;
     private readonly string _filePath;
     private readonly ISecretProtector _protector;
-    private static readonly SemaphoreSlim Lock = new(1, 1);
+    private readonly SemaphoreSlim _lock = new(1, 1);
 
     public string StoragePath => _filePath;
 
@@ -54,7 +54,7 @@ public sealed class UserPreferencesStore : IUserPreferencesStore
 
     public async Task<UserPreferences> LoadAsync(CancellationToken cancellationToken = default)
     {
-        await Lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (!File.Exists(_filePath))
@@ -91,7 +91,7 @@ public sealed class UserPreferencesStore : IUserPreferencesStore
         }
         finally
         {
-            Lock.Release();
+            _lock.Release();
         }
     }
 
@@ -136,19 +136,19 @@ public sealed class UserPreferencesStore : IUserPreferencesStore
         ArgumentNullException.ThrowIfNull(preferences);
         Directory.CreateDirectory(_directory);
 
-        await Lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await WriteUnlockedAsync(preferences, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            Lock.Release();
+            _lock.Release();
         }
     }
 
     /// <summary>
-    /// Writes preferences to disk. Must only be called while <see cref="Lock"/> is held.
+    /// Writes preferences to disk. Must only be called while <see cref="_lock"/> is held.
     /// </summary>
     private async Task WriteUnlockedAsync(UserPreferences preferences, CancellationToken cancellationToken)
     {

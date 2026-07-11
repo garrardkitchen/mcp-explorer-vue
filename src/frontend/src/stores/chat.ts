@@ -140,15 +140,18 @@ export const useChatStore = defineStore('chat', () => {
       if (e.name !== 'AbortError') error.value = e.message
     } finally {
       // Push complete assistant message — replaces the streaming placeholder visually
-      messages.value.push({
-        id: assistantId ?? crypto.randomUUID(),
-        role: 'assistant',
-        content: assistantContent,
-        timestampUtc: new Date().toISOString(),
-        modelName,
-        thinkingMilliseconds: assistantThinkingMs ?? undefined,
-        tokenUsage: assistantTokenUsage ?? undefined,
-      })
+      const hasAssistantOutput = !!assistantId || assistantContent.length > 0 || !!assistantTokenUsage
+      if (hasAssistantOutput) {
+        messages.value.push({
+          id: assistantId ?? crypto.randomUUID(),
+          role: 'assistant',
+          content: assistantContent,
+          timestampUtc: new Date().toISOString(),
+          modelName,
+          thinkingMilliseconds: assistantThinkingMs ?? undefined,
+          tokenUsage: assistantTokenUsage ?? undefined,
+        })
+      }
       streaming.value = false
       streamingContent.value = ''
       if (_thinkingInterval) { clearInterval(_thinkingInterval); _thinkingInterval = null }

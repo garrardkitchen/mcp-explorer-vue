@@ -183,3 +183,31 @@ mcp-http mcp invoke \
 ```
 
 Effective parameters sent to the tool: `{ database: "prod", timeout: 30, limit: 100, verbose: true }`.
+
+---
+
+## `mcp runbook` **(NEW)**
+
+Execute a YAML-declared MCP runbook with connection config, auth, validation, assertions, scheduling, and chained step outputs.
+
+```bash
+mcp-http mcp runbook --file ./runbook.yaml
+
+# Validate only
+mcp-http mcp runbook --file ./runbook.yaml --validate-only
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--file <path>` | Path to a YAML runbook file |
+| `--validate-only` | Validate YAML syntax + structure and exit without invoking tools |
+
+Assertion behavior:
+
+- Add an `assert` block to a step to verify returned result values.
+- Use `continueOnAssertFailure: true` (runbook-level or step-level) to continue execution after failed assertions.
+- If any assertion fails, the command exits with code `1`.
+
+For full YAML schema examples and security guidance, see [CLI — YAML Runbooks (MCP + HTTP) (NEW)]({{< relref "docs/cli/cli-yaml-runbooks.md" >}}).

@@ -136,4 +136,55 @@ public class SecretProtectorTests
 
         Assert.Equal(plain, result);
     }
+
+    // ── v2 format and legacy CBC compatibility ────────────────────────────────
+
+    [Fact]
+    public void Encrypt_Result_UsesV2Prefix()
+    {
+        var encrypted = _sut.Encrypt("any-value");
+
+        Assert.StartsWith("enc:v2:", encrypted);
+    }
+
+    [Fact]
+    public void Decrypt_LegacyCbcPayload_ReturnsOriginalPlaintext()
+    {
+        // Secrets persisted before the AES-GCM upgrade use "enc:" + base64(IV + CBC ciphertext).
+        var keyDirectory = Directory.CreateTempSubdirectory("secret-protector-tests").FullName;
+        try
+        {
+            const string plaintext = "legacy-cbc-secret";
+            var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+
+            // Plain key marker (0x01) + raw key — the cross-platform on-disk format.
+            var keyFile = new byte[key.Length + 1];
+            keyFile[0] = 0x01;
+            key.CopyTo(keyFile, 1);
+            File.WriteAllBytes(Path.Combine(keyDirectory, "secret.key"), keyFile);
+
+            using var aes = System.Security.Cryptography.Aes.Create();
+            aes.Key = key;
+            aes.Mode = System.Security.Cryptography.CipherMode.CBC;
+            aes.Padding = System.Security.Cryptography.PaddingMode.PKCS7;
+            aes.GenerateIV();
+
+            using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(plaintext);
+            var cipher = encryptor.TransformFinalBlock(bytes, 0, bytes.Length);
+
+            var combined = new byte[aes.IV.Length + cipher.Length];
+            aes.IV.CopyTo(combined, 0);
+            cipher.CopyTo(combined, aes.IV.Length);
+            var legacyCiphertext = "enc:" + Convert.ToBase64String(combined);
+
+            var protector = new SecretProtector(keyDirectory);
+
+            Assert.Equal(plaintext, protector.Decrypt(legacyCiphertext));
+        }
+        finally
+        {
+            Directory.Delete(keyDirectory, recursive: true);
+        }
+    }
 }

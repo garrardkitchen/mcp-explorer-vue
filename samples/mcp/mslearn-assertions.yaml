@@ -1,0 +1,54 @@
+# MS Learn MCP — assertion demo runbook
+#
+# Demonstrates both a passing assertion (exists) and an intentional
+# failing assertion (equals with a value that will never match).
+#
+# continueOnAssertFailure: true at the runbook level means execution
+# continues even when an assertion fails, so both steps always run.
+#
+# Run:
+#   mcp-http mcp runbook --file samples/mcp/mslearn-assertions.yaml
+#
+# Expected outcome:
+#   - Step "search-success" → assertion PASSES  (result exists)
+#   - Step "search-failure" → assertion FAILS   (intentional mismatch)
+#   - Exit code 1 due to the failure assertion
+
+version: "1"
+defaultConnection: mslearn
+continueOnAssertFailure: true
+
+connections:
+  - name: mslearn
+    endpoint: https://learn.microsoft.com/api/mcp
+    auth:
+      type: custom
+      headers: []   # MS Learn MCP is publicly accessible — no auth required
+
+schedule:
+  repeat: 1
+
+steps:
+  # ── Success assertion ─────────────────────────────────────────────────────────
+  # Verifies that the search returns a non-null result.
+  - id: search-success
+    tool: microsoft_docs_search
+    params:
+      query: "Azure Key Vault overview and concepts"
+    assert:
+      path: "$"
+      operator: exists
+
+  # ── Failure assertion (intentional) ──────────────────────────────────────────
+  # The equals check will always fail because the expected value does not match
+  # anything the search API returns. This illustrates how assertion failures are
+  # reported without stopping the runbook (continueOnAssertFailure: true).
+  - id: search-failure
+    tool: microsoft_docs_search
+    params:
+      query: "Azure Service Bus service limits and quotas"
+    continueOnAssertFailure: true
+    assert:
+      path: "$"
+      operator: equals
+      value: "this-value-will-never-match"

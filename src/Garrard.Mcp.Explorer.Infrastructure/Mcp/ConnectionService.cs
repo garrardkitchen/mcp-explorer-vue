@@ -774,9 +774,8 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         }
 
         _logger.LogInformation(
-            "{Prefix} Headers for {ConnectionName}: Authorization present={HasAuth}, scheme={Scheme}, keys=[{Keys}]",
-            prefix, connectionName, hasAuth, scheme ?? "(none)",
-            string.Join(", ", headers?.Keys ?? []));
+            "{Prefix} Headers for {ConnectionName}: Authorization present={HasAuth}, scheme={Scheme}",
+            prefix, connectionName, hasAuth, scheme ?? "(none)");
     }
 
     private void LogTokenAudience(string jwtToken, string clientId)

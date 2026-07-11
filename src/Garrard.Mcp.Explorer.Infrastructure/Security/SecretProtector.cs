@@ -1,11 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace Garrard.Mcp.Explorer.Infrastructure.Security;
 
 /// <summary>
-/// AES-256 based secret protector. On Windows the key file is additionally wrapped with DPAPI.
+/// AES-256-GCM based secret protector. On Windows the key file is additionally wrapped with DPAPI.
 /// Falls back to a deterministic machine-derived key when file I/O fails.
 /// </summary>
 /// <remarks>
@@ -15,19 +16,24 @@ namespace Garrard.Mcp.Explorer.Infrastructure.Security;
 public sealed class SecretProtector : ISecretProtector
 {
     private const string Prefix = "enc:";
+    private const string V2Prefix = "enc:v2:";
     private const string KeyFileName = "secret.key";
     private const byte PlainKeyMarker = 0x01;
     private const byte ProtectedKeyMarker = 0x02;
+    private const int GcmNonceSize = 12;
+    private const int GcmTagSize = 16;
 
     private readonly Lazy<byte[]> _key;
+    private readonly ILogger<SecretProtector>? _logger;
 
-    public SecretProtector(string? keyDirectory = null)
+    public SecretProtector(string? keyDirectory = null, ILogger<SecretProtector>? logger = null)
     {
         // Capture keyDirectory for use inside the lazy initializer
         var resolvedDir = string.IsNullOrWhiteSpace(keyDirectory)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "McpExplorer")
             : keyDirectory;
         _key = new Lazy<byte[]>(() => GetOrCreateKey(resolvedDir), LazyThreadSafetyMode.ExecutionAndPublication);
+        _logger = logger;
     }
 
     public string Encrypt(string plaintext)
@@ -37,32 +43,44 @@ public sealed class SecretProtector : ISecretProtector
 
         try
         {
-            using var aes = Aes.Create();
-            aes.Key = _key.Value;
-            aes.Mode = CipherMode.CBC;
-            aes.Padding = PaddingMode.PKCS7;
-            aes.GenerateIV();
-
-            var iv = aes.IV;
-            using var encryptor = aes.CreateEncryptor(aes.Key, iv);
             var bytes = Encoding.UTF8.GetBytes(plaintext);
-            var cipher = encryptor.TransformFinalBlock(bytes, 0, bytes.Length);
+            var nonce = RandomNumberGenerator.GetBytes(GcmNonceSize);
+            var cipher = new byte[bytes.Length];
+            var tag = new byte[GcmTagSize];
 
-            var combined = new byte[iv.Length + cipher.Length];
-            Buffer.BlockCopy(iv, 0, combined, 0, iv.Length);
-            Buffer.BlockCopy(cipher, 0, combined, iv.Length, cipher.Length);
+            using var aes = new AesGcm(_key.Value, GcmTagSize);
+            aes.Encrypt(nonce, bytes, cipher, tag);
 
-            return Prefix + Convert.ToBase64String(combined);
+            var combined = new byte[nonce.Length + tag.Length + cipher.Length];
+            Buffer.BlockCopy(nonce, 0, combined, 0, nonce.Length);
+            Buffer.BlockCopy(tag, 0, combined, nonce.Length, tag.Length);
+            Buffer.BlockCopy(cipher, 0, combined, nonce.Length + tag.Length, cipher.Length);
+
+            return V2Prefix + Convert.ToBase64String(combined);
         }
-        catch
+        catch (Exception ex)
         {
-            return plaintext;
+            throw new InvalidOperationException("Failed to encrypt secret.", ex);
         }
     }
 
     public string Decrypt(string ciphertext)
     {
         if (string.IsNullOrEmpty(ciphertext)) return ciphertext;
+        if (ciphertext.StartsWith(V2Prefix, StringComparison.Ordinal))
+        {
+            try
+            {
+                return DecryptV2(ciphertext[V2Prefix.Length..], _key.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex,
+                    "Failed to decrypt a stored secret (v2 payload); the encryption key may have been rotated or lost. Returning the ciphertext unchanged.");
+                return ciphertext;
+            }
+        }
+
         if (!ciphertext.StartsWith(Prefix, StringComparison.Ordinal)) return ciphertext;
 
         try
@@ -85,11 +103,36 @@ public sealed class SecretProtector : ISecretProtector
             var plainBytes = decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
             return Encoding.UTF8.GetString(plainBytes);
         }
-        catch
+        catch (Exception ex)
         {
             var legacy = TryLegacyDecrypt(ciphertext);
+            if (legacy is null)
+            {
+                _logger?.LogWarning(ex,
+                    "Failed to decrypt a stored secret (legacy payload); the encryption key may have been rotated or lost. Returning the ciphertext unchanged.");
+            }
             return legacy ?? ciphertext;
         }
+    }
+
+    private static string DecryptV2(string payload, byte[] key)
+    {
+        var data = Convert.FromBase64String(payload);
+        if (data.Length < GcmNonceSize + GcmTagSize + 1)
+            throw new CryptographicException("Secret payload is invalid.");
+
+        var nonce = new byte[GcmNonceSize];
+        var tag = new byte[GcmTagSize];
+        var cipher = new byte[data.Length - GcmNonceSize - GcmTagSize];
+
+        Buffer.BlockCopy(data, 0, nonce, 0, nonce.Length);
+        Buffer.BlockCopy(data, nonce.Length, tag, 0, tag.Length);
+        Buffer.BlockCopy(data, nonce.Length + tag.Length, cipher, 0, cipher.Length);
+
+        var plaintext = new byte[cipher.Length];
+        using var aes = new AesGcm(key, GcmTagSize);
+        aes.Decrypt(nonce, cipher, tag, plaintext);
+        return Encoding.UTF8.GetString(plaintext);
     }
 
     private static byte[] GetOrCreateKey(string directory)
@@ -111,7 +154,7 @@ public sealed class SecretProtector : ISecretProtector
             TryHardenPermissions(keyPath);
             return key;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return DeriveLegacyKey();
         }
@@ -121,12 +164,8 @@ public sealed class SecretProtector : ISecretProtector
     {
         if (OperatingSystem.IsWindows())
         {
-            try
-            {
-                var protectedKey = ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser);
-                return Combine(ProtectedKeyMarker, protectedKey);
-            }
-            catch { }
+            var protectedKey = ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser);
+            return Combine(ProtectedKeyMarker, protectedKey);
         }
         return Combine(PlainKeyMarker, key);
     }
@@ -204,4 +243,3 @@ public sealed class SecretProtector : ISecretProtector
         return sha.ComputeHash(Encoding.UTF8.GetBytes(id));
     }
 }
-
