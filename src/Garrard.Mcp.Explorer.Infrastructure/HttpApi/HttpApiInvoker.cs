@@ -25,15 +25,18 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IKeyVaultSecretResolver _keyVaultSecretResolver;
+    private readonly ICertificateService _certificateService;
     private readonly ILogger<HttpApiInvoker> _logger;
 
     public HttpApiInvoker(
         IHttpClientFactory httpClientFactory,
         IKeyVaultSecretResolver keyVaultSecretResolver,
+        ICertificateService certificateService,
         ILogger<HttpApiInvoker> logger)
     {
         _httpClientFactory = httpClientFactory;
         _keyVaultSecretResolver = keyVaultSecretResolver;
+        _certificateService = certificateService;
         _logger = logger;
     }
 
@@ -247,6 +250,21 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
 
     private async Task<string> GetAzureTokenAsync(HttpApiAzureCredentialsOptions opts, CancellationToken ct)
     {
+        var ctx = new TokenRequestContext([opts.Scope]);
+
+        // Certificate credentials take precedence over secret / Key Vault secret.
+        if (opts.CertificateRef is { } certRef && !string.IsNullOrWhiteSpace(certRef.CertificateName))
+        {
+            using var certificate = await _certificateService.LoadWithPrivateKeyAsync(certRef.CertificateName, ct).ConfigureAwait(false);
+            var certOptions = new ClientCertificateCredentialOptions { SendCertificateChain = true };
+            if (!string.IsNullOrWhiteSpace(opts.AuthorityHost))
+                certOptions.AuthorityHost = new Uri(opts.AuthorityHost);
+
+            var certCredential = new ClientCertificateCredential(opts.TenantId, opts.ClientId, certificate, certOptions);
+            var certToken = await certCredential.GetTokenAsync(ctx, ct).ConfigureAwait(false);
+            return certToken.Token;
+        }
+
         TokenCredential credential;
         var clientSecret = await ResolveClientSecretAsync(opts, ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(opts.AuthorityHost))
@@ -262,7 +280,6 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
             credential = new ClientSecretCredential(opts.TenantId, opts.ClientId, clientSecret);
         }
 
-        var ctx   = new TokenRequestContext([opts.Scope]);
         var token = await credential.GetTokenAsync(ctx, ct).ConfigureAwait(false);
         return token.Token;
     }

@@ -60,6 +60,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IUserPreferencesStore>(),
             sp.GetRequiredService<IHttpApiStore>(),
             sp.GetService<ILogger<CertificateService>>()));
+        services.AddSingleton<ICertificateUploadService, GraphKeyCredentialService>();
 
         services.AddSingleton<ConnectionService>();
         services.AddSingleton<IConnectionService>(sp => sp.GetRequiredService<ConnectionService>());

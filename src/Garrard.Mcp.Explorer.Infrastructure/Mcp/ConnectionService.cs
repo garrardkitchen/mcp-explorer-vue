@@ -38,6 +38,7 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
     private readonly ElicitationService? _elicitationService;
     private readonly OAuthCallbackService _oAuthCallbackService;
     private readonly IKeyVaultSecretResolver _keyVaultSecretResolver;
+    private readonly ICertificateService _certificateService;
     private readonly ConcurrentDictionary<string, ActiveConnection> _connections = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ConnectionDefinition> _definitions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _reconnectGates = new(StringComparer.OrdinalIgnoreCase);
@@ -49,11 +50,13 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         IConfiguration configuration,
         IElicitationService elicitationService,
         OAuthCallbackService oAuthCallbackService,
-        IKeyVaultSecretResolver keyVaultSecretResolver)
+        IKeyVaultSecretResolver keyVaultSecretResolver,
+        ICertificateService certificateService)
     {
         _logger = logger;
         _configuration = configuration;
         _keyVaultSecretResolver = keyVaultSecretResolver;
+        _certificateService = certificateService;
         _clientName = configuration.GetValue<string>("MCP_CLIENT_NAME")?.Trim() is { Length: > 0 } name
             ? name
             : DefaultClientName;
@@ -643,7 +646,17 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
         // Include the KV reference identity in the cache key so a change of secret reference
         // produces a distinct cache entry, while avoiding embedding the secret value itself.
         var kvSuffix = credentials.KeyVaultSecretRef is { } kvRef ? kvRef.ToString() : string.Empty;
-        var cacheKey = string.Join("|", tenantId, clientId, authorityHost, string.Join(' ', scopes), kvSuffix);
+
+        // Certificate credentials key on name + thumbprint so a renewal (same name, new
+        // thumbprint) invalidates any cached token acquired with the old certificate.
+        var certSuffix = string.Empty;
+        if (credentials.CertificateRef is { } certRef && !string.IsNullOrWhiteSpace(certRef.CertificateName))
+        {
+            var certInfo = await _certificateService.GetAsync(certRef.CertificateName, cancellationToken).ConfigureAwait(false);
+            certSuffix = $"cert:{certRef.CertificateName}:{certInfo?.ThumbprintSha1}";
+        }
+
+        var cacheKey = string.Join("|", tenantId, clientId, authorityHost, string.Join(' ', scopes), kvSuffix, certSuffix);
 
         if (_azureTokenCache.TryGetValue(cacheKey, out var cached)
             && cached.Token.ExpiresOn > DateTimeOffset.UtcNow.AddMinutes(2))
@@ -660,26 +673,44 @@ public sealed class ConnectionService : IConnectionService, IAsyncDisposable
                 return cached.Token.Token;
             }
 
-            // Resolve the client secret only when a cache miss requires a fresh token.
-            // This avoids a Key Vault round-trip on every call when a valid token is cached.
-            var clientSecret = credentials.KeyVaultSecretRef is not null
-                ? await _keyVaultSecretResolver.ResolveAsync(credentials.KeyVaultSecretRef, cancellationToken).ConfigureAwait(false)
-                : credentials.ClientSecret;
-
-            var credentialOptions = new ClientSecretCredentialOptions();
+            Uri? authorityUri = null;
             if (!string.IsNullOrWhiteSpace(credentials.AuthorityHost))
             {
-                if (!Uri.TryCreate(credentials.AuthorityHost, UriKind.Absolute, out var authorityUri))
+                if (!Uri.TryCreate(credentials.AuthorityHost, UriKind.Absolute, out authorityUri))
                 {
                     throw new InvalidOperationException($"Invalid authority host '{credentials.AuthorityHost}'.");
                 }
-
-                credentialOptions.AuthorityHost = authorityUri;
             }
 
-            var credential = new ClientSecretCredential(tenantId, clientId, clientSecret, credentialOptions);
             var tokenContext = new TokenRequestContext(scopes);
-            var token = await credential.GetTokenAsync(tokenContext, cancellationToken).ConfigureAwait(false);
+            AccessToken token;
+
+            if (credentials.CertificateRef is { } activeCertRef && !string.IsNullOrWhiteSpace(activeCertRef.CertificateName))
+            {
+                // Certificate credentials take precedence over secret / Key Vault secret.
+                using var certificate = await _certificateService
+                    .LoadWithPrivateKeyAsync(activeCertRef.CertificateName, cancellationToken).ConfigureAwait(false);
+
+                var certOptions = new ClientCertificateCredentialOptions { SendCertificateChain = true };
+                if (authorityUri is not null) certOptions.AuthorityHost = authorityUri;
+
+                var certCredential = new ClientCertificateCredential(tenantId, clientId, certificate, certOptions);
+                token = await certCredential.GetTokenAsync(tokenContext, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                // Resolve the client secret only when a cache miss requires a fresh token.
+                // This avoids a Key Vault round-trip on every call when a valid token is cached.
+                var clientSecret = credentials.KeyVaultSecretRef is not null
+                    ? await _keyVaultSecretResolver.ResolveAsync(credentials.KeyVaultSecretRef, cancellationToken).ConfigureAwait(false)
+                    : credentials.ClientSecret;
+
+                var credentialOptions = new ClientSecretCredentialOptions();
+                if (authorityUri is not null) credentialOptions.AuthorityHost = authorityUri;
+
+                var credential = new ClientSecretCredential(tenantId, clientId, clientSecret, credentialOptions);
+                token = await credential.GetTokenAsync(tokenContext, cancellationToken).ConfigureAwait(false);
+            }
 
             LogTokenAudience(token.Token, clientId);
 
