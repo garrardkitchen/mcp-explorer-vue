@@ -23,4 +23,8 @@ export const azureApi = {
   /** Lists all enabled secret names in a Key Vault. */
   getKeyVaultSecrets: (vaultName: string) =>
     apiClient.get<string[]>(`/azure/keyvaults/${encodeURIComponent(vaultName)}/secrets`).then(r => r.data),
+
+  /** Lists all enabled certificate names in a Key Vault. */
+  getKeyVaultCertificates: (vaultName: string) =>
+    apiClient.get<string[]>(`/azure/keyvaults/${encodeURIComponent(vaultName)}/certificates`).then(r => r.data),
 }

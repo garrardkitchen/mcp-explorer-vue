@@ -9,7 +9,13 @@
           client-credential auth on MCP &amp; HTTP connections. Private keys never leave this machine.
         </p>
       </div>
-      <Button label="New Certificate" icon="pi pi-plus" @click="openCreate" />
+      <div class="header-actions">
+        <Button label="Import from Key Vault" icon="pi pi-lock" severity="secondary" outlined @click="openKvImport" />
+        <Button label="Create CSR" icon="pi pi-file-edit" severity="secondary" outlined
+                v-tooltip="'For CA-issued certificates: generate a key + signing request here, import the issued cert later'"
+                @click="openCsr" />
+        <Button label="New Certificate" icon="pi pi-plus" @click="openCreate" />
+      </div>
     </div>
 
     <!-- ── Stat tiles ── -->
@@ -105,12 +111,20 @@
         <Column header="Actions" style="text-align:right">
           <template #body="{ data }">
             <div class="row-actions">
-              <Button icon="pi pi-cloud-upload" text size="small" v-tooltip="'Upload to app registration'"
-                      :disabled="data.certificate.state === 'CsrPending'" @click="openUpload(data.certificate)" />
-              <Button icon="pi pi-download" text size="small" v-tooltip="'Download public cert (PEM)'"
-                      :disabled="data.certificate.state === 'CsrPending'" @click="downloadPem(data.certificate)" />
-              <Button icon="pi pi-refresh" text size="small" v-tooltip="'Renew & re-upload'"
-                      :disabled="data.certificate.state !== 'Active'" @click="openRenew(data.certificate)" />
+              <template v-if="data.certificate.state === 'CsrPending'">
+                <Button icon="pi pi-file-export" text size="small" v-tooltip="'Download CSR (send to your CA)'"
+                        @click="downloadCsr(data.certificate)" />
+                <Button icon="pi pi-file-import" text size="small" v-tooltip="'Import the CA-issued certificate'"
+                        @click="openImportIssued(data.certificate)" />
+              </template>
+              <template v-else>
+                <Button icon="pi pi-cloud-upload" text size="small" v-tooltip="'Upload to app registration'"
+                        @click="openUpload(data.certificate)" />
+                <Button icon="pi pi-download" text size="small" v-tooltip="'Download public cert (PEM)'"
+                        @click="downloadPem(data.certificate)" />
+                <Button icon="pi pi-refresh" text size="small" v-tooltip="'Renew & re-upload'"
+                        :disabled="data.certificate.state !== 'Active'" @click="openRenew(data.certificate)" />
+              </template>
               <Button icon="pi pi-trash" text size="small" severity="danger"
                       v-tooltip="usageCount(data) ? 'In use — detach it from connections first' : 'Delete'"
                       :disabled="usageCount(data) > 0" @click="confirmDelete(data.certificate)" />
@@ -170,6 +184,8 @@
                           :disabled="data.certificate.state !== 'Active'" @click="openRenew(data.certificate)" />
                   <Button label="Export PFX" icon="pi pi-download" size="small" severity="secondary" outlined
                           :disabled="data.certificate.state === 'CsrPending'" @click="openPfxExport(data.certificate)" />
+                  <Button label="Export to Key Vault" icon="pi pi-lock" size="small" severity="secondary" outlined
+                          :disabled="data.certificate.state === 'CsrPending'" @click="openKvExport(data.certificate)" />
                 </div>
               </div>
             </div>
@@ -232,6 +248,112 @@
         <Button label="Close" severity="secondary" text @click="uploadDialog = false" />
         <Button label="Upload" icon="pi pi-cloud-upload" :disabled="!uploadAppId || uploadBusy"
                 :loading="uploadBusy" @click="runUpload" />
+      </template>
+    </Dialog>
+
+    <!-- ── CSR dialog ── -->
+    <Dialog v-model:visible="csrDialog" header="Create Certificate Signing Request" modal :style="{ width: '540px' }">
+      <div class="create-grid">
+        <p class="muted-sm span-2" style="margin:0">
+          Generates a private key and CSR locally. Send the CSR to your certificate authority,
+          then import the issued certificate from the row's <i class="pi pi-file-import" /> action.
+          The private key never leaves this machine.
+        </p>
+        <div class="field span-2">
+          <label>Name <span class="req">*</span></label>
+          <InputText v-model="csrForm.name" class="w-full mono" placeholder="my-ca-cert" autofocus />
+          <small v-if="csrForm.name && !isValidName(csrForm.name)" class="field-error">
+            Lowercase letters, digits, and hyphens only (no leading/trailing hyphen).
+          </small>
+        </div>
+        <div class="field">
+          <label>Key size</label>
+          <Select v-model="csrForm.keySize" :options="[2048, 4096]" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Subject (CN) <span class="opt">(optional)</span></label>
+          <InputText v-model="csrForm.subjectCn" class="w-full mono" :placeholder="csrForm.name ? `mcp-explorer-${csrForm.name}` : 'mcp-explorer-…'" />
+        </div>
+        <div class="span-2">
+          <StepProgress v-if="csrBusy || csrSteps" :steps="csrSteps" :busy="csrBusy"
+                        busy-label="Creating CSR…" @retry="runCreateCsr" />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="csrDialog = false" />
+        <Button label="Create CSR" icon="pi pi-file-edit" :disabled="!isValidName(csrForm.name) || csrBusy"
+                :loading="csrBusy" @click="runCreateCsr" />
+      </template>
+    </Dialog>
+
+    <!-- ── Import issued certificate dialog ── -->
+    <Dialog v-model:visible="issuedDialog" :header="`Import issued certificate for ${issuedTarget?.name}`" modal :style="{ width: '600px' }">
+      <div class="kc-body">
+        <p class="muted-sm">
+          Paste the certificate your CA issued for this CSR (PEM, <code>-----BEGIN CERTIFICATE-----</code>).
+          It must match the private key generated with the CSR.
+        </p>
+        <Textarea v-model="issuedPem" rows="9" class="w-full mono" placeholder="-----BEGIN CERTIFICATE-----" />
+        <StepProgress v-if="issuedBusy || issuedSteps" :steps="issuedSteps" :busy="issuedBusy"
+                      busy-label="Importing issued certificate…" @retry="runImportIssued" />
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="issuedDialog = false" />
+        <Button label="Import" icon="pi pi-file-import" :disabled="!issuedPem.trim() || issuedBusy"
+                :loading="issuedBusy" @click="runImportIssued" />
+      </template>
+    </Dialog>
+
+    <!-- ── Key Vault import dialog ── -->
+    <Dialog v-model:visible="kvImportDialog" header="Import certificate from Key Vault" modal :style="{ width: '540px' }">
+      <div class="create-grid">
+        <div class="field span-2">
+          <label>Key Vault <span class="req">*</span></label>
+          <Select v-model="kvImportVault" :options="kvVaults" optionLabel="name" optionValue="name"
+                  class="w-full" placeholder="Select a vault" :loading="kvVaultsLoading" filter
+                  @change="loadKvCertificates" />
+        </div>
+        <div class="field span-2">
+          <label>Certificate <span class="req">*</span></label>
+          <Select v-model="kvImportCert" :options="kvCertNames" class="w-full"
+                  placeholder="Select a certificate" :loading="kvCertsLoading" :disabled="!kvImportVault" filter />
+          <small class="muted-sm">The certificate's policy must allow an exportable private key.</small>
+        </div>
+        <div class="field span-2">
+          <label>Local name <span class="req">*</span></label>
+          <InputText v-model="kvImportLocalName" class="w-full mono" placeholder="imported-cert" />
+          <small v-if="kvImportLocalName && !isValidName(kvImportLocalName)" class="field-error">
+            Lowercase letters, digits, and hyphens only (no leading/trailing hyphen).
+          </small>
+        </div>
+        <div class="span-2">
+          <StepProgress v-if="kvImportBusy || kvImportSteps" :steps="kvImportSteps" :busy="kvImportBusy"
+                        busy-label="Importing from Key Vault…" @retry="runKvImport" />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="kvImportDialog = false" />
+        <Button label="Import" icon="pi pi-lock" :disabled="!kvImportVault || !kvImportCert || !isValidName(kvImportLocalName) || kvImportBusy"
+                :loading="kvImportBusy" @click="runKvImport" />
+      </template>
+    </Dialog>
+
+    <!-- ── Key Vault export dialog ── -->
+    <Dialog v-model:visible="kvExportDialog" :header="`Export ${kvExportTarget?.name} to Key Vault`" modal :style="{ width: '480px' }">
+      <div class="kc-body">
+        <p class="muted-sm">Imports this certificate (with its private key) into the vault so teammates can use it.</p>
+        <div class="field">
+          <label>Key Vault <span class="req">*</span></label>
+          <Select v-model="kvExportVault" :options="kvVaults" optionLabel="name" optionValue="name"
+                  class="w-full" placeholder="Select a vault" :loading="kvVaultsLoading" filter />
+        </div>
+        <StepProgress v-if="kvExportBusy || kvExportSteps" :steps="kvExportSteps" :busy="kvExportBusy"
+                      busy-label="Exporting to Key Vault…" @retry="runKvExport" />
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="kvExportDialog = false" />
+        <Button label="Export" icon="pi pi-lock" :disabled="!kvExportVault || kvExportBusy"
+                :loading="kvExportBusy" @click="runKvExport" />
       </template>
     </Dialog>
 
@@ -318,14 +440,16 @@ import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Select from 'primevue/select'
 import Tag from 'primevue/tag'
+import Textarea from 'primevue/textarea'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
 import StepProgress from '@/components/certificates/StepProgress.vue'
+import { azureApi } from '@/api/azure'
 import { certificatesApi } from '@/api/certificates'
 import { extractApiError } from '@/api/client'
 import { useCertificatesStore } from '@/stores/certificates'
-import type { AzureAppRegistration, CertUploadStatus, CertificateInfo, CertificateWithUsage, GraphKeyCredentialInfo, StepResult } from '@/api/types'
+import type { AzureAppRegistration, AzureKeyVaultInfo, CertUploadStatus, CertificateInfo, CertificateWithUsage, GraphKeyCredentialInfo, StepResult } from '@/api/types'
 
 const store = useCertificatesStore()
 const toast = useToast()
@@ -480,6 +604,186 @@ async function verifyUpload(name: string, appId: string) {
   }
   finally {
     verifying.value = null
+  }
+}
+
+// ── CSR flow ────────────────────────────────────────────────────────────────
+
+const csrDialog = ref(false)
+const csrBusy = ref(false)
+const csrSteps = ref<StepResult[] | null>(null)
+const csrForm = reactive({ name: '', subjectCn: '', keySize: 2048 })
+
+function openCsr() {
+  Object.assign(csrForm, { name: '', subjectCn: '', keySize: 2048 })
+  csrSteps.value = null
+  csrDialog.value = true
+}
+
+async function runCreateCsr() {
+  csrBusy.value = true
+  csrSteps.value = null
+  try {
+    const result = await certificatesApi.createCsr(csrForm.name, csrForm.subjectCn || undefined, csrForm.keySize)
+    csrSteps.value = result.steps
+    if (result.success) {
+      toast.add({ severity: 'success', summary: 'CSR created', detail: `Download it from the ${csrForm.name} row and send it to your CA.`, life: 6000 })
+      await store.load()
+    }
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'CSR creation failed', detail: extractApiError(err), life: 6000 })
+  }
+  finally {
+    csrBusy.value = false
+  }
+}
+
+async function downloadCsr(cert: CertificateInfo) {
+  try {
+    const blob = await certificatesApi.downloadCsr(cert.name)
+    triggerDownload(blob, `${cert.name}.csr`)
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Download failed', detail: extractApiError(err), life: 5000 })
+  }
+}
+
+const issuedDialog = ref(false)
+const issuedTarget = ref<CertificateInfo | null>(null)
+const issuedPem = ref('')
+const issuedBusy = ref(false)
+const issuedSteps = ref<StepResult[] | null>(null)
+
+function openImportIssued(cert: CertificateInfo) {
+  issuedTarget.value = cert
+  issuedPem.value = ''
+  issuedSteps.value = null
+  issuedDialog.value = true
+}
+
+async function runImportIssued() {
+  if (!issuedTarget.value) return
+  issuedBusy.value = true
+  issuedSteps.value = null
+  try {
+    const result = await certificatesApi.importIssued(issuedTarget.value.name, issuedPem.value)
+    issuedSteps.value = result.steps
+    if (result.success) {
+      toast.add({ severity: 'success', summary: 'Certificate issued & imported', detail: issuedTarget.value.name, life: 4200 })
+      await store.load()
+    }
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Import failed', detail: extractApiError(err), life: 6000 })
+  }
+  finally {
+    issuedBusy.value = false
+  }
+}
+
+// ── Key Vault import/export ─────────────────────────────────────────────────
+
+const kvVaults = ref<AzureKeyVaultInfo[]>([])
+const kvVaultsLoading = ref(false)
+
+async function loadKvVaults() {
+  if (kvVaults.value.length) return
+  kvVaultsLoading.value = true
+  try {
+    kvVaults.value = await azureApi.getKeyVaults()
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Could not list Key Vaults', detail: extractApiError(err), life: 5000 })
+  }
+  finally {
+    kvVaultsLoading.value = false
+  }
+}
+
+const kvImportDialog = ref(false)
+const kvImportVault = ref('')
+const kvImportCert = ref('')
+const kvImportLocalName = ref('')
+const kvCertNames = ref<string[]>([])
+const kvCertsLoading = ref(false)
+const kvImportBusy = ref(false)
+const kvImportSteps = ref<StepResult[] | null>(null)
+
+function openKvImport() {
+  kvImportVault.value = ''
+  kvImportCert.value = ''
+  kvImportLocalName.value = ''
+  kvCertNames.value = []
+  kvImportSteps.value = null
+  kvImportDialog.value = true
+  void loadKvVaults()
+}
+
+async function loadKvCertificates() {
+  if (!kvImportVault.value) return
+  kvCertsLoading.value = true
+  kvImportCert.value = ''
+  try {
+    kvCertNames.value = await azureApi.getKeyVaultCertificates(kvImportVault.value)
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Could not list certificates', detail: extractApiError(err), life: 5000 })
+    kvCertNames.value = []
+  }
+  finally {
+    kvCertsLoading.value = false
+  }
+}
+
+async function runKvImport() {
+  kvImportBusy.value = true
+  kvImportSteps.value = null
+  try {
+    const result = await certificatesApi.importFromKeyVault(kvImportVault.value, kvImportCert.value, kvImportLocalName.value)
+    kvImportSteps.value = result.steps
+    if (result.success) {
+      toast.add({ severity: 'success', summary: 'Imported from Key Vault', detail: kvImportLocalName.value, life: 4200 })
+      await store.load()
+    }
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Import failed', detail: extractApiError(err), life: 6000 })
+  }
+  finally {
+    kvImportBusy.value = false
+  }
+}
+
+const kvExportDialog = ref(false)
+const kvExportTarget = ref<CertificateInfo | null>(null)
+const kvExportVault = ref('')
+const kvExportBusy = ref(false)
+const kvExportSteps = ref<StepResult[] | null>(null)
+
+function openKvExport(cert: CertificateInfo) {
+  kvExportTarget.value = cert
+  kvExportVault.value = ''
+  kvExportSteps.value = null
+  kvExportDialog.value = true
+  void loadKvVaults()
+}
+
+async function runKvExport() {
+  if (!kvExportTarget.value) return
+  kvExportBusy.value = true
+  kvExportSteps.value = null
+  try {
+    const result = await certificatesApi.exportToKeyVault(kvExportTarget.value.name, kvExportVault.value)
+    kvExportSteps.value = result.steps
+    if (result.success)
+      toast.add({ severity: 'success', summary: 'Exported to Key Vault', detail: `${kvExportTarget.value.name} → ${kvExportVault.value}`, life: 4200 })
+  }
+  catch (err) {
+    toast.add({ severity: 'error', summary: 'Export failed', detail: extractApiError(err), life: 6000 })
+  }
+  finally {
+    kvExportBusy.value = false
   }
 }
 
@@ -662,6 +966,13 @@ function confirmDelete(cert: CertificateInfo) {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .page-title {

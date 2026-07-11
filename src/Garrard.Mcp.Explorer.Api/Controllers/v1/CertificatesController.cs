@@ -18,8 +18,44 @@ public sealed class CertificatesController(
     ICertificateService certificateService,
     ICertificateUploadService uploadService,
     ICertificateRenewalService renewalService,
+    IKeyVaultCertificateService keyVaultCertificateService,
     CertificateNotificationState notificationState) : ControllerBase
 {
+    /// <summary>Imports a certificate (with private key) from Azure Key Vault into the local store.</summary>
+    [HttpPost("import-keyvault")]
+    public async Task<IActionResult> ImportFromKeyVault([FromBody] ImportKeyVaultCertificateRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.VaultName) || string.IsNullOrWhiteSpace(request.KvCertificateName) || string.IsNullOrWhiteSpace(request.LocalName))
+            return BadRequest(new { error = "vaultName, kvCertificateName, and localName are required." });
+
+        try
+        {
+            return Ok(await keyVaultCertificateService.ImportFromKeyVaultAsync(
+                request.VaultName.Trim(), request.KvCertificateName.Trim(), request.LocalName.Trim(), cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Exports a local certificate into Azure Key Vault.</summary>
+    [HttpPost("{name}/export-keyvault")]
+    public async Task<IActionResult> ExportToKeyVault(string name, [FromBody] ExportKeyVaultCertificateRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.VaultName))
+            return BadRequest(new { error = "vaultName is required." });
+
+        try
+        {
+            return Ok(await keyVaultCertificateService.ExportToKeyVaultAsync(name, request.VaultName.Trim(), cancellationToken));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     /// <summary>Latest expiry-monitor snapshot (expiring/expired certs + stale uploads).</summary>
     [HttpGet("notifications")]
     public IActionResult GetNotifications() => Ok(notificationState.Current);

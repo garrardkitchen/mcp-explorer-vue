@@ -71,4 +71,13 @@ export const certificatesApi = {
 
   getAudit: (name?: string, limit = 200) =>
     apiClient.get<CertificateAuditEntry[]>('/certificates/audit', { params: { name, limit } }).then(r => r.data),
+
+  /** Downloads a certificate (with private key) from Key Vault into the local store. */
+  importFromKeyVault: (vaultName: string, kvCertificateName: string, localName: string) =>
+    apiClient.post<CertOperationResult>('/certificates/import-keyvault', { vaultName, kvCertificateName, localName })
+      .then(r => r.data),
+
+  /** Imports a local certificate into Key Vault as a PFX. */
+  exportToKeyVault: (name: string, vaultName: string) =>
+    apiClient.post<CertOperationResult>(`/certificates/${enc(name)}/export-keyvault`, { vaultName }).then(r => r.data),
 }

@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
             sp.GetService<ILogger<CertificateService>>()));
         services.AddSingleton<ICertificateUploadService, GraphKeyCredentialService>();
         services.AddSingleton<ICertificateRenewalService, CertificateRenewalService>();
+        services.AddSingleton<IKeyVaultCertificateService, KeyVaultCertificateService>();
         services.AddSingleton<CertificateNotificationState>();
         services.AddHostedService<CertificateExpiryMonitor>();
 
