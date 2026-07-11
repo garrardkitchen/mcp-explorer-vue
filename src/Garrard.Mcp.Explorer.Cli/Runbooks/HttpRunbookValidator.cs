@@ -12,6 +12,16 @@ public static class HttpRunbookValidator
         "contains",
         "exists"
     ];
+    private static readonly HashSet<string> SupportedConnectionAuthTypes =
+    [
+        "none",
+        "bearer",
+        "apikey",
+        "basic",
+        "custom",
+        "customheaders",
+        "azureclientcredentials"
+    ];
 
     public static IReadOnlyList<string> Validate(HttpRunbook runbook)
     {
@@ -21,6 +31,71 @@ public static class HttpRunbookValidator
 
         if (runbook.Steps.Count == 0)
             errors.Add("Runbook must include at least one step.");
+
+        var connectionNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var connection in runbook.Connections)
+        {
+            if (string.IsNullOrWhiteSpace(connection.Name))
+                errors.Add("Connection name is required.");
+            else if (!connectionNames.Add(connection.Name))
+                errors.Add($"Connection '{connection.Name}' is duplicated.");
+
+            if (string.IsNullOrWhiteSpace(connection.Endpoint))
+                errors.Add($"Connection '{connection.Name}' endpoint is required.");
+
+            if (connection.Auth is null)
+            {
+                errors.Add($"Connection '{connection.Name}' auth block is required.");
+                continue;
+            }
+
+            var authType = (connection.Auth.Type ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(authType)
+                && !SupportedConnectionAuthTypes.Contains(authType, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add($"Connection '{connection.Name}' auth.type '{connection.Auth.Type}' is not supported.");
+            }
+
+            if ((authType.Equals("custom", StringComparison.OrdinalIgnoreCase)
+                 || authType.Equals("customheaders", StringComparison.OrdinalIgnoreCase))
+                && connection.Auth.Headers is null)
+            {
+                errors.Add($"Connection '{connection.Name}' auth.headers must be a list (use [] when empty).");
+            }
+
+            if (authType.Equals("bearer", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(connection.Auth.Token)
+                && connection.Auth.TokenFromKeyVault is null)
+            {
+                errors.Add($"Connection '{connection.Name}' bearer auth requires token or tokenFromKeyVault.");
+            }
+
+            if (authType.Equals("apikey", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(connection.Auth.ApiKey)
+                && connection.Auth.ApiKeyFromKeyVault is null)
+            {
+                errors.Add($"Connection '{connection.Name}' apikey auth requires apiKey or apiKeyFromKeyVault.");
+            }
+
+            if (authType.Equals("basic", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(connection.Auth.Password)
+                && connection.Auth.PasswordFromKeyVault is null)
+            {
+                errors.Add($"Connection '{connection.Name}' basic auth requires password or passwordFromKeyVault.");
+            }
+
+            if (authType.Equals("azureclientcredentials", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(connection.Auth.TenantId))
+                    errors.Add($"Connection '{connection.Name}' azureClientCredentials auth requires tenantId.");
+                if (string.IsNullOrWhiteSpace(connection.Auth.Scope))
+                    errors.Add($"Connection '{connection.Name}' azureClientCredentials auth requires scope.");
+                if (string.IsNullOrWhiteSpace(connection.Auth.ClientId) && connection.Auth.ClientIdFromKeyVault is null)
+                    errors.Add($"Connection '{connection.Name}' azureClientCredentials auth requires clientId or clientIdFromKeyVault.");
+                if (string.IsNullOrWhiteSpace(connection.Auth.ClientSecret) && connection.Auth.ClientSecretFromKeyVault is null)
+                    errors.Add($"Connection '{connection.Name}' azureClientCredentials auth requires clientSecret or clientSecretFromKeyVault.");
+            }
+        }
 
         var stepIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var step in runbook.Steps)
@@ -35,7 +110,9 @@ public static class HttpRunbookValidator
                     errors.Add($"Step id '{step.Id}' is duplicated.");
             }
 
-            if (string.IsNullOrWhiteSpace(step.Endpoint) && string.IsNullOrWhiteSpace(step.EndpointId))
+            if (string.IsNullOrWhiteSpace(step.Endpoint)
+                && string.IsNullOrWhiteSpace(step.EndpointId)
+                && string.IsNullOrWhiteSpace(runbook.DefaultConnection))
                 errors.Add($"Step '{step.Id}' must set endpoint or endpointId.");
 
             if (step.MaxRetries < 0)

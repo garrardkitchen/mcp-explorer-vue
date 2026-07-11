@@ -3,20 +3,21 @@
 # Calls two endpoints on the public httpbin.org test service to demonstrate
 # multi-step HTTP runbooks.
 #
-# Prerequisites:
-#   Before running this sample you must have the two API definitions below
-#   saved in MCP Explorer.  Add them once via the UI (HTTP APIs → New) or
-#   using the CLI import command (see README.md).
-#
-#   Name                 Method  URL
-#   ─────────────────── ──────  ──────────────────────────────────────────
-#   HttpBin Get          GET     https://httpbin.org/get
-#   HttpBin Status       GET     https://httpbin.org/status/{code}
-#
 # Run:
 #   mcp-http http runbook --file samples/http/httpbin-basic.yaml
 
 version: "1"
+connections:
+  - name: HttpBin Get
+    endpoint: https://httpbin.org/get
+    auth:
+      type: custom
+      headers: []
+  - name: HttpBin Status
+    endpoint: https://httpbin.org/status/{code}
+    auth:
+      type: custom
+      headers: []
 
 schedule:
   repeat: 1

@@ -14,9 +14,14 @@ public sealed class HttpRunbookCommand : AsyncCommand<HttpRunbookCommand.Setting
 
     public HttpRunbookCommand(
         IHttpApiStore store,
-        IHttpApiInvoker invoker)
+        IHttpApiInvoker invoker,
+        IKeyVaultSecretResolver secretResolver)
     {
-        _executor = new HttpRunbookExecutor(store, invoker, new McpRunbookTemplateResolver());
+        _executor = new HttpRunbookExecutor(
+            store,
+            invoker,
+            new HttpRunbookConnectionFactory(secretResolver),
+            new McpRunbookTemplateResolver());
     }
 
     public sealed class Settings : CommandSettings

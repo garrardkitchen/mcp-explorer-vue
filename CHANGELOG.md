@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] - 2026-06-24 (patch 14)
+
+### Changed
+- CLI HTTP runbooks now support inline YAML `connections` plus `defaultConnection`, so runs no longer require pre-saved HTTP API definitions when the connection is declared in the runbook.
+- HTTP runbook endpoint resolution now checks inline runbook connections first, then falls back to saved API definitions (`endpoint` name matching and `endpointId`).
+- HTTP runbook validator now validates connection blocks and allows steps to omit `endpoint`/`endpointId` when `defaultConnection` is set.
+
+### Added
+- CLI: `HttpRunbookConnectionFactory` to map runbook auth modes (`none`, `custom`, `bearer`, `apikey`, `basic`, `azureClientCredentials`) into runtime HTTP API invocation definitions.
+- Tests: coverage for parsing/validation and execution with inline HTTP runbook connections.
+- Docs/samples: HTTP runbook samples and CLI docs now demonstrate YAML-defined connections and `defaultConnection`.
+
 ## [Unreleased] - 2026-06-23 (patch 13)
 
 ### Security

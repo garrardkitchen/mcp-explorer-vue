@@ -32,7 +32,7 @@ public static class RunbookValidationHints
                 hints.Add("Set defaultConnection to a declared connection name or set step.connection explicitly.");
 
             if (error.Contains("endpoint", StringComparison.OrdinalIgnoreCase))
-                hints.Add("For HTTP runbooks, set endpoint or endpointId on every step.");
+                hints.Add("For HTTP runbooks, set endpoint/endpointId on the step or set runbook.defaultConnection.");
 
             if (error.Contains("schedule", StringComparison.OrdinalIgnoreCase))
                 hints.Add("Use schedule.repeat >= 1, and pair schedule.forSeconds with schedule.everySeconds.");

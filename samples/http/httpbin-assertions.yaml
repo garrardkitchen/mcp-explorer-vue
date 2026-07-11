@@ -7,14 +7,6 @@
 # continueOnAssertFailure: true at the runbook level means both steps always
 # run, even when one assertion fails.
 #
-# Prerequisites:
-#   Name                 Method  URL
-#   ─────────────────── ──────  ──────────────────────────────────────────
-#   HttpBin Status       GET     https://httpbin.org/status/{code}
-#
-#   Add this API definition once via MCP Explorer UI or CLI import.
-#   See README.md for full setup instructions.
-#
 # Run:
 #   mcp-http http runbook --file samples/http/httpbin-assertions.yaml
 #
@@ -24,7 +16,14 @@
 #   - Exit code 1 due to the failure assertion
 
 version: "1"
+defaultConnection: HttpBin Status
 continueOnAssertFailure: true
+connections:
+  - name: HttpBin Status
+    endpoint: https://httpbin.org/status/{code}
+    auth:
+      type: custom
+      headers: []
 
 schedule:
   repeat: 1
@@ -33,7 +32,6 @@ steps:
   # ── Success assertion ─────────────────────────────────────────────────────────
   # Requests an HTTP 200 from httpbin and asserts the response statusCode is 200.
   - id: assert-success
-    endpoint: HttpBin Status
     inputs:
       code: "200"
     assert:
@@ -45,7 +43,6 @@ steps:
   # Requests an HTTP 200 but asserts statusCode equals 999 — this will always
   # fail, illustrating how assertion failures are reported.
   - id: assert-failure
-    endpoint: HttpBin Status
     inputs:
       code: "200"
     continueOnAssertFailure: true

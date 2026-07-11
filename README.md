@@ -542,6 +542,8 @@ mcp-http http runbook --file ./http-runbook.yaml
 mcp-http http runbook --file ./http-runbook.yaml --validate-only
 ```
 
+HTTP runbooks can use saved API definitions (`endpoint`/`endpointId`) or inline YAML `connections` with an optional `defaultConnection`.
+
 #### Runbook assertions
 
 Both `mcp runbook` and `http runbook` support per-step assertions:

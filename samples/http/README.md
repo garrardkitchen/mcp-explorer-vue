@@ -24,34 +24,14 @@ dotnet publish src/Garrard.Mcp.Explorer.Cli/Garrard.Mcp.Explorer.Cli.csproj \
   -c Release -r linux-x64 --self-contained -o ./dist/cli
 ```
 
-### 2. Create the required API definitions
+### 2. No saved API definitions required
 
-HTTP runbooks reference **saved API definitions** by name.  You must add these
-definitions to MCP Explorer before running the samples.
+These sample runbooks declare their own HTTP connections directly in YAML:
 
-#### Option A — MCP Explorer UI
+- `httpbin-basic.yaml` declares `HttpBin Get` and `HttpBin Status`
+- `httpbin-assertions.yaml` declares `HttpBin Status` and uses it as `defaultConnection`
 
-1. Open MCP Explorer and navigate to **HTTP APIs → New**.
-2. Create the two definitions below (one at a time).
-
-| Field         | HttpBin Get              | HttpBin Status                   |
-|---------------|--------------------------|----------------------------------|
-| **Name**      | `HttpBin Get`            | `HttpBin Status`                 |
-| **Base URL**  | `https://httpbin.org`    | `https://httpbin.org`            |
-| **Path**      | `/get`                   | `/status/{code}`                 |
-| **Method**    | `GET`                    | `GET`                            |
-| **Auth**      | None                     | None                             |
-
-#### Option B — CLI import
-
-Export the definitions from another MCP Explorer instance and import them:
-
-```bash
-mcp-http http api import --file httpbin-definitions.json --password <password>
-```
-
-> **Only `httpbin-assertions.yaml` requires `HttpBin Status`.**  
-> **`httpbin-basic.yaml` requires both `HttpBin Get` and `HttpBin Status`.**
+You can run them immediately after building/installing the CLI.
 
 ---
 
@@ -247,7 +227,7 @@ steps:
 
 | Symptom | Fix |
 |---------|-----|
-| `Step '…' endpoint '…' was not found` | The API definition name in `endpoint:` must match exactly what is saved in MCP Explorer (case-insensitive) |
-| `Step '…' is missing endpoint and endpointId` | Each step must have either `endpoint:` or `endpointId:` |
+| `Step '…' endpoint '…' was not found` | Ensure `endpoint:` matches a declared runbook `connections[].name` or an existing saved API definition |
+| `Step '…' is missing endpoint and endpointId` | Each step must have either `endpoint:` / `endpointId:` or a runbook-level `defaultConnection` |
 | `Step '…' endpointId '…' was not found` | Use `mcp-http http api list` to confirm the ID |
 | Assertion path error | Use `mcp-http http api invoke --name "HttpBin Get"` to inspect the response shape |

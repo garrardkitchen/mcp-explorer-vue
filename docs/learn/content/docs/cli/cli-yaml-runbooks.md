@@ -81,10 +81,16 @@ schedule:
 
 ```yaml
 version: "1"
+defaultConnection: weather-http
 continueOnAssertFailure: true
+connections:
+  - name: weather-http
+    endpoint: https://example.com/weather?city={city}
+    auth:
+      type: custom
+      headers: []
 steps:
   - id: first
-    endpoint: Weather API
     inputs:
       city: London
     assert:
@@ -93,7 +99,6 @@ steps:
       value: true
 
   - id: second
-    endpoint: Weather API
     inputs:
       previousCity: "{{ steps.first.body.city }}"
     assert:
