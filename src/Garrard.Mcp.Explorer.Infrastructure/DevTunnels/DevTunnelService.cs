@@ -405,10 +405,7 @@ public sealed class DevTunnelService : IDevTunnelService
         if (memory.Length == 0) return null;
 
         var bytes = memory.ToArray();
-        var decodeLength = Math.Min(bytes.Length, maxBytes);
-        while (decodeLength > 0 && (bytes[decodeLength - 1] & 0xC0) == 0x80) decodeLength--;
-        if (decodeLength > 0 && (bytes[decodeLength - 1] & 0xC0) == 0xC0) decodeLength--;
-        return Encoding.UTF8.GetString(bytes, 0, decodeLength);
+        return Encoding.UTF8.GetString(bytes, 0, Utf8Text.SafeLength(bytes, maxBytes));
     }
 
     public async Task RestartPersistedRunningTunnelsAsync(CancellationToken cancellationToken)

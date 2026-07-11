@@ -25,7 +25,7 @@ public sealed class HttpRunbookParser
         runbook.Steps ??= [];
         runbook.Connections = runbook.Connections.Where(c => c is not null).ToList();
         runbook.Steps = runbook.Steps.Where(s => s is not null).ToList();
-        runbook.Schedule ??= new HttpRunbookSchedule();
+        runbook.Schedule ??= new RunbookSchedule();
 
         foreach (var connection in runbook.Connections)
         {

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Garrard.Mcp.Explorer.Core.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace Garrard.Mcp.Explorer.Infrastructure.Security;
 
@@ -23,14 +24,16 @@ public sealed class SecretProtector : ISecretProtector
     private const int GcmTagSize = 16;
 
     private readonly Lazy<byte[]> _key;
+    private readonly ILogger<SecretProtector>? _logger;
 
-    public SecretProtector(string? keyDirectory = null)
+    public SecretProtector(string? keyDirectory = null, ILogger<SecretProtector>? logger = null)
     {
         // Capture keyDirectory for use inside the lazy initializer
         var resolvedDir = string.IsNullOrWhiteSpace(keyDirectory)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "McpExplorer")
             : keyDirectory;
         _key = new Lazy<byte[]>(() => GetOrCreateKey(resolvedDir), LazyThreadSafetyMode.ExecutionAndPublication);
+        _logger = logger;
     }
 
     public string Encrypt(string plaintext)
@@ -70,8 +73,10 @@ public sealed class SecretProtector : ISecretProtector
             {
                 return DecryptV2(ciphertext[V2Prefix.Length..], _key.Value);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogWarning(ex,
+                    "Failed to decrypt a stored secret (v2 payload); the encryption key may have been rotated or lost. Returning the ciphertext unchanged.");
                 return ciphertext;
             }
         }
@@ -98,9 +103,14 @@ public sealed class SecretProtector : ISecretProtector
             var plainBytes = decryptor.TransformFinalBlock(cipher, 0, cipher.Length);
             return Encoding.UTF8.GetString(plainBytes);
         }
-        catch
+        catch (Exception ex)
         {
             var legacy = TryLegacyDecrypt(ciphertext);
+            if (legacy is null)
+            {
+                _logger?.LogWarning(ex,
+                    "Failed to decrypt a stored secret (legacy payload); the encryption key may have been rotated or lost. Returning the ciphertext unchanged.");
+            }
             return legacy ?? ciphertext;
         }
     }

@@ -16,7 +16,8 @@ public sealed class HttpApiExportService : IHttpApiExportService
     private const int SaltBytes   = 16;
     private const int NonceBytes  = 12;
     private const int TagBytes    = 16;
-    private const int Pbkdf2Iters = 600_000;
+    private const int Pbkdf2Iters       = 600_000;
+    private const int LegacyPbkdf2Iters = 100_000; // pre-Iterations-field exports; also the minimum accepted on import
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -45,9 +46,10 @@ public sealed class HttpApiExportService : IHttpApiExportService
 
         return new HttpApiExportPayload
         {
-            Salt  = Convert.ToBase64String(salt),
-            Nonce = Convert.ToBase64String(nonce),
-            Data  = Convert.ToBase64String(cipherBuf)
+            Salt       = Convert.ToBase64String(salt),
+            Nonce      = Convert.ToBase64String(nonce),
+            Data       = Convert.ToBase64String(cipherBuf),
+            Iterations = Pbkdf2Iters
         };
     }
 
@@ -62,14 +64,20 @@ public sealed class HttpApiExportService : IHttpApiExportService
             if (combined.Length < TagBytes)
                 throw new InvalidOperationException("Incorrect password or corrupted file.");
 
-            var key       = DeriveKey(password, salt);
-            var cipherLen = combined.Length - TagBytes;
-            var cipher    = combined.AsSpan(0, cipherLen);
-            var tag       = combined.AsSpan(cipherLen, TagBytes);
-            var plaintext = new byte[cipherLen];
+            var plaintext = new byte[combined.Length - TagBytes];
 
-            using var aes = new AesGcm(key, TagBytes);
-            aes.Decrypt(nonce, cipher, tag, plaintext);
+            // Clamp to the legacy count so a tampered payload can't force a weak derivation.
+            var iterations = Math.Max(payload.Iterations ?? LegacyPbkdf2Iters, LegacyPbkdf2Iters);
+            try
+            {
+                DecryptWithIterations(password, salt, nonce, combined, iterations, plaintext);
+            }
+            catch (AuthenticationTagMismatchException) when (payload.Iterations is null && iterations != Pbkdf2Iters)
+            {
+                // Files exported without the Iterations field may predate it (100k) or
+                // come from an interim build that already used the current count.
+                DecryptWithIterations(password, salt, nonce, combined, Pbkdf2Iters, plaintext);
+            }
 
             return JsonSerializer.Deserialize<List<HttpApiDefinition>>(plaintext, _json) ?? [];
         }
@@ -84,11 +92,22 @@ public sealed class HttpApiExportService : IHttpApiExportService
         }
     }
 
-    private static byte[] DeriveKey(string password, ReadOnlySpan<byte> salt)
+    private static void DecryptWithIterations(string password, byte[] salt, byte[] nonce, byte[] combined, int iterations, byte[] plaintext)
+    {
+        var key       = DeriveKey(password, salt, iterations);
+        var cipherLen = combined.Length - TagBytes;
+        var cipher    = combined.AsSpan(0, cipherLen);
+        var tag       = combined.AsSpan(cipherLen, TagBytes);
+
+        using var aes = new AesGcm(key, TagBytes);
+        aes.Decrypt(nonce, cipher, tag, plaintext);
+    }
+
+    private static byte[] DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations = Pbkdf2Iters)
         => Rfc2898DeriveBytes.Pbkdf2(
             Encoding.UTF8.GetBytes(password),
             salt.ToArray(),
-            Pbkdf2Iters,
+            iterations,
             HashAlgorithmName.SHA256,
             KeyBytes);
 }

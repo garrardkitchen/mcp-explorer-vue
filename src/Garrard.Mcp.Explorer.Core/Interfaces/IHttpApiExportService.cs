@@ -16,4 +16,7 @@ public sealed record HttpApiExportPayload
     public string Salt  { get; init; } = string.Empty;
     public string Nonce { get; init; } = string.Empty;
     public string Data  { get; init; } = string.Empty;
+
+    /// <summary>PBKDF2 iteration count used to derive the key. Null in files exported before the field existed (100,000).</summary>
+    public int? Iterations { get; init; }
 }

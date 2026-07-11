@@ -9,7 +9,7 @@ public sealed class McpRunbook
     public bool ContinueOnAssertFailure { get; set; }
     public List<McpRunbookConnection> Connections { get; set; } = [];
     public List<McpRunbookStep> Steps { get; set; } = [];
-    public McpRunbookSchedule Schedule { get; set; } = new();
+    public RunbookSchedule Schedule { get; set; } = new();
 }
 
 public sealed class McpRunbookConnection
@@ -63,11 +63,4 @@ public sealed class McpRunbookStep
     public bool? ContinueOnAssertFailure { get; set; }
     public int MaxRetries { get; set; }
     public bool ContinueOnError { get; set; }
-}
-
-public sealed class McpRunbookSchedule
-{
-    public int? Repeat { get; set; } = 1;
-    public int? EverySeconds { get; set; }
-    public int? ForSeconds { get; set; }
 }

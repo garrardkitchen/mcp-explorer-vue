@@ -41,7 +41,7 @@ public class HttpRunbookExecutorTests
             store.Object,
             invoker.Object,
             new HttpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new HttpRunbook
         {
@@ -81,11 +81,11 @@ public class HttpRunbookExecutorTests
             store.Object,
             invoker.Object,
             new HttpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new HttpRunbook
         {
-            Schedule = new HttpRunbookSchedule { Repeat = 3 },
+            Schedule = new RunbookSchedule { Repeat = 3 },
             Steps = [new HttpRunbookStep { Id = "step1", Endpoint = "Weather API" }]
         };
 
@@ -111,7 +111,7 @@ public class HttpRunbookExecutorTests
             store.Object,
             invoker.Object,
             new HttpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new HttpRunbook
         {
@@ -154,7 +154,7 @@ public class HttpRunbookExecutorTests
             store.Object,
             invoker.Object,
             new HttpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new HttpRunbook
         {
@@ -213,7 +213,7 @@ public class HttpRunbookExecutorTests
             store.Object,
             invoker.Object,
             new HttpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new HttpRunbook
         {
@@ -261,7 +261,7 @@ public class HttpRunbookExecutorTests
             store.Object,
             invoker.Object,
             new HttpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new HttpRunbook
         {

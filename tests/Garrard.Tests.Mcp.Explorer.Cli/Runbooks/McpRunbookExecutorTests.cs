@@ -34,7 +34,7 @@ public class McpRunbookExecutorTests
             connectionService.Object,
             prefsStore.Object,
             new McpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new McpRunbook
         {
@@ -84,12 +84,12 @@ public class McpRunbookExecutorTests
             connectionService.Object,
             prefsStore.Object,
             new McpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new McpRunbook
         {
             DefaultConnection = "local",
-            Schedule = new McpRunbookSchedule { Repeat = 3 },
+            Schedule = new RunbookSchedule { Repeat = 3 },
             Connections =
             [
                 new McpRunbookConnection
@@ -124,7 +124,7 @@ public class McpRunbookExecutorTests
             connectionService.Object,
             prefsStore.Object,
             new McpRunbookConnectionFactory(secretResolver.Object),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
 
         var runbook = new McpRunbook
         {

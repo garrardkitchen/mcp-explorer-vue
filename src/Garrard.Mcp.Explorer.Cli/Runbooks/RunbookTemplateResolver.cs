@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Garrard.Mcp.Explorer.Cli.Runbooks;
 
-public sealed class McpRunbookTemplateResolver
+public sealed class RunbookTemplateResolver
 {
     private static readonly Regex TemplatePattern = new("\\{\\{\\s*([^}]+)\\s*}}", RegexOptions.Compiled);
 
@@ -33,15 +33,13 @@ public sealed class McpRunbookTemplateResolver
             return ResolveToken(matches[0].Groups[1].Value.Trim(), stepResults, iterationIndex);
         }
 
-        var result = template;
-        foreach (Match match in matches)
+        // Single pass so resolved values that themselves contain '{{...}}' text are never re-expanded.
+        return TemplatePattern.Replace(template, match =>
         {
             var token = match.Groups[1].Value.Trim();
             var value = ResolveToken(token, stepResults, iterationIndex);
-            result = result.Replace(match.Value, value?.ToString() ?? string.Empty, StringComparison.Ordinal);
-        }
-
-        return result;
+            return value?.ToString() ?? string.Empty;
+        });
     }
 
     private static object? ResolveToken(string token, IReadOnlyDictionary<string, object?> stepResults, int iterationIndex)

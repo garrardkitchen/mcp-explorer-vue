@@ -11,6 +11,7 @@ using Garrard.Mcp.Explorer.Infrastructure.Security;
 using Garrard.Mcp.Explorer.Infrastructure.Workflows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Garrard.Mcp.Explorer.Infrastructure.DependencyInjection;
 
@@ -29,7 +30,7 @@ public static class ServiceCollectionExtensions
             : Path.GetDirectoryName(customPath);
 
         // Security — must be registered before UserPreferencesStore which depends on it
-        services.AddSingleton<ISecretProtector>(_ => new SecretProtector(keyDirectory));
+        services.AddSingleton<ISecretProtector>(sp => new SecretProtector(keyDirectory, sp.GetService<ILogger<SecretProtector>>()));
 
         services.AddSingleton<IUserPreferencesStore>(sp =>
             new UserPreferencesStore(sp.GetRequiredService<ISecretProtector>(), string.IsNullOrWhiteSpace(customPath) ? null : customPath));

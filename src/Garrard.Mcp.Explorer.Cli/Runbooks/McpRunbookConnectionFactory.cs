@@ -16,8 +16,10 @@ public sealed class McpRunbookConnectionFactory
     public async Task<ConnectionDefinition> BuildAsync(McpRunbookConnection connection, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        if (connection.Auth is null)
+            throw new InvalidOperationException($"Connection '{connection.Name}' auth block is required.");
 
-        var authType = connection.Auth.Type.Trim();
+        var authType = (connection.Auth.Type ?? string.Empty).Trim();
         var definition = new ConnectionDefinition
         {
             Name = connection.Name,

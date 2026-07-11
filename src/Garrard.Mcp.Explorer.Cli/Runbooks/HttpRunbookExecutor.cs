@@ -10,13 +10,13 @@ public sealed class HttpRunbookExecutor
     private readonly IHttpApiStore _store;
     private readonly IHttpApiInvoker _invoker;
     private readonly HttpRunbookConnectionFactory _connectionFactory;
-    private readonly McpRunbookTemplateResolver _templateResolver;
+    private readonly RunbookTemplateResolver _templateResolver;
 
     public HttpRunbookExecutor(
         IHttpApiStore store,
         IHttpApiInvoker invoker,
         HttpRunbookConnectionFactory connectionFactory,
-        McpRunbookTemplateResolver templateResolver)
+        RunbookTemplateResolver templateResolver)
     {
         _store = store;
         _invoker = invoker;
@@ -29,8 +29,8 @@ public sealed class HttpRunbookExecutor
         Action<string>? progress,
         CancellationToken cancellationToken)
     {
-        var runCount = HttpRunbookSchedulePlanner.ComputeRunCount(runbook.Schedule);
-        var delay = HttpRunbookSchedulePlanner.ComputeDelay(runbook.Schedule);
+        var runCount = RunbookSchedulePlanner.ComputeRunCount(runbook.Schedule);
+        var delay = RunbookSchedulePlanner.ComputeDelay(runbook.Schedule);
 
         var results = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var inlineConnections = await ResolveConnectionsAsync(runbook, cancellationToken).ConfigureAwait(false);
@@ -242,68 +242,8 @@ public sealed class HttpRunbookExecutor
         return clone;
     }
 
+    // JSON round-trip so new HttpApiDefinition properties are never silently dropped from the copy.
     private static HttpApiDefinition CloneDefinition(HttpApiDefinition definition)
-    {
-        return new HttpApiDefinition
-        {
-            Id = definition.Id,
-            Name = definition.Name,
-            BaseUrl = definition.BaseUrl,
-            Method = definition.Method,
-            Path = definition.Path,
-            AuthenticationMode = definition.AuthenticationMode,
-            Headers = [.. definition.Headers.Select(h => new HttpApiHeader
-            {
-                Name = h.Name,
-                Value = h.Value
-            })],
-            QueryParams = [.. definition.QueryParams.Select(q => new HttpApiQueryParam
-            {
-                Name = q.Name,
-                Value = q.Value,
-                Enabled = q.Enabled
-            })],
-            BodyTemplate = definition.BodyTemplate,
-            GroupName = definition.GroupName,
-            Tags = [.. definition.Tags],
-            Note = definition.Note,
-            AzureCredentials = definition.AzureCredentials is null
-                ? null
-                : new HttpApiAzureCredentialsOptions
-                {
-                    TenantId = definition.AzureCredentials.TenantId,
-                    ClientId = definition.AzureCredentials.ClientId,
-                    ClientSecret = definition.AzureCredentials.ClientSecret,
-                    Scope = definition.AzureCredentials.Scope,
-                    AuthorityHost = definition.AzureCredentials.AuthorityHost,
-                    SubscriptionId = definition.AzureCredentials.SubscriptionId,
-                    KeyVaultSecretRef = definition.AzureCredentials.KeyVaultSecretRef is null
-                        ? null
-                        : new KeyVaultSecretReference
-                        {
-                            VaultName = definition.AzureCredentials.KeyVaultSecretRef.VaultName,
-                            SecretName = definition.AzureCredentials.KeyVaultSecretRef.SecretName
-                        }
-                },
-            ApiKeyOptions = definition.ApiKeyOptions is null
-                ? null
-                : new HttpApiApiKeyOptions
-                {
-                    HeaderName = definition.ApiKeyOptions.HeaderName,
-                    ApiKey = definition.ApiKeyOptions.ApiKey,
-                    Prefix = definition.ApiKeyOptions.Prefix
-                },
-            BearerOptions = definition.BearerOptions is null
-                ? null
-                : new HttpApiBearerOptions
-                {
-                    Token = definition.BearerOptions.Token
-                },
-            GoldenSnapshotId = definition.GoldenSnapshotId,
-            CreatedAt = definition.CreatedAt,
-            LastUpdatedAt = definition.LastUpdatedAt,
-            LastInvokedAt = definition.LastInvokedAt,
-            LastStatusCode = definition.LastStatusCode
-        };
-    }
+        => JsonSerializer.Deserialize<HttpApiDefinition>(JsonSerializer.SerializeToUtf8Bytes(definition))
+           ?? throw new InvalidOperationException("Failed to clone endpoint definition.");
 }

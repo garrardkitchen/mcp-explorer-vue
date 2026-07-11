@@ -10,13 +10,13 @@ public sealed class McpRunbookExecutor
     private readonly IConnectionService _connectionService;
     private readonly IUserPreferencesStore _preferencesStore;
     private readonly McpRunbookConnectionFactory _connectionFactory;
-    private readonly McpRunbookTemplateResolver _templateResolver;
+    private readonly RunbookTemplateResolver _templateResolver;
 
     public McpRunbookExecutor(
         IConnectionService connectionService,
         IUserPreferencesStore preferencesStore,
         McpRunbookConnectionFactory connectionFactory,
-        McpRunbookTemplateResolver templateResolver)
+        RunbookTemplateResolver templateResolver)
     {
         _connectionService = connectionService;
         _preferencesStore = preferencesStore;
@@ -29,8 +29,8 @@ public sealed class McpRunbookExecutor
         Action<string>? progress,
         CancellationToken cancellationToken)
     {
-        var runCount = McpRunbookSchedulePlanner.ComputeRunCount(runbook.Schedule);
-        var delay = McpRunbookSchedulePlanner.ComputeDelay(runbook.Schedule);
+        var runCount = RunbookSchedulePlanner.ComputeRunCount(runbook.Schedule);
+        var delay = RunbookSchedulePlanner.ComputeDelay(runbook.Schedule);
 
         var results = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var connections = await ResolveConnectionsAsync(runbook, cancellationToken).ConfigureAwait(false);

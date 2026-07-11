@@ -42,11 +42,23 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("WebhookCapture", limiterOptions =>
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Partitioned per tunnel so one noisy webhook source can't starve capture for every other tunnel.
+    options.AddPolicy("WebhookCapture", context =>
     {
-        limiterOptions.Window = TimeSpan.FromSeconds(10);
-        limiterOptions.PermitLimit = 60;
-        limiterOptions.QueueLimit = 0;
+        var tunnelId = context.Request.RouteValues.TryGetValue("tunnelId", out var value)
+            ? value?.ToString()
+            : null;
+        var partitionKey = string.IsNullOrEmpty(tunnelId)
+            ? context.Connection.RemoteIpAddress?.ToString() ?? "unknown"
+            : tunnelId;
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromSeconds(10),
+            PermitLimit = 60,
+            QueueLimit = 0
+        });
     });
 });
 

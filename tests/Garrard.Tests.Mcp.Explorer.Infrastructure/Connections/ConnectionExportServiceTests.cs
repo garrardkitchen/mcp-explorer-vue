@@ -1,4 +1,5 @@
 using Garrard.Mcp.Explorer.Core.Domain.Connections;
+using Garrard.Mcp.Explorer.Core.Interfaces;
 using Garrard.Mcp.Explorer.Infrastructure.Connections;
 
 namespace Garrard.Tests.Mcp.Explorer.Infrastructure.Connections;
@@ -122,5 +123,65 @@ public class ConnectionExportServiceTests
         Assert.Equal("t1", result[0].AzureCredentials?.TenantId);
         Assert.Equal("c1", result[0].AzureCredentials?.ClientId);
         Assert.Equal("s1", result[0].AzureCredentials?.ClientSecret);
+    }
+
+    // ── PBKDF2 iteration compatibility ────────────────────────────────────────
+
+    [Fact]
+    public void Encrypt_EmbedsIterationCount()
+    {
+        var payload = _sut.Encrypt([MakeConn("conn")], "pw");
+
+        Assert.NotNull(payload.Iterations);
+        Assert.True(payload.Iterations >= 100_000);
+    }
+
+    [Fact]
+    public void Decrypt_LegacyPayloadWithoutIterationsField_Succeeds()
+    {
+        // Files exported before the Iterations field existed were derived at 100,000 iterations.
+        var payload = EncryptWithIterations([MakeConn("legacy-conn")], "old-password", 100_000);
+
+        var result = _sut.Decrypt(payload, "old-password");
+
+        Assert.Single(result);
+        Assert.Equal("legacy-conn", result[0].Name);
+    }
+
+    [Fact]
+    public void Decrypt_LowIterationsField_IsClampedToLegacyMinimum()
+    {
+        // A payload claiming a weak iteration count must still be derived at the 100k floor.
+        var payload = EncryptWithIterations([MakeConn("conn")], "pw", 100_000) with { Iterations = 1_000 };
+
+        var result = _sut.Decrypt(payload, "pw");
+
+        Assert.Single(result);
+    }
+
+    private static ConnectionExportPayload EncryptWithIterations(
+        IReadOnlyList<ConnectionDefinition> connections, string password, int iterations)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(connections, new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        });
+
+        var salt  = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+        var nonce = System.Security.Cryptography.RandomNumberGenerator.GetBytes(12);
+        var key   = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+            System.Text.Encoding.UTF8.GetBytes(password), salt, iterations,
+            System.Security.Cryptography.HashAlgorithmName.SHA256, 32);
+
+        var cipherBuf = new byte[json.Length + 16];
+        using var aes = new System.Security.Cryptography.AesGcm(key, 16);
+        aes.Encrypt(nonce, json, cipherBuf.AsSpan(0, json.Length), cipherBuf.AsSpan(json.Length, 16));
+
+        return new ConnectionExportPayload
+        {
+            Salt  = Convert.ToBase64String(salt),
+            Nonce = Convert.ToBase64String(nonce),
+            Data  = Convert.ToBase64String(cipherBuf)
+        };
     }
 }

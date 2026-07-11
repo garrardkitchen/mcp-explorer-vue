@@ -9,7 +9,7 @@ public sealed class HttpRunbook
     public bool ContinueOnAssertFailure { get; set; }
     public List<HttpRunbookConnection> Connections { get; set; } = [];
     public List<HttpRunbookStep> Steps { get; set; } = [];
-    public HttpRunbookSchedule Schedule { get; set; } = new();
+    public RunbookSchedule Schedule { get; set; } = new();
 }
 
 public sealed class HttpRunbookConnection
@@ -64,11 +64,4 @@ public sealed class HttpRunbookStep
     public int MaxRetries { get; set; }
     public bool ContinueOnError { get; set; }
     public bool UseLocalhost { get; set; }
-}
-
-public sealed class HttpRunbookSchedule
-{
-    public int? Repeat { get; set; } = 1;
-    public int? EverySeconds { get; set; }
-    public int? ForSeconds { get; set; }
 }

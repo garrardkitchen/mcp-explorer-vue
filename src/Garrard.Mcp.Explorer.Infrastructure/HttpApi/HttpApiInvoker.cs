@@ -294,22 +294,6 @@ public sealed class HttpApiInvoker : IHttpApiInvoker
 
         var bytes = memory.ToArray();
         if (bytes.Length == 0) return null;
-        var len = Utf8SafeLength(bytes, MaxDisplayBodyBytes);
-        return Encoding.UTF8.GetString(bytes, 0, len);
-    }
-
-    /// <summary>
-    /// Returns the largest byte count ≤ <paramref name="maxBytes"/> that ends on a complete UTF-8 character boundary,
-    /// avoiding replacement characters from slicing mid-sequence.
-    /// </summary>
-    private static int Utf8SafeLength(byte[] bytes, int maxBytes)
-    {
-        if (bytes.Length <= maxBytes) return bytes.Length;
-        var pos = maxBytes;
-        // Walk back past continuation bytes (10xxxxxx)
-        while (pos > 0 && (bytes[pos - 1] & 0xC0) == 0x80) pos--;
-        // If the byte now at pos-1 is a multi-byte start (11xxxxxx), it's incomplete — exclude it too
-        if (pos > 0 && (bytes[pos - 1] & 0xC0) == 0xC0) pos--;
-        return pos;
+        return Encoding.UTF8.GetString(bytes, 0, Utf8Text.SafeLength(bytes, MaxDisplayBodyBytes));
     }
 }

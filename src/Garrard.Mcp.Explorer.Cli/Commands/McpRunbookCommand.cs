@@ -21,7 +21,7 @@ public sealed class McpRunbookCommand : AsyncCommand<McpRunbookCommand.Settings>
             connectionService,
             preferencesStore,
             new McpRunbookConnectionFactory(secretResolver),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
     }
 
     public sealed class Settings : CommandSettings

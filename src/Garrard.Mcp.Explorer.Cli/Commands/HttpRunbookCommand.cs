@@ -21,7 +21,7 @@ public sealed class HttpRunbookCommand : AsyncCommand<HttpRunbookCommand.Setting
             store,
             invoker,
             new HttpRunbookConnectionFactory(secretResolver),
-            new McpRunbookTemplateResolver());
+            new RunbookTemplateResolver());
     }
 
     public sealed class Settings : CommandSettings
