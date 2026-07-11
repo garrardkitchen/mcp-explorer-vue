@@ -159,6 +159,20 @@ public class ConnectionExportServiceTests
         Assert.Single(result);
     }
 
+    [Fact]
+    public void Decrypt_ExcessiveIterationsField_IsRejectedWithoutDeriving()
+    {
+        // A hostile payload claiming billions of iterations must be rejected up front,
+        // not spent minutes of CPU deriving a key that can never match.
+        var payload = EncryptWithIterations([MakeConn("conn")], "pw", 100_000) with { Iterations = int.MaxValue };
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Throws<InvalidOperationException>(() => _sut.Decrypt(payload, "pw"));
+        sw.Stop();
+
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2), "Rejection must happen before key derivation.");
+    }
+
     private static ConnectionExportPayload EncryptWithIterations(
         IReadOnlyList<ConnectionDefinition> connections, string password, int iterations)
     {

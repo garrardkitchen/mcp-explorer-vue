@@ -17,7 +17,8 @@ public sealed class HttpApiExportService : IHttpApiExportService
     private const int NonceBytes  = 12;
     private const int TagBytes    = 16;
     private const int Pbkdf2Iters       = 600_000;
-    private const int LegacyPbkdf2Iters = 100_000; // pre-Iterations-field exports; also the minimum accepted on import
+    private const int LegacyPbkdf2Iters = 100_000;    // pre-Iterations-field exports; also the minimum accepted on import
+    private const int MaxPbkdf2Iters    = 10_000_000; // reject hostile files that claim a huge count to burn CPU on import
 
     private static readonly JsonSerializerOptions _json = new()
     {
@@ -65,6 +66,9 @@ public sealed class HttpApiExportService : IHttpApiExportService
                 throw new InvalidOperationException("Incorrect password or corrupted file.");
 
             var plaintext = new byte[combined.Length - TagBytes];
+
+            if (payload.Iterations > MaxPbkdf2Iters)
+                throw new InvalidOperationException("Export file specifies an unsupported PBKDF2 iteration count.");
 
             // Clamp to the legacy count so a tampered payload can't force a weak derivation.
             var iterations = Math.Max(payload.Iterations ?? LegacyPbkdf2Iters, LegacyPbkdf2Iters);
