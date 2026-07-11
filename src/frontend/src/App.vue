@@ -7,6 +7,7 @@ import { useToast } from 'primevue/usetoast'
 import { useThemeStore } from '@/stores/themes'
 import { useConnectionsStore } from '@/stores/connections'
 import { useDevTunnelsStore } from '@/stores/devTunnels'
+import { useCertificatesStore } from '@/stores/certificates'
 import CommandPalette from '@/components/common/CommandPalette.vue'
 import ThemeSwitcher from '@/components/common/ThemeSwitcher.vue'
 import { systemApi } from '@/api/system'
@@ -16,6 +17,7 @@ const toast = useToast()
 useThemeStore()  // ensure theme is initialised
 const connectionsStore = useConnectionsStore()
 const devTunnelsStore = useDevTunnelsStore()
+const certificatesStore = useCertificatesStore()
 
 const sidebarCollapsed = ref(false)
 const showCommandPalette = ref(false)
@@ -36,6 +38,7 @@ const navGroups = [
     items: [
       { name: 'connections', label: 'Connections', icon: 'pi-server' },
       { name: 'http-api-connections', label: 'HTTP Connections', icon: 'pi-link' },
+      { name: 'certificates', label: 'Certificates', icon: 'pi-verified' },
     ],
   },
   {
@@ -109,6 +112,19 @@ watch(() => devTunnelsStore.pendingNotifications.length, () => {
   }
 })
 
+// Certificate expiry warnings (queued once per session by the certificates store)
+watch(() => certificatesStore.pendingNotifications.length, () => {
+  const notifications = certificatesStore.consumePendingNotifications()
+  for (const notification of notifications) {
+    toast.add({
+      severity: notification.severity,
+      summary: notification.summary,
+      detail: notification.detail,
+      life: 7000,
+    })
+  }
+})
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   await Promise.all([
@@ -121,6 +137,7 @@ onMounted(async () => {
   ])
   connectionsStore.initialized = true
   void devTunnelsStore.loadAll().catch(() => undefined)
+  void certificatesStore.load().catch(() => undefined)
 })
 
 onUnmounted(() => {
@@ -185,6 +202,15 @@ onUnmounted(() => {
           <i class="pi pi-circle-fill status-dot" />
           {{ connectionsStore.activeConnections.length }}
         </span>
+        <RouterLink
+          v-if="certificatesStore.attentionCount"
+          :to="{ name: 'certificates' }"
+          class="conn-badge cert-badge"
+          v-tooltip="`${certificatesStore.attentionCount} certificate(s) expiring or expired`"
+        >
+          <i class="pi pi-verified cert-dot" />
+          {{ certificatesStore.attentionCount }}
+        </RouterLink>
         <span
           v-if="devTunnelsStore.runningCount"
           class="conn-badge tunnel-badge"
@@ -323,6 +349,17 @@ onUnmounted(() => {
 .tunnel-badge {
   background: color-mix(in srgb, var(--info) 20%, transparent);
   color: var(--text-primary);
+}
+
+.cert-badge {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.cert-dot {
+  color: var(--warning);
 }
 
 .tunnel-unseen-badge {
