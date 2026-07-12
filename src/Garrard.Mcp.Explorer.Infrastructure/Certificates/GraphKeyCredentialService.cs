@@ -89,6 +89,7 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
 
         // Step 3 — append the key credential (idempotent by thumbprint)
         var thumbprintBytes = Convert.FromHexString(certificate.Thumbprint);
+        var preExistingKeyIds = new HashSet<Guid>();
         try
         {
             var existing = FindByCustomKeyIdentifier(application.KeyCredentials, thumbprintBytes);
@@ -106,6 +107,12 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
                     // append to the freshest snapshot to avoid dropping concurrent additions.
                     var fresh = await GetApplicationByAppIdAsync(graphClient, appId, cancellationToken).ConfigureAwait(false)
                                 ?? throw new InvalidOperationException($"App registration '{appId}' disappeared during upload.");
+
+                    // Snapshot the key ids that existed before our PATCH so the verify step
+                    // can identify the credential we added even before customKeyIdentifier
+                    // becomes visible on read replicas.
+                    foreach (var k in fresh.KeyCredentials ?? [])
+                        if (k.KeyId is { } id) preExistingKeyIds.Add(id);
 
                     var updated = new List<KeyCredential>(fresh.KeyCredentials ?? [])
                     {
@@ -139,29 +146,64 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
             return OperationResult.Failed(steps);
         }
 
-        // Step 4 — verify the thumbprint landed and record the upload locally
+        // Step 4 — verify the thumbprint landed and record the upload locally.
+        // Graph reads can lag the PATCH (eventual consistency), so poll with backoff
+        // before concluding anything.
         try
         {
-            var verified = await GetApplicationByAppIdAsync(graphClient, appId, cancellationToken).ConfigureAwait(false);
-            var credential = FindByCustomKeyIdentifier(verified?.KeyCredentials, thumbprintBytes)
-                             ?? throw new InvalidOperationException(
-                                 "The key credential was not visible on re-read. It may still be propagating — verify again shortly.");
+            var expectedDisplayName = $"mcp-explorer:{certificateName}";
+            Application? verified = null;
+            KeyCredential? credential = null;
+            string? matchNote = null;
+
+            foreach (var delaySeconds in VerifyRetryDelaysSeconds)
+            {
+                if (delaySeconds > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken).ConfigureAwait(false);
+
+                verified = await GetApplicationByAppIdAsync(graphClient, appId, cancellationToken).ConfigureAwait(false);
+                credential = FindByCustomKeyIdentifier(verified?.KeyCredentials, thumbprintBytes);
+                if (credential is not null) break;
+
+                // Fallback: the customKeyIdentifier can lag behind the credential itself —
+                // identify the one we just added by key-id diff + our display name.
+                credential = (verified?.KeyCredentials ?? [])
+                    .FirstOrDefault(k => k.KeyId is { } id && !preExistingKeyIds.Contains(id) &&
+                                         string.Equals(k.DisplayName, expectedDisplayName, StringComparison.Ordinal));
+                if (credential is not null)
+                {
+                    matchNote = " (matched by key id; customKeyIdentifier not visible yet)";
+                    break;
+                }
+            }
 
             await _certificateService.RecordUploadAsync(certificateName, new CertificateUploadRecord
             {
-                AppObjectId = verified!.Id ?? string.Empty,
+                AppObjectId = verified?.Id ?? application.Id ?? string.Empty,
                 AppId = appId,
-                DisplayName = verified.DisplayName ?? string.Empty,
-                KeyId = credential.KeyId?.ToString() ?? string.Empty,
+                DisplayName = verified?.DisplayName ?? application.DisplayName ?? string.Empty,
+                KeyId = credential?.KeyId?.ToString() ?? string.Empty,
                 UploadedThumbprintSha1 = certificate.Thumbprint,
                 UploadedAt = DateTimeOffset.UtcNow,
             }, cancellationToken).ConfigureAwait(false);
 
-            steps.Add(new StepResult("verify", VerifyLabel, StepStatus.Succeeded,
-                $"customKeyIdentifier matches {certificate.Thumbprint[..8]}…"));
+            if (credential is null)
+            {
+                // The PATCH itself succeeded, so this is propagation delay — not a failure.
+                // The upload is recorded locally; a later Verify reconciles the key id.
+                steps.Add(new StepResult("verify", VerifyLabel, StepStatus.Skipped,
+                    "Upload succeeded, but the key credential was not visible on re-read yet (Entra ID propagation). " +
+                    "Use 'Verify' on the Certificates page in a minute to confirm."));
+            }
+            else
+            {
+                steps.Add(new StepResult("verify", VerifyLabel, StepStatus.Succeeded,
+                    $"customKeyIdentifier matches {certificate.Thumbprint[..8]}…{matchNote}"));
+            }
 
             var latest = await _certificateService.GetAsync(certificateName, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Uploaded certificate {Name} to app registration {AppId}", certificateName, appId);
+            _logger.LogInformation("Uploaded certificate {Name} to app registration {AppId} (verified: {Verified})",
+                certificateName, appId, credential is not null);
             return OperationResult.Succeeded(steps, latest ?? info);
         }
         catch (Exception ex)
@@ -170,6 +212,10 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
             return OperationResult.Failed(steps, info);
         }
     }
+
+    // First attempt immediately, then back off — ~15s total before treating the
+    // missing credential as propagation delay.
+    private static readonly int[] VerifyRetryDelaysSeconds = [0, 2, 3, 4, 6];
 
     public async Task<IReadOnlyList<GraphKeyCredentialInfo>> ListKeyCredentialsAsync(string appId, CancellationToken cancellationToken = default)
     {
@@ -257,6 +303,15 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
         var byThumbprint = FindByCustomKeyIdentifier(credentials, thumbprintBytes);
         if (byThumbprint is not null)
         {
+            // Self-heal: uploads verified during an Entra ID propagation window are recorded
+            // without a key id — fill it in now that the credential is visible.
+            var record = info.UploadedTo.FirstOrDefault(u => string.Equals(u.AppId, appId, StringComparison.OrdinalIgnoreCase));
+            if (record is not null && string.IsNullOrEmpty(record.KeyId) && byThumbprint.KeyId is { } keyId)
+            {
+                await _certificateService.RecordUploadAsync(certificateName, record with { KeyId = keyId.ToString() }, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var expired = byThumbprint.EndDateTime is { } end && end < DateTimeOffset.UtcNow;
             return expired ? UploadStatus.Stale : UploadStatus.Current;
         }
