@@ -11,7 +11,8 @@ namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 public sealed class ConnectionsController(
     IConnectionService connectionService,
     IUserPreferencesStore preferencesStore,
-    IConnectionExportService exportService) : ControllerBase
+    IConnectionExportService exportService,
+    ICertificateService certificateService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
@@ -179,7 +180,25 @@ public sealed class ConnectionsController(
         if (selected.Count == 0)
             return NotFound(new { error = "None of the requested connections were found." });
 
-        var payload = exportService.Encrypt(selected, request.Password);
+        // Optionally bundle the certificates the selected connections reference.
+        // Private keys only ever travel inside the AES-256-GCM encrypted payload.
+        var certificates = new List<Core.Domain.Certificates.ExportedCertificate>();
+        if (request.IncludeCertificates)
+        {
+            var certNames = selected
+                .Select(c => c.AzureCredentials?.CertificateRef?.CertificateName)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var certName in certNames)
+            {
+                try { certificates.Add(await certificateService.ExportForBundleAsync(certName, cancellationToken)); }
+                catch (FileNotFoundException) { /* referenced cert missing on disk — export the connections anyway */ }
+            }
+        }
+
+        var payload = exportService.Encrypt(selected, certificates, request.Password);
         var json = System.Text.Json.JsonSerializer.Serialize(payload,
             new System.Text.Json.JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
         var bytes = System.Text.Encoding.UTF8.GetBytes(json);
@@ -203,15 +222,17 @@ public sealed class ConnectionsController(
             Data    = request.Payload.Data
         };
 
-        IReadOnlyList<ConnectionDefinition> decrypted;
+        Core.Interfaces.ConnectionExportBundle bundle;
         try
         {
-            decrypted = exportService.Decrypt(payload, request.Password);
+            bundle = exportService.DecryptBundle(payload, request.Password);
         }
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
+
+        var decrypted = bundle.Connections;
 
         var prefs = await preferencesStore.LoadAsync(cancellationToken);
         var existingNames = prefs.Connections.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -252,7 +273,29 @@ public sealed class ConnectionsController(
             await preferencesStore.SaveAsync(updated, cancellationToken);
         }
 
-        return Ok(new { imported = toAdd.Count, total = decrypted.Count });
+        // Bundled certificates: write to the local store; existing names are kept as-is.
+        var certificatesImported = 0;
+        var certificatesSkipped = 0;
+        foreach (var cert in bundle.Certificates)
+        {
+            try
+            {
+                await certificateService.ImportAsync(
+                    cert.Name,
+                    cert.CertPem,
+                    cert.KeyPem,
+                    cert.PfxBase64 is null ? null : Convert.FromBase64String(cert.PfxBase64),
+                    cert.Source,
+                    cancellationToken);
+                certificatesImported++;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
+            {
+                certificatesSkipped++; // already exists or malformed entry — connections still import
+            }
+        }
+
+        return Ok(new { imported = toAdd.Count, total = decrypted.Count, certificatesImported, certificatesSkipped });
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

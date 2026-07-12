@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] - 2026-07-12 (patch 15)
+
+### Added
+- Certificate-based Azure client-credential authentication for MCP and HTTP connections: a **Credential Type** switch (Client Secret | Certificate) in both connection dialogs; token acquisition uses `ClientCertificateCredential` (with thumbprint-aware token caching) when a certificate reference is present.
+- Local certificate store under `<dataDir>/certs/` with self-signed generation (BCL crypto — no OpenSSL dependency): per-cert folders holding `cert.pem`, `key.pem` (0600), optional password-protected `cert.pfx`, and `metadata.json`; store root carries a defensive `.gitignore` and an append-only `audit.jsonl`.
+- One-click **Upload to App Registration** via Microsoft Graph (idempotent `AsymmetricX509Cert` key credential with thumbprint verification), plus a **Test token** dry-run with an Entra ID propagation hint. Step-by-step progress with retryable failure states throughout.
+- New **Certificates** page (Infrastructure sidebar): stat tiles, expiry status tags, upload state (incl. stale detection), used-by tracking, expandable detail rows, PEM download (public only), password-required PFX export, and delete blocked while referenced.
+- Certificate expiry monitor (startup + every 12h): toasts and a topbar badge for certificates expiring within 30 days or expired; best-effort staleness verification of uploads; `GET /api/v1/certificates/notifications`.
+- One-click **Renew & rotate**: generates a successor, re-uploads to every recorded app registration, repoints referencing connections and HTTP API definitions, optionally removes old key credentials, and marks the old certificate superseded — ordered so partial failure never breaks existing connections. Stale key-credential cleanup dialog included.
+- Azure Key Vault integration: import vault certificates (exportable policy) into the local store and export local certificates to a vault; `GET /api/v1/azure/keyvaults/{vault}/certificates`.
+- CSR flow for CA-issued certificates: create a key + CSR locally, download the CSR, import the issued certificate (validated against the stored key).
+- Encrypted connection/HTTP API exports can now include referenced certificates (v2 bundle envelope; private keys only inside the AES-256-GCM payload; legacy export files still import).
+- CLI: new `certs` branch — `list`, `create`, `upload`, `renew`, `delete` — sharing the same store and services as the web app.
+- Docs: new `/docs/certificates/` guide covering creation, upload, renewal, Key Vault, CSR, CLI, and the security model.
+
+### Security
+- Certificate names are allow-listed (lowercase alphanumerics/hyphens) with path-containment guards; private keys are never exposed via the API; PFX export requires a password and is audit-logged; all certificate operations are recorded in `certs/audit.jsonl`.
+
 ## [Unreleased] - 2026-06-24 (patch 14)
 
 ### Changed

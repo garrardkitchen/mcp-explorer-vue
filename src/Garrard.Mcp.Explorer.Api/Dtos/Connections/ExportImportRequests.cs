@@ -2,7 +2,8 @@ namespace Garrard.Mcp.Explorer.Api.Dtos.Connections;
 
 public sealed record ExportConnectionsRequest(
     IReadOnlyList<string> Names,
-    string Password
+    string Password,
+    bool IncludeCertificates = false
 );
 
 public sealed record ImportConnectionsRequest(

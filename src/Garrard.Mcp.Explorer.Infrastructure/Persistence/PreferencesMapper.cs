@@ -54,8 +54,9 @@ internal static class PreferencesMapper
                     : p.Encrypt(c.AzureCredentials.ClientSecret),
                 Scope = c.AzureCredentials.Scope,
                 AuthorityHost = c.AzureCredentials.AuthorityHost,
-                // KV reference is never encrypted — it contains no secret value
+                // KV/certificate references are never encrypted — they contain no secret value
                 KeyVaultSecretRef = c.AzureCredentials.KeyVaultSecretRef,
+                CertificateRef = c.AzureCredentials.CertificateRef,
                 SubscriptionId = c.AzureCredentials.SubscriptionId
             };
         }
@@ -113,6 +114,7 @@ internal static class PreferencesMapper
                 Scope = c.AzureCredentials.Scope,
                 AuthorityHost = c.AzureCredentials.AuthorityHost,
                 KeyVaultSecretRef = c.AzureCredentials.KeyVaultSecretRef,
+                CertificateRef = c.AzureCredentials.CertificateRef,
                 SubscriptionId = c.AzureCredentials.SubscriptionId
             };
         }

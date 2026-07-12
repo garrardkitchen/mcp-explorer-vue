@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Garrard.Mcp.Explorer.Core.Domain.Certificates;
 using Garrard.Mcp.Explorer.Core.Domain.Connections;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 
@@ -28,8 +29,19 @@ public sealed class ConnectionExportService : IConnectionExportService
     };
 
     public ConnectionExportPayload Encrypt(IReadOnlyList<ConnectionDefinition> connections, string password)
+        => Encrypt(connections, [], password);
+
+    public ConnectionExportPayload Encrypt(
+        IReadOnlyList<ConnectionDefinition> connections,
+        IReadOnlyList<ExportedCertificate> certificates,
+        string password)
     {
-        var plaintext = JsonSerializer.SerializeToUtf8Bytes(connections, _json);
+        // Without certificates the legacy array format is kept so older builds can import.
+        // With certificates the plaintext becomes a v2 bundle object.
+        var plaintext = certificates.Count == 0
+            ? JsonSerializer.SerializeToUtf8Bytes(connections, _json)
+            : JsonSerializer.SerializeToUtf8Bytes(
+                new ConnectionExportBundle { Connections = connections, Certificates = certificates }, _json);
 
         Span<byte> salt  = stackalloc byte[SaltBytes];
         Span<byte> nonce = stackalloc byte[NonceBytes];
@@ -47,6 +59,7 @@ public sealed class ConnectionExportService : IConnectionExportService
 
         return new ConnectionExportPayload
         {
+            Version    = certificates.Count == 0 ? 1 : 2,
             Salt       = Convert.ToBase64String(salt),
             Nonce      = Convert.ToBase64String(nonce),
             Data       = Convert.ToBase64String(cipherBuf),
@@ -55,6 +68,9 @@ public sealed class ConnectionExportService : IConnectionExportService
     }
 
     public IReadOnlyList<ConnectionDefinition> Decrypt(ConnectionExportPayload payload, string password)
+        => DecryptBundle(payload, password).Connections;
+
+    public ConnectionExportBundle DecryptBundle(ConnectionExportPayload payload, string password)
     {
         try
         {
@@ -84,8 +100,16 @@ public sealed class ConnectionExportService : IConnectionExportService
                 DecryptWithIterations(password, salt, nonce, combined, Pbkdf2Iters, plaintext);
             }
 
-            return JsonSerializer.Deserialize<List<ConnectionDefinition>>(plaintext, _json)
-                   ?? [];
+            // Content-sniff rather than trusting the (unauthenticated) Version field:
+            // legacy exports decrypt to a JSON array, v2 bundles to an object.
+            var firstToken = plaintext.FirstOrDefault(b => !char.IsWhiteSpace((char)b));
+            if (firstToken == (byte)'{')
+            {
+                return JsonSerializer.Deserialize<ConnectionExportBundle>(plaintext, _json) ?? new ConnectionExportBundle();
+            }
+
+            var connections = JsonSerializer.Deserialize<List<ConnectionDefinition>>(plaintext, _json) ?? [];
+            return new ConnectionExportBundle { Connections = connections };
         }
         catch (AuthenticationTagMismatchException)
         {

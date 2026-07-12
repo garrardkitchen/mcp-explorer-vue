@@ -163,6 +163,32 @@ app.Configure(config =>
         });
     });
 
+    config.AddBranch("certs", certs =>
+    {
+        certs.SetDescription("Client certificate commands (Azure client-credential auth)");
+
+        certs.AddCommand<CertListCommand>("list")
+            .WithDescription("List all certificates in the local store with expiry and upload state.")
+            .WithExample("certs", "list");
+
+        certs.AddCommand<CertCreateCommand>("create")
+            .WithDescription("Generate a self-signed client certificate in the local store.")
+            .WithExample("certs", "create", "--name", "finance-cert")
+            .WithExample("certs", "create", "--name", "finance-cert", "--key-size", "4096", "--validity", "24");
+
+        certs.AddCommand<CertUploadCommand>("upload")
+            .WithDescription("Upload a certificate's public key to an Azure App Registration via Microsoft Graph.")
+            .WithExample("certs", "upload", "--name", "finance-cert", "--app-id", "00000000-0000-0000-0000-000000000000");
+
+        certs.AddCommand<CertRenewCommand>("renew")
+            .WithDescription("Rotate a certificate: generate a successor, re-upload, and repoint referencing connections.")
+            .WithExample("certs", "renew", "--name", "finance-cert", "--remove-old");
+
+        certs.AddCommand<CertDeleteCommand>("delete")
+            .WithDescription("Delete a certificate from the local store (blocked while referenced by connections).")
+            .WithExample("certs", "delete", "--name", "finance-cert", "--yes");
+    });
+
     config.AddBranch("mcp", mcp =>
     {
         mcp.SetDescription("MCP connection commands");

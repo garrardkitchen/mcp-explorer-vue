@@ -16,6 +16,8 @@ A modern MCP (Model Context Protocol) and HTTP API explorer — browse tools, pr
 - 🔌 **MCP Connections** — Streamable HTTP transport; duplicate saved configurations; custom headers including raw/Bearer/Basic Authorization values; per-connection auth modes (Custom Headers, Azure Client Credentials, OAuth)
 - 🔐 **Azure Key Vault Integration** — resolve connection secrets (client secrets, API keys) directly from Key Vault references; no plaintext secrets stored on disk
 - 🏢 **Azure Entra App Registrations** — browse and select app registrations from your tenant via Microsoft Graph; auto-populates client ID and tenant fields
+- 📜 **Certificate Authentication** — generate self-signed client certificates inline (BCL crypto, no OpenSSL) and upload the public key to an App Registration in one click; token requests signed locally with `ClientCertificateCredential` — the private key (0600, git-ignored, audit-logged) never leaves the machine; CSR flow for CA-issued certs and Key Vault import/export for team sharing
+- ♻️ **Certificate Renew & Rotate** — expiry toasts + topbar badge 30 days out; one-click rotation generates a successor, re-uploads it everywhere, repoints referencing connections, and flags stale key credentials in Azure for cleanup; `mcp-http certs` CLI for automation
 - 🛠️ **Tools** — browse and invoke tools with dynamic parameter forms; inspect JSON responses inline
 - 🌐 **HTTP API Explorer** — manage HTTP API connections under Infrastructure, invoke from HTTP API Explorer with runtime `{placeholder}` inputs (supports defaults via `{name:default}`), inspect tabbed request/response history, and auto-redact sensitive values in persisted history details
 - ⌨️ **CLI (`mcp-http`)** — script HTTP API invoke/compare/history, YAML runbook validate/execute (MCP + HTTP), and API definition import/export from terminal automation; list MCP connections offline, and connect to MCP servers to list tools/resources/prompts/templates or invoke tools directly
@@ -518,6 +520,27 @@ mcp-http mcp runbook --file ./mcp-runbook.yaml --validate-only
 > **Name matching** — `--name` performs an exact match first, then falls back to a single case-insensitive partial match. If multiple connections match the partial name, the CLI lists the candidates and exits without connecting.
 >
 > **OAuth connections** — connections that use OAuth authentication require a running API callback endpoint. A warning is printed; the connect attempt still proceeds.
+
+#### Certificate commands
+
+Client certificates for Azure client-credential auth — shares the same `certs/` store as the web app.
+
+```bash
+# List certificates with expiry and upload state
+mcp-http certs list
+
+# Generate a self-signed certificate (BCL crypto — no OpenSSL required)
+mcp-http certs create --name finance-api-cert --key-size 4096 --validity 24
+
+# Upload the public key to an Entra App Registration (requires az login)
+mcp-http certs upload --name finance-api-cert --app-id 00000000-0000-0000-0000-000000000000
+
+# Rotate: generate successor, re-upload, repoint referencing connections, optional cleanup
+mcp-http certs renew --name finance-api-cert --remove-old
+
+# Delete (blocked while referenced — prints the referencing connections)
+mcp-http certs delete --name finance-api-cert --yes
+```
 
 #### HTTP commands
 

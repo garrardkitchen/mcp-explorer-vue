@@ -12,7 +12,9 @@ namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
-public sealed class AzureController(IAzureContextService azureContextService) : ControllerBase
+public sealed class AzureController(
+    IAzureContextService azureContextService,
+    IKeyVaultCertificateService keyVaultCertificateService) : ControllerBase
 {
     // Azure Key Vault naming rules: 3-24 chars, start/end with alphanumeric, hyphens allowed.
     private static readonly Regex VaultNamePattern = new(@"^[a-zA-Z][a-zA-Z0-9\-]{1,22}[a-zA-Z0-9]$", RegexOptions.Compiled);
@@ -68,5 +70,26 @@ public sealed class AzureController(IAzureContextService azureContextService) : 
 
         var secrets = await azureContextService.GetKeyVaultSecretNamesAsync(vaultName, cancellationToken);
         return Ok(secrets);
+    }
+
+    /// <summary>Lists all enabled certificate names in the specified Key Vault.</summary>
+    [HttpGet("keyvaults/{vaultName}/certificates")]
+    public async Task<IActionResult> GetKeyVaultCertificates(string vaultName, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(vaultName))
+            return BadRequest(new { error = "vaultName is required." });
+
+        if (!VaultNamePattern.IsMatch(vaultName))
+            return BadRequest(new { error = "vaultName must be 3-24 characters, start and end with an alphanumeric character, and contain only letters, digits, and hyphens." });
+
+        try
+        {
+            var certificates = await keyVaultCertificateService.ListCertificatesAsync(vaultName, cancellationToken);
+            return Ok(certificates);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return StatusCode(503, new { error = $"Could not list certificates in '{vaultName}': {ex.Message}" });
+        }
     }
 }

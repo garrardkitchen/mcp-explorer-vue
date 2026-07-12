@@ -40,3 +40,6 @@ McpExplorer/
 
 
 wwwroot/assets/nupkg/
+
+# Local certificate store (private keys) — never commit
+certs/

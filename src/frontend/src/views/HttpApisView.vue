@@ -15,6 +15,7 @@ import Tag from 'primevue/tag'
 import Skeleton from 'primevue/skeleton'
 import Checkbox from 'primevue/checkbox'
 import ConfirmDialog from 'primevue/confirmdialog'
+import SelectButton from 'primevue/selectbutton'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
@@ -26,6 +27,7 @@ import type { SparklineBar } from '@/components/common/SparklineChart.vue'
 import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
 import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
+import CertificateCredentialPanel from '@/components/certificates/CertificateCredentialPanel.vue'
 import { useHttpApisStore } from '@/stores/httpApis'
 import { httpApisApi } from '@/api/httpApis'
 import { systemApi } from '@/api/system'
@@ -34,6 +36,7 @@ import type {
   AzureAccountInfo,
   AzureAppRegistration,
   AzureSubscription,
+  CertificateReference,
   HttpApiDefinition,
   HttpApiGroup,
   HttpApiHeader,
@@ -111,6 +114,13 @@ const AUTH_MODES: { label: string; value: HttpApiAuthenticationMode }[] = [
 ]
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+
+/** Short auth tag label; Azure client credentials show which credential kind is in use. */
+function authLabel(def: Pick<HttpApiDefinition, 'authenticationMode' | 'azureCredentials'>) {
+  if (def.authenticationMode === 'AzureClientCredentials')
+    return def.azureCredentials?.certificateRef ? '📜 Azure Cert' : '🔑 Azure Secret'
+  return def.authenticationMode
+}
 
 const blankForm = (): Partial<HttpApiDefinition> => ({
   name: '', baseUrl: '', method: 'GET', path: '',
@@ -195,6 +205,26 @@ function onAuthModeChanged() {
   ensureAuthOptionModels()
 }
 
+// ── Azure credential type (secret vs certificate) ───────────────────────────
+
+const azureCredentialType = ref<'secret' | 'certificate'>('secret')
+const credentialTypeOptions = [
+  { label: '🔑 Client Secret', value: 'secret' },
+  { label: '📜 Certificate', value: 'certificate' },
+]
+
+const certificateRefModel = computed<CertificateReference | null>({
+  get: () => form.value.azureCredentials?.certificateRef ?? null,
+  set: (value) => {
+    if (form.value.azureCredentials)
+      form.value.azureCredentials = { ...form.value.azureCredentials, certificateRef: value }
+  },
+})
+
+function syncCredentialTypeFromForm() {
+  azureCredentialType.value = form.value.azureCredentials?.certificateRef ? 'certificate' : 'secret'
+}
+
 function onAzureAccountLoaded(account: AzureAccountInfo | null) {
   if (!account || !form.value.azureCredentials) return
   if (!form.value.azureCredentials.tenantId.trim()) {
@@ -227,6 +257,7 @@ function openCreate() {
   form.value = blankForm()
   normalizeAuthorizationHeaders(form.value.headers as HttpApiEditorHeader[])
   selectedSubscriptionId.value = undefined
+  azureCredentialType.value = 'secret'
   originalId.value = ''
   editMode.value = false
   showDialog.value = true
@@ -238,6 +269,7 @@ function openEdit(def: HttpApiDefinition) {
   form.value = { ...def, headers, queryParams: [...def.queryParams], tags: [...def.tags] }
   selectedSubscriptionId.value = form.value.azureCredentials?.subscriptionId ?? undefined
   ensureAuthOptionModels()
+  syncCredentialTypeFromForm()
   originalId.value = def.id
   editMode.value = true
   showDialog.value = true
@@ -252,9 +284,17 @@ async function saveForm() {
   }
   if (form.value.authenticationMode === 'AzureClientCredentials') {
     const az = form.value.azureCredentials
-    const hasSecret = !!az?.clientSecret?.trim() || !!az?.keyVaultSecretRef
-    if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !hasSecret || !az?.scope?.trim()) {
-      toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret (or Key Vault reference) and Scope are required for Azure Client Credentials', life: 4000 }); return
+    if (azureCredentialType.value === 'certificate') {
+      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.certificateRef?.certificateName || !az?.scope?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, a Certificate, and Scope are required for certificate authentication', life: 4000 }); return
+      }
+      form.value.azureCredentials = { ...az, clientSecret: '', keyVaultSecretRef: undefined }
+    } else {
+      const hasSecret = !!az?.clientSecret?.trim() || !!az?.keyVaultSecretRef
+      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !hasSecret || !az?.scope?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret (or Key Vault reference) and Scope are required for Azure Client Credentials', life: 4000 }); return
+      }
+      form.value.azureCredentials = { ...az, certificateRef: null }
     }
   }
   ensureAuthOptionModels()
@@ -564,6 +604,7 @@ async function invokeAndExpand(def: HttpApiDefinition) {
 const exportDialogVisible   = ref(false)
 const exportFilter          = ref('')
 const exportSelected        = ref<Set<string>>(new Set())
+const exportIncludeCertificates = ref(false)
 const exportPassword        = ref('')
 const exportPasswordConfirm = ref('')
 const exportPasswordCopied  = ref(false)
@@ -622,7 +663,7 @@ async function doExport() {
   exporting.value = true
   try {
     const res = await apiClient.post('/http-apis/export',
-      { ids: [...exportSelected.value], password: exportPassword.value },
+      { ids: [...exportSelected.value], password: exportPassword.value, includeCertificates: exportIncludeCertificates.value },
       { responseType: 'blob' })
     const url = URL.createObjectURL(new Blob([res.data], { type: 'application/json' }))
     const a = document.createElement('a'); a.href = url; a.download = 'http-apis-export.json'; a.click(); URL.revokeObjectURL(url)
@@ -874,7 +915,7 @@ onMounted(async () => {
 
         <Column field="authenticationMode" header="Auth" style="min-width:160px">
           <template #body="{ data }">
-            <Tag :value="data.authenticationMode" :severity="AUTH_SEVERITY[data.authenticationMode] ?? 'secondary'" />
+            <Tag :value="authLabel(data)" :severity="AUTH_SEVERITY[data.authenticationMode] ?? 'secondary'" />
           </template>
         </Column>
 
@@ -990,7 +1031,7 @@ onMounted(async () => {
               <span class="url-text" :title="`${def.baseUrl}${def.path}`">{{ def.baseUrl }}{{ def.path }}</span>
             </div>
             <div class="col-auth">
-              <Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
+              <Tag :value="authLabel(def)" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
             </div>
             <div class="col-status">
               <Tag
@@ -1044,7 +1085,7 @@ onMounted(async () => {
                 <div class="overview-grid">
                   <div class="ov-row"><span class="ov-label">URL</span><code>{{ def.baseUrl }}{{ def.path }}</code></div>
                   <div class="ov-row"><span class="ov-label">Method</span><Tag :value="def.method" severity="info" /></div>
-                  <div class="ov-row"><span class="ov-label">Auth</span><Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode]" /></div>
+                  <div class="ov-row"><span class="ov-label">Auth</span><Tag :value="authLabel(def)" :severity="AUTH_SEVERITY[def.authenticationMode]" /></div>
                   <div v-if="def.note" class="ov-row"><span class="ov-label">Note</span><span>{{ def.note }}</span></div>
                   <div v-if="def.lastInvokedAt" class="ov-row"><span class="ov-label">Last invoked</span><span>{{ new Date(def.lastInvokedAt).toLocaleString() }}</span></div>
                 </div>
@@ -1344,25 +1385,42 @@ onMounted(async () => {
               <AppRegistrationPicker :clientId="form.azureCredentials!.clientId" @selected="onAppRegistrationSelected" />
             </div>
           </div>
-          <div class="form-row-two">
-            <div>
-              <label>Client Secret</label>
-              <Password
-                v-if="!form.azureCredentials!.keyVaultSecretRef"
-                v-model="form.azureCredentials!.clientSecret"
-                :feedback="false"
-                toggleMask
-                class="w-full"
-              />
-              <KeyVaultSecretPicker
-                v-model="form.azureCredentials!.keyVaultSecretRef"
-                :subscriptionId="selectedSubscriptionId"
-              />
-            </div>
-            <div>
-              <label>Scope</label>
-              <InputText v-model="form.azureCredentials!.scope" placeholder="https://..." class="w-full" />
-            </div>
+          <div class="form-row">
+            <label>Scope</label>
+            <InputText v-model="form.azureCredentials!.scope" placeholder="https://..." class="w-full" />
+          </div>
+          <div class="form-row">
+            <label>Credential Type</label>
+            <SelectButton
+              v-model="azureCredentialType"
+              :options="credentialTypeOptions"
+              optionLabel="label"
+              optionValue="value"
+              :allowEmpty="false"
+            />
+          </div>
+          <div v-if="azureCredentialType === 'secret'" class="form-row">
+            <label>Client Secret</label>
+            <Password
+              v-if="!form.azureCredentials!.keyVaultSecretRef"
+              v-model="form.azureCredentials!.clientSecret"
+              :feedback="false"
+              toggleMask
+              class="w-full"
+            />
+            <KeyVaultSecretPicker
+              v-model="form.azureCredentials!.keyVaultSecretRef"
+              :subscriptionId="selectedSubscriptionId"
+            />
+          </div>
+          <div v-else class="form-row">
+            <CertificateCredentialPanel
+              v-model="certificateRefModel"
+              :client-id="form.azureCredentials!.clientId"
+              :tenant-id="form.azureCredentials!.tenantId"
+              :scope="form.azureCredentials!.scope"
+              :default-name="form.name"
+            />
           </div>
           <div class="form-row">
             <label>Authority Host <span class="text-muted">(optional)</span></label>
@@ -1489,6 +1547,12 @@ onMounted(async () => {
         </div>
         <label>Confirm</label>
         <Password v-model="exportPasswordConfirm" :feedback="false" toggleMask class="w-full" />
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <Checkbox v-model="exportIncludeCertificates" binary inputId="http-exp-include-certs" />
+          <label for="http-exp-include-certs" style="margin:0;cursor:pointer">
+            Include referenced certificates <small style="color:var(--text-muted)">(private keys travel inside the encrypted file)</small>
+          </label>
+        </div>
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="exportDialogVisible = false" />

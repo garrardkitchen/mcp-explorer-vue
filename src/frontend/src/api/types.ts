@@ -15,6 +15,10 @@ export interface KeyVaultSecretReference {
   secretName: string
 }
 
+export interface CertificateReference {
+  certificateName: string
+}
+
 export interface AzureClientCredentialsOptions {
   tenantId: string
   clientId: string
@@ -22,6 +26,8 @@ export interface AzureClientCredentialsOptions {
   scope: string
   authorityHost?: string
   keyVaultSecretRef?: KeyVaultSecretReference
+  /** When set, auth uses ClientCertificateCredential with a cert from the local store */
+  certificateRef?: CertificateReference | null
   /** Azure subscription used for KV browsing in the UI — not used in auth flow */
   subscriptionId?: string
 }
@@ -421,6 +427,8 @@ export interface HttpApiAzureCredentialsOptions {
   scope: string
   authorityHost?: string
   keyVaultSecretRef?: KeyVaultSecretReference
+  /** When set, auth uses ClientCertificateCredential with a cert from the local store */
+  certificateRef?: CertificateReference | null
   subscriptionId?: string
 }
 
@@ -634,4 +642,82 @@ export interface HttpApiCollectionRunItem {
   errorMessage?: string | null
   skipped?: boolean
   error?: string | null
+}
+
+// ── Certificate types ────────────────────────────────────────────────────────
+
+export type CertificateSource = 'SelfSigned' | 'CsrIssued' | 'KeyVault'
+export type CertificateState = 'Active' | 'CsrPending' | 'Superseded'
+export type StepStatus = 'Succeeded' | 'Failed' | 'Skipped'
+export type CertUploadStatus = 'Current' | 'Stale' | 'Missing'
+
+export interface CertificateUploadRecord {
+  appObjectId: string
+  appId: string
+  displayName: string
+  keyId: string
+  uploadedThumbprintSha1: string
+  uploadedAt: string
+}
+
+export interface CertificateInfo {
+  name: string
+  subject: string
+  keySize: number
+  source: CertificateSource
+  state: CertificateState
+  createdAt: string
+  notBefore?: string | null
+  notAfter?: string | null
+  thumbprintSha1?: string | null
+  thumbprintSha256?: string | null
+  hasPfx: boolean
+  uploadedTo: CertificateUploadRecord[]
+  renewedBy?: string | null
+}
+
+export interface StepResult {
+  id: string
+  label: string
+  status: StepStatus
+  message?: string | null
+}
+
+export interface CertOperationResult {
+  success: boolean
+  steps: StepResult[]
+  certificate?: CertificateInfo | null
+}
+
+export interface CertificateWithUsage {
+  certificate: CertificateInfo
+  usedByConnections: string[]
+  usedByHttpApis: string[]
+}
+
+export interface GraphKeyCredentialInfo {
+  keyId: string
+  displayName?: string | null
+  customKeyIdentifierHex?: string | null
+  startDateTime?: string | null
+  endDateTime?: string | null
+  localCertificateName?: string | null
+  isStale: boolean
+  /** e.g. "superseded by finance-cert-r2" or "expired 2026-03-14" */
+  staleReason?: string | null
+}
+
+export interface CertificateAuditEntry {
+  timestamp: string
+  action: string
+  certificateName: string
+  details?: string | null
+}
+
+export interface GenerateCertificateRequest {
+  name: string
+  subjectCn?: string
+  keySize?: number
+  validityMonths?: number
+  pfxPassword?: string
 }

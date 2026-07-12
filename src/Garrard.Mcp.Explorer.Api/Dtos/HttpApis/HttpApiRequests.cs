@@ -28,7 +28,8 @@ public sealed record SaveHttpApiCollectionRequest(
 
 public sealed record ExportHttpApisRequest(
     IReadOnlyList<string> Ids,
-    string Password
+    string Password,
+    bool IncludeCertificates = false
 );
 
 public sealed record ImportHttpApisRequest(

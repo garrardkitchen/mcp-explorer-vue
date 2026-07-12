@@ -40,6 +40,12 @@ const router = createRouter({
       meta: { title: 'Connections', icon: 'pi pi-server' },
     },
     {
+      path: '/certificates',
+      name: 'certificates',
+      component: () => import('@/views/CertificatesView.vue'),
+      meta: { title: 'Certificates', icon: 'pi pi-verified' },
+    },
+    {
       path: '/dev-tunnels',
       name: 'dev-tunnels',
       component: () => import('@/views/DevTunnelsView.vue'),
