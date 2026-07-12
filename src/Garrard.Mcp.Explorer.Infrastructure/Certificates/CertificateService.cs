@@ -553,6 +553,29 @@ public sealed class CertificateService : ICertificateService
         }
     }
 
+    public async Task<ExportedCertificate> ExportForBundleAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var certPath = RequireFile(name, CertFileName);
+        var keyPath = RequireFile(name, KeyFileName);
+        var directory = Path.GetDirectoryName(certPath)!;
+        var pfxPath = Path.Combine(directory, PfxFileName);
+
+        var info = ReadMetadata(directory);
+        var exported = new ExportedCertificate
+        {
+            Name = name,
+            CertPem = await File.ReadAllTextAsync(certPath, cancellationToken).ConfigureAwait(false),
+            KeyPem = await File.ReadAllTextAsync(keyPath, cancellationToken).ConfigureAwait(false),
+            PfxBase64 = File.Exists(pfxPath)
+                ? Convert.ToBase64String(await File.ReadAllBytesAsync(pfxPath, cancellationToken).ConfigureAwait(false))
+                : null,
+            Source = info?.Source ?? CertificateSource.SelfSigned,
+        };
+
+        await _audit.AppendAsync("export-bundle", name, "included in encrypted export", cancellationToken).ConfigureAwait(false);
+        return exported;
+    }
+
     // ── Audit ────────────────────────────────────────────────────────────────
 
     public Task<IReadOnlyList<CertificateAuditEntry>> ReadAuditAsync(string? name = null, int limit = 200, CancellationToken cancellationToken = default)

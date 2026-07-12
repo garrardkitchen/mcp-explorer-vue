@@ -46,6 +46,7 @@ const groupFormOriginalName = ref('')
 const exportDialogVisible   = ref(false)
 const exportFilter          = ref('')
 const exportSelected        = ref<Set<string>>(new Set())
+const exportIncludeCertificates = ref(false)
 const exportPassword        = ref('')
 const exportPasswordConfirm = ref('')
 const exportPasswordCopied    = ref(false)
@@ -109,7 +110,7 @@ async function doExport() {
   exporting.value = true
   try {
     const res = await apiClient.post('/connections/export',
-      { names: [...exportSelected.value], password: exportPassword.value },
+      { names: [...exportSelected.value], password: exportPassword.value, includeCertificates: exportIncludeCertificates.value },
       { responseType: 'blob' }
     )
     const url = URL.createObjectURL(new Blob([res.data], { type: 'application/json' }))
@@ -866,6 +867,12 @@ onMounted(load)
             <label>Confirm Password *</label>
             <Password v-model="exportPasswordConfirm" placeholder="Repeat password" :feedback="false" toggleMask class="w-full" inputClass="w-full" />
             <small v-if="exportPasswordConfirm && exportPassword !== exportPasswordConfirm" class="pw-mismatch">Passwords do not match</small>
+          </div>
+          <div class="form-field" style="display:flex;align-items:center;gap:8px">
+            <Checkbox v-model="exportIncludeCertificates" binary inputId="exp-include-certs" />
+            <label for="exp-include-certs" style="margin:0;cursor:pointer">
+              Include referenced certificates <small style="color:var(--text-muted)">(private keys travel inside the encrypted file)</small>
+            </label>
           </div>
         </div>
       </div>

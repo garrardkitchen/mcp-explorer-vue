@@ -597,6 +597,7 @@ async function invokeAndExpand(def: HttpApiDefinition) {
 const exportDialogVisible   = ref(false)
 const exportFilter          = ref('')
 const exportSelected        = ref<Set<string>>(new Set())
+const exportIncludeCertificates = ref(false)
 const exportPassword        = ref('')
 const exportPasswordConfirm = ref('')
 const exportPasswordCopied  = ref(false)
@@ -655,7 +656,7 @@ async function doExport() {
   exporting.value = true
   try {
     const res = await apiClient.post('/http-apis/export',
-      { ids: [...exportSelected.value], password: exportPassword.value },
+      { ids: [...exportSelected.value], password: exportPassword.value, includeCertificates: exportIncludeCertificates.value },
       { responseType: 'blob' })
     const url = URL.createObjectURL(new Blob([res.data], { type: 'application/json' }))
     const a = document.createElement('a'); a.href = url; a.download = 'http-apis-export.json'; a.click(); URL.revokeObjectURL(url)
@@ -1539,6 +1540,12 @@ onMounted(async () => {
         </div>
         <label>Confirm</label>
         <Password v-model="exportPasswordConfirm" :feedback="false" toggleMask class="w-full" />
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <Checkbox v-model="exportIncludeCertificates" binary inputId="http-exp-include-certs" />
+          <label for="http-exp-include-certs" style="margin:0;cursor:pointer">
+            Include referenced certificates <small style="color:var(--text-muted)">(private keys travel inside the encrypted file)</small>
+          </label>
+        </div>
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="exportDialogVisible = false" />

@@ -67,4 +67,10 @@ public interface ICertificateService
         byte[]? pfxBytes,
         CertificateSource source,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Packages a certificate (including its private key) for inclusion in a
+    /// password-protected export bundle. Audit-logged.
+    /// </summary>
+    Task<ExportedCertificate> ExportForBundleAsync(string name, CancellationToken cancellationToken = default);
 }

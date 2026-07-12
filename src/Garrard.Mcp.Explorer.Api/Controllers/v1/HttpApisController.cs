@@ -16,7 +16,8 @@ public sealed class HttpApisController(
     IHttpApiInvoker invoker,
     ISchemaInferenceService schemaInference,
     ISchemaComparisonService schemaComparison,
-    IHttpApiExportService exportService) : ControllerBase
+    IHttpApiExportService exportService,
+    ICertificateService certificateService) : ControllerBase
 {
     // ── Definitions CRUD ──────────────────────────────────────────────────────
 
@@ -409,7 +410,25 @@ public sealed class HttpApisController(
         if (selected.Count == 0)
             return NotFound(new { error = "None of the requested definitions were found." });
 
-        var payload = exportService.Encrypt(selected, request.Password);
+        // Optionally bundle referenced certificates — private keys only ever travel
+        // inside the AES-256-GCM encrypted payload.
+        var certificates = new List<Core.Domain.Certificates.ExportedCertificate>();
+        if (request.IncludeCertificates)
+        {
+            var certNames = selected
+                .Select(d => d.AzureCredentials?.CertificateRef?.CertificateName)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var certName in certNames)
+            {
+                try { certificates.Add(await certificateService.ExportForBundleAsync(certName, ct)); }
+                catch (FileNotFoundException) { /* referenced cert missing on disk — export the definitions anyway */ }
+            }
+        }
+
+        var payload = exportService.Encrypt(selected, certificates, request.Password);
         var json    = System.Text.Json.JsonSerializer.Serialize(payload,
             new System.Text.Json.JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
         var bytes = System.Text.Encoding.UTF8.GetBytes(json);
@@ -433,9 +452,11 @@ public sealed class HttpApisController(
             Data    = request.Payload.Data
         };
 
-        IReadOnlyList<HttpApiDefinition> decrypted;
-        try { decrypted = exportService.Decrypt(payload, request.Password); }
+        Core.Interfaces.HttpApiExportBundle bundle;
+        try { bundle = exportService.DecryptBundle(payload, request.Password); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+
+        var decrypted = bundle.Definitions;
 
         var all = await store.GetAllDefinitionsAsync(ct);
         var existingNames = all.Select(d => d.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -463,7 +484,29 @@ public sealed class HttpApisController(
             imported++;
         }
 
-        return Ok(new { imported, total = decrypted.Count });
+        // Bundled certificates: write to the local store; existing names are kept as-is.
+        var certificatesImported = 0;
+        var certificatesSkipped = 0;
+        foreach (var cert in bundle.Certificates)
+        {
+            try
+            {
+                await certificateService.ImportAsync(
+                    cert.Name,
+                    cert.CertPem,
+                    cert.KeyPem,
+                    cert.PfxBase64 is null ? null : Convert.FromBase64String(cert.PfxBase64),
+                    cert.Source,
+                    ct);
+                certificatesImported++;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
+            {
+                certificatesSkipped++;
+            }
+        }
+
+        return Ok(new { imported, total = decrypted.Count, certificatesImported, certificatesSkipped });
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

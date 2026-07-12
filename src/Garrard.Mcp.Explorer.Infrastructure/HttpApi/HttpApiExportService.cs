@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Garrard.Mcp.Explorer.Core.Domain.Certificates;
 using Garrard.Mcp.Explorer.Core.Domain.HttpApi;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 
@@ -29,8 +30,18 @@ public sealed class HttpApiExportService : IHttpApiExportService
     };
 
     public HttpApiExportPayload Encrypt(IReadOnlyList<HttpApiDefinition> definitions, string password)
+        => Encrypt(definitions, [], password);
+
+    public HttpApiExportPayload Encrypt(
+        IReadOnlyList<HttpApiDefinition> definitions,
+        IReadOnlyList<ExportedCertificate> certificates,
+        string password)
     {
-        var plaintext = JsonSerializer.SerializeToUtf8Bytes(definitions, _json);
+        // Without certificates the legacy array format is kept so older builds can import.
+        var plaintext = certificates.Count == 0
+            ? JsonSerializer.SerializeToUtf8Bytes(definitions, _json)
+            : JsonSerializer.SerializeToUtf8Bytes(
+                new HttpApiExportBundle { Definitions = definitions, Certificates = certificates }, _json);
 
         Span<byte> salt  = stackalloc byte[SaltBytes];
         Span<byte> nonce = stackalloc byte[NonceBytes];
@@ -47,6 +58,7 @@ public sealed class HttpApiExportService : IHttpApiExportService
 
         return new HttpApiExportPayload
         {
+            Version    = certificates.Count == 0 ? 1 : 2,
             Salt       = Convert.ToBase64String(salt),
             Nonce      = Convert.ToBase64String(nonce),
             Data       = Convert.ToBase64String(cipherBuf),
@@ -55,6 +67,9 @@ public sealed class HttpApiExportService : IHttpApiExportService
     }
 
     public IReadOnlyList<HttpApiDefinition> Decrypt(HttpApiExportPayload payload, string password)
+        => DecryptBundle(payload, password).Definitions;
+
+    public HttpApiExportBundle DecryptBundle(HttpApiExportPayload payload, string password)
     {
         try
         {
@@ -83,7 +98,16 @@ public sealed class HttpApiExportService : IHttpApiExportService
                 DecryptWithIterations(password, salt, nonce, combined, Pbkdf2Iters, plaintext);
             }
 
-            return JsonSerializer.Deserialize<List<HttpApiDefinition>>(plaintext, _json) ?? [];
+            // Content-sniff rather than trusting the (unauthenticated) Version field:
+            // legacy exports decrypt to a JSON array, v2 bundles to an object.
+            var firstToken = plaintext.FirstOrDefault(b => !char.IsWhiteSpace((char)b));
+            if (firstToken == (byte)'{')
+            {
+                return JsonSerializer.Deserialize<HttpApiExportBundle>(plaintext, _json) ?? new HttpApiExportBundle();
+            }
+
+            var definitions = JsonSerializer.Deserialize<List<HttpApiDefinition>>(plaintext, _json) ?? [];
+            return new HttpApiExportBundle { Definitions = definitions };
         }
         catch (AuthenticationTagMismatchException)
         {

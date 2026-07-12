@@ -17,6 +17,7 @@ public class ConnectionsControllerTests
     private readonly Mock<IConnectionService> _connectionServiceMock;
     private readonly Mock<IUserPreferencesStore> _storeMock;
     private readonly Mock<IConnectionExportService> _exportServiceMock;
+    private readonly Mock<ICertificateService> _certificateServiceMock;
     private readonly ConnectionsController _sut;
 
     public ConnectionsControllerTests()
@@ -24,7 +25,8 @@ public class ConnectionsControllerTests
         _connectionServiceMock = new Mock<IConnectionService>();
         _storeMock = new Mock<IUserPreferencesStore>();
         _exportServiceMock = new Mock<IConnectionExportService>();
-        _sut = new ConnectionsController(_connectionServiceMock.Object, _storeMock.Object, _exportServiceMock.Object);
+        _certificateServiceMock = new Mock<ICertificateService>();
+        _sut = new ConnectionsController(_connectionServiceMock.Object, _storeMock.Object, _exportServiceMock.Object, _certificateServiceMock.Object);
     }
 
     // ── GET /connections ──────────────────────────────────────────────────────
@@ -316,7 +318,10 @@ public class ConnectionsControllerTests
         var conn = new ConnectionDefinition { Name = "conn-a", Endpoint = "http://a.example.com" };
         _storeMock.Setup(s => s.LoadAsync(It.IsAny<CancellationToken>()))
                   .ReturnsAsync(new UserPreferences { Connections = [conn] });
-        _exportServiceMock.Setup(e => e.Encrypt(It.IsAny<IReadOnlyList<ConnectionDefinition>>(), "secret"))
+        _exportServiceMock.Setup(e => e.Encrypt(
+                              It.IsAny<IReadOnlyList<ConnectionDefinition>>(),
+                              It.IsAny<IReadOnlyList<Garrard.Mcp.Explorer.Core.Domain.Certificates.ExportedCertificate>>(),
+                              "secret"))
                           .Returns(new ConnectionExportPayload { Salt = "s", Nonce = "n", Data = "d" });
 
         var req    = new ExportConnectionsRequest(["conn-a"], "secret");
@@ -344,7 +349,7 @@ public class ConnectionsControllerTests
         var payload = new ExportPayloadDto(1, "s", "n", "d");
         var req     = new ImportConnectionsRequest(payload, "wrong-pw");
         _exportServiceMock
-            .Setup(e => e.Decrypt(It.IsAny<ConnectionExportPayload>(), "wrong-pw"))
+            .Setup(e => e.DecryptBundle(It.IsAny<ConnectionExportPayload>(), "wrong-pw"))
             .Throws(new InvalidOperationException("Incorrect password or corrupted file."));
 
         var result = await _sut.Import(req, CancellationToken.None);
@@ -364,8 +369,8 @@ public class ConnectionsControllerTests
         _storeMock.Setup(s => s.SaveAsync(It.IsAny<UserPreferences>(), It.IsAny<CancellationToken>()))
                   .Returns(Task.CompletedTask);
         _exportServiceMock
-            .Setup(e => e.Decrypt(It.IsAny<ConnectionExportPayload>(), "pw"))
-            .Returns([incoming]);
+            .Setup(e => e.DecryptBundle(It.IsAny<ConnectionExportPayload>(), "pw"))
+            .Returns(new ConnectionExportBundle { Connections = [incoming] });
 
         var payload = new ExportPayloadDto(1, "s", "n", "d");
         var req     = new ImportConnectionsRequest(payload, "pw");
@@ -387,8 +392,8 @@ public class ConnectionsControllerTests
                   .Callback<UserPreferences, CancellationToken>((p, _) => saved = p)
                   .Returns(Task.CompletedTask);
         _exportServiceMock
-            .Setup(e => e.Decrypt(It.IsAny<ConnectionExportPayload>(), "pw"))
-            .Returns([duplicate]);
+            .Setup(e => e.DecryptBundle(It.IsAny<ConnectionExportPayload>(), "pw"))
+            .Returns(new ConnectionExportBundle { Connections = [duplicate] });
 
         await _sut.Import(new ImportConnectionsRequest(new ExportPayloadDto(1, "s", "n", "d"), "pw"), CancellationToken.None);
 
