@@ -383,8 +383,10 @@
     <Dialog v-model:visible="kcDialog" :header="`Key credentials on ${kcAppLabel}`" modal :style="{ width: '640px' }">
       <div class="kc-body">
         <p class="muted-sm">
-          Every certificate key credential currently on the app registration. Stale entries are
-          expired in Azure or belong to a superseded local certificate — safe to remove.
+          All certificate key credentials on this app registration. An entry is flagged
+          <b>stale</b> when nothing uses it any more — its local certificate was replaced by a
+          renewal, or it has expired in Azure. Its expiry date may still be in the future;
+          stale means unused, and unused credentials are safe (and recommended) to remove.
         </p>
         <div v-if="kcLoading" class="muted-sm"><i class="pi pi-spin pi-spinner" /> Loading key credentials…</div>
         <p v-else-if="kcError" class="kc-error"><i class="pi pi-exclamation-triangle" /> {{ kcError }}</p>
@@ -399,7 +401,7 @@
                 <template v-if="k.localCertificateName"> · local: {{ k.localCertificateName }}</template>
               </span>
             </div>
-            <Tag v-if="k.isStale" value="Stale ⚠" severity="warn" />
+            <Tag v-if="k.isStale" :value="k.staleReason ? `Stale · ${k.staleReason}` : 'Stale ⚠'" severity="warn" />
             <Tag v-else-if="k.localCertificateName" value="Current ✓" severity="success" />
             <Button icon="pi pi-trash" text size="small" severity="danger" v-tooltip="'Remove this key credential from Azure'"
                     :loading="kcRemoving === k.keyId" @click="removeKeyCredential(k.keyId)" />

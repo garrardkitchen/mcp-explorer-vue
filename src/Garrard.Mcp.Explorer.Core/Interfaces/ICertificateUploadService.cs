@@ -25,7 +25,9 @@ public sealed record GraphKeyCredentialInfo(
     /// <summary>Name of the local certificate whose SHA-1 thumbprint matches, if any.</summary>
     string? LocalCertificateName,
     /// <summary>Expired in Azure, or matches a local certificate that has been superseded.</summary>
-    bool IsStale);
+    bool IsStale,
+    /// <summary>Human-readable reason when <see cref="IsStale"/> is true, e.g. "superseded by finance-cert-r2" or "expired 2026-03-14".</summary>
+    string? StaleReason = null);
 
 /// <summary>
 /// Azure-facing certificate operations: uploading public keys to App Registrations via

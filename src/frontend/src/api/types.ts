@@ -703,6 +703,8 @@ export interface GraphKeyCredentialInfo {
   endDateTime?: string | null
   localCertificateName?: string | null
   isStale: boolean
+  /** e.g. "superseded by finance-cert-r2" or "expired 2026-03-14" */
+  staleReason?: string | null
 }
 
 export interface CertificateAuditEntry {

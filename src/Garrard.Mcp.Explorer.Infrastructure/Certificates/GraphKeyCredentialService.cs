@@ -235,6 +235,15 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
                     ? null
                     : localCerts.FirstOrDefault(c => string.Equals(c.ThumbprintSha1, thumbHex, StringComparison.OrdinalIgnoreCase));
                 var expired = k.EndDateTime is { } end && end < now;
+                var superseded = local?.State == CertificateState.Superseded;
+
+                // Superseded wins the wording — it's the actionable reason even if the
+                // credential also happens to be past its end date.
+                var staleReason = superseded
+                    ? $"superseded by {local!.RenewedBy ?? "a newer certificate"}"
+                    : expired
+                        ? $"expired {k.EndDateTime:yyyy-MM-dd}"
+                        : null;
 
                 return new GraphKeyCredentialInfo(
                     KeyId: k.KeyId?.ToString() ?? string.Empty,
@@ -243,7 +252,8 @@ public sealed class GraphKeyCredentialService : ICertificateUploadService
                     StartDateTime: k.StartDateTime,
                     EndDateTime: k.EndDateTime,
                     LocalCertificateName: local?.Name,
-                    IsStale: expired || local?.State == CertificateState.Superseded);
+                    IsStale: staleReason is not null,
+                    StaleReason: staleReason);
             })
             .ToList();
     }
