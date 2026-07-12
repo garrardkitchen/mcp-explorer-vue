@@ -201,8 +201,12 @@ const AUTH_MODE_SEVERITY: Record<string, string> = {
   '2': 'success',
 }
 
-function authModeLabel(mode: unknown) {
-  return AUTH_MODE_LABELS[String(mode)] ?? String(mode)
+function authModeLabel(conn: Partial<ConnectionDefinition>) {
+  const mode = String(conn.authenticationMode)
+  // Azure client credentials: keep the tag short and show which credential kind is in use
+  if (mode === 'AzureClientCredentials' || mode === '1')
+    return conn.azureCredentials?.certificateRef ? '📜 Azure Cert' : '🔑 Azure Secret'
+  return AUTH_MODE_LABELS[mode] ?? mode
 }
 function authModeSeverity(mode: unknown): 'secondary' | 'info' | 'success' {
   return (AUTH_MODE_SEVERITY[String(mode)] ?? 'secondary') as 'secondary' | 'info' | 'success'
@@ -580,7 +584,7 @@ onMounted(load)
         </Column>
         <Column field="authenticationMode" header="Auth" style="min-width:180px">
           <template #body="{ data }">
-            <Tag :value="authModeLabel(data.authenticationMode)" :severity="authModeSeverity(data.authenticationMode)" />
+            <Tag :value="authModeLabel(data)" :severity="authModeSeverity(data.authenticationMode)" />
           </template>
         </Column>
         <Column field="groupName" header="Group" sortable style="min-width:120px">

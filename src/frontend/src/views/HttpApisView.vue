@@ -115,6 +115,13 @@ const AUTH_MODES: { label: string; value: HttpApiAuthenticationMode }[] = [
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 
+/** Short auth tag label; Azure client credentials show which credential kind is in use. */
+function authLabel(def: Pick<HttpApiDefinition, 'authenticationMode' | 'azureCredentials'>) {
+  if (def.authenticationMode === 'AzureClientCredentials')
+    return def.azureCredentials?.certificateRef ? '📜 Azure Cert' : '🔑 Azure Secret'
+  return def.authenticationMode
+}
+
 const blankForm = (): Partial<HttpApiDefinition> => ({
   name: '', baseUrl: '', method: 'GET', path: '',
   authenticationMode: 'None', headers: [], queryParams: [],
@@ -908,7 +915,7 @@ onMounted(async () => {
 
         <Column field="authenticationMode" header="Auth" style="min-width:160px">
           <template #body="{ data }">
-            <Tag :value="data.authenticationMode" :severity="AUTH_SEVERITY[data.authenticationMode] ?? 'secondary'" />
+            <Tag :value="authLabel(data)" :severity="AUTH_SEVERITY[data.authenticationMode] ?? 'secondary'" />
           </template>
         </Column>
 
@@ -1024,7 +1031,7 @@ onMounted(async () => {
               <span class="url-text" :title="`${def.baseUrl}${def.path}`">{{ def.baseUrl }}{{ def.path }}</span>
             </div>
             <div class="col-auth">
-              <Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
+              <Tag :value="authLabel(def)" :severity="AUTH_SEVERITY[def.authenticationMode] ?? 'secondary'" class="auth-tag" />
             </div>
             <div class="col-status">
               <Tag
@@ -1078,7 +1085,7 @@ onMounted(async () => {
                 <div class="overview-grid">
                   <div class="ov-row"><span class="ov-label">URL</span><code>{{ def.baseUrl }}{{ def.path }}</code></div>
                   <div class="ov-row"><span class="ov-label">Method</span><Tag :value="def.method" severity="info" /></div>
-                  <div class="ov-row"><span class="ov-label">Auth</span><Tag :value="def.authenticationMode" :severity="AUTH_SEVERITY[def.authenticationMode]" /></div>
+                  <div class="ov-row"><span class="ov-label">Auth</span><Tag :value="authLabel(def)" :severity="AUTH_SEVERITY[def.authenticationMode]" /></div>
                   <div v-if="def.note" class="ov-row"><span class="ov-label">Note</span><span>{{ def.note }}</span></div>
                   <div v-if="def.lastInvokedAt" class="ov-row"><span class="ov-label">Last invoked</span><span>{{ new Date(def.lastInvokedAt).toLocaleString() }}</span></div>
                 </div>
