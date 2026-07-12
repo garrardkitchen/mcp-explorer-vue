@@ -24,6 +24,7 @@
         <span>🔌 MCP SDK 1.2</span>
         <span>🎨 10 Themes</span>
         <span>🔐 Azure KV</span>
+        <span>📜 Cert Auth</span>
         <span>🚇 Dev Tunnels</span>
         <span>🌐 HTTP API Explorer</span>
         <span>⌨️ CLI</span>
@@ -40,7 +41,7 @@
   <section class="killer-features">
     <div class="section-header">
       <div class="section-eyebrow">Why MCP Explorer?</div>
-      <h2>17 Killer Features</h2>
+      <h2>19 Killer Features</h2>
       <p>Everything a developer needs to explore, debug, and build on top of MCP servers.</p>
     </div>
     <div class="features-grid">
@@ -185,6 +186,24 @@
         <h3>Step Output Chaining</h3>
         <p>Pass one MCP call result into the next using template tokens like <code>&#123;&#123; steps.stepId.property &#125;&#125;</code> to build secure, declarative pipelines.</p>
         <a href="{{ "/docs/cli/cli-yaml-runbooks/" | relURL }}" class="feature-link">Learn more →</a>
+      </div>
+
+      <div class="feature-card feature-card--new">
+        <div class="feature-rank">18</div>
+        <span class="feature-new-badge">NEW</span>
+        <div class="feature-icon">📜</div>
+        <h3>Certificate-Based Azure Auth</h3>
+        <p>Ditch client secrets: generate a self-signed certificate inline while creating a connection and push its public key to the Entra App Registration in one click — with live step-by-step progress. Token requests are signed locally with <code>ClientCertificateCredential</code>; the private key (0600, git-ignored, audit-logged) never leaves your machine.</p>
+        <a href="{{ "/docs/certificates/using-certificates/" | relURL }}" class="feature-link">Learn more →</a>
+      </div>
+
+      <div class="feature-card feature-card--new">
+        <div class="feature-rank">19</div>
+        <span class="feature-new-badge">NEW</span>
+        <div class="feature-icon">♻️</div>
+        <h3>One-Click Certificate Renew & Rotate</h3>
+        <p>Expiry toasts and a topbar badge warn you 30 days out. One click generates a successor, re-uploads it to every App Registration, repoints every referencing connection, and flags stale key credentials in Azure for cleanup — ordered so a partial failure never breaks a working connection.</p>
+        <a href="{{ "/docs/certificates/renewal-and-monitoring/" | relURL }}" class="feature-link">Learn more →</a>
       </div>
 
     </div>
