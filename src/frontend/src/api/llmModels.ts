@@ -1,6 +1,6 @@
 // src/api/llmModels.ts
 import { apiClient } from './client'
-import type { LlmModelDefinition } from './types'
+import type { FoundryAgentCatalogItem, LlmModelDefinition } from './types'
 
 export const llmModelsApi = {
   getAll: () => apiClient.get<LlmModelDefinition[]>('/llm-models').then(r => r.data),
@@ -12,6 +12,14 @@ export const llmModelsApi = {
     apiClient.put<LlmModelDefinition>(`/llm-models/${encodeURIComponent(name)}`, model).then(r => r.data),
 
   delete: (name: string) => apiClient.delete(`/llm-models/${encodeURIComponent(name)}`),
+
+  test: (name: string) =>
+    apiClient.post<{ success: boolean; message: string }>(`/llm-models/${encodeURIComponent(name)}/test`)
+      .then(r => r.data),
+
+  discoverFoundryAgents: (model: LlmModelDefinition) =>
+    apiClient.post<FoundryAgentCatalogItem[]>('/llm-models/foundry-project/agents/discover', model)
+      .then(r => r.data),
 
   getSelected: () =>
     apiClient.get<{ selectedModelName: string | null }>('/llm-models/selected').then(r => r.data),

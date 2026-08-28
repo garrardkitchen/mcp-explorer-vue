@@ -208,8 +208,10 @@ export interface ChatMessage {
   timestampUtc: string
   toolCallName?: string
   toolCallParameters?: string
+  toolResult?: string
   connectionName?: string
   modelName?: string
+  providerResponseId?: string
   tokenUsage?: ChatTokenUsage
   thinkingMilliseconds?: number
   // Prompt invocation — persisted on the user message when a prompt picker ran it
@@ -225,7 +227,7 @@ export interface ChatSession {
   messageCount: number
 }
 
-export type ChatStreamEventType = 'token' | 'tool-call' | 'tool-result' | 'usage' | 'done' | 'error'
+export type ChatStreamEventType = 'token' | 'tool-call' | 'tool-result' | 'approval-request' | 'usage' | 'done' | 'error'
 
 export interface ChatStreamEvent {
   type: ChatStreamEventType
@@ -234,9 +236,19 @@ export interface ChatStreamEvent {
   toolParameters?: string
   toolResult?: string
   connectionName?: string
+  approvalRequestId?: string
+  serverLabel?: string
   usage?: ChatTokenUsage
   messageId?: string
+  providerResponseId?: string
   errorMessage?: string
+}
+
+export interface FoundryToolApprovalRequest {
+  approvalRequestId: string
+  serverLabel?: string
+  toolName: string
+  toolParameters?: string
 }
 
 export interface LlmModelDefinition {
@@ -247,7 +259,23 @@ export interface LlmModelDefinition {
   modelName: string
   systemPrompt: string
   deploymentName: string
+  authenticationMode: 'DefaultAzureCredential' | 'ApiKey'
+  agentInvocationMode: 'VersionedAgent' | 'HostedAgentEndpoint'
+  agentName: string
+  agentVersion: string
   note: string
+}
+
+export interface FoundryAgentVersionCatalogItem {
+  version: string
+  systemPrompt: string
+  description: string
+  createdAt: string
+}
+
+export interface FoundryAgentCatalogItem {
+  name: string
+  versions: FoundryAgentVersionCatalogItem[]
 }
 
 export type AiDetectionStrictness = 'Conservative' | 'Balanced' | 'Aggressive'

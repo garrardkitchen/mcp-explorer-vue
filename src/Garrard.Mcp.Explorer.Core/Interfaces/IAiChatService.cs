@@ -11,4 +11,8 @@ public interface IAiChatService
         LlmModelDefinition model,
         IReadOnlyList<string> connectionNames,
         CancellationToken cancellationToken = default);
+
+    Task<string> TestAsync(
+        LlmModelDefinition model,
+        CancellationToken cancellationToken = default);
 }

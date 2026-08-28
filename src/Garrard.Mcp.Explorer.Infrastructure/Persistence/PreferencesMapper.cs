@@ -162,6 +162,10 @@ internal static class PreferencesMapper
             ModelName = m.ModelName,
             SystemPrompt = m.SystemPrompt,
             DeploymentName = m.DeploymentName,
+            AuthenticationMode = m.AuthenticationMode,
+            AgentInvocationMode = m.AgentInvocationMode,
+            AgentName = m.AgentName,
+            AgentVersion = m.AgentVersion,
             Note = m.Note
         };
     }
@@ -177,6 +181,10 @@ internal static class PreferencesMapper
             ModelName = m.ModelName,
             SystemPrompt = m.SystemPrompt,
             DeploymentName = m.DeploymentName,
+            AuthenticationMode = m.AuthenticationMode,
+            AgentInvocationMode = m.AgentInvocationMode,
+            AgentName = m.AgentName,
+            AgentVersion = m.AgentVersion,
             Note = m.Note
         };
     }

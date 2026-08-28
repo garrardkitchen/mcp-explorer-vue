@@ -42,6 +42,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ElicitationService>();
         services.AddSingleton<IElicitationService>(sp => sp.GetRequiredService<ElicitationService>());
         services.AddHttpClient();
+        services.AddHttpClient("ChatDocumentPreview", client => client.Timeout = TimeSpan.FromSeconds(60))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            });
         services.AddHttpClient("DevTunnelReplay", client => client.Timeout = TimeSpan.FromSeconds(30));
 
         services.AddSingleton<IDevTunnelCli, DevTunnelCli>();
@@ -71,6 +76,10 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<ConnectionUpdateService>();
 
         // LLM providers
+        services.AddSingleton<IFoundryToolApprovalService, FoundryToolApprovalService>();
+        services.AddHttpClient("FoundryProjectAgentDiscovery", client =>
+            client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddScoped<IFoundryProjectAgentService, FoundryProjectAgentService>();
         services.AddScoped<IAiChatService, AiChatService>();
         services.AddScoped<ILlmExecutionService, LlmExecutionService>();
 

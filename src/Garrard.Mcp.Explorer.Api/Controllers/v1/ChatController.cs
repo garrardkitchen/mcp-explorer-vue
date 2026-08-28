@@ -10,9 +10,75 @@ namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/chat")]
-public sealed class ChatController(IAiChatService chatService, IUserPreferencesStore preferencesStore, ISecretProtector secretProtector) : ControllerBase
+public sealed class ChatController(
+    IAiChatService chatService,
+    IUserPreferencesStore preferencesStore,
+    ISecretProtector secretProtector,
+    IHttpClientFactory httpClientFactory) : ControllerBase
 {
+    private const long MaxPreviewBytes = 50L * 1024 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [HttpPost("document-preview")]
+    public async Task<IActionResult> PreviewDocument(
+        [FromBody] DocumentPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !uri.Host.EndsWith(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Length <= ".blob.core.windows.net".Length ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !uri.IsDefaultPort)
+        {
+            return BadRequest(new { error = "Only HTTPS Azure Blob Storage document URLs are supported." });
+        }
+
+        try
+        {
+            var client = httpClientFactory.CreateClient("ChatDocumentPreview");
+            using var upstream = await client.GetAsync(
+                uri,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            if ((int)upstream.StatusCode is >= 300 and < 400)
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = "Document redirects are not allowed." });
+            if (!upstream.IsSuccessStatusCode)
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = "The document source rejected the request." });
+            if (upstream.Content.Headers.ContentLength is > MaxPreviewBytes)
+                return StatusCode(StatusCodes.Status413PayloadTooLarge, new { error = "The document exceeds the 50 MB preview limit." });
+
+            await using var source = await upstream.Content.ReadAsStreamAsync(cancellationToken);
+            await using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            long total = 0;
+            while (true)
+            {
+                var read = await source.ReadAsync(chunk, cancellationToken);
+                if (read == 0) break;
+                total += read;
+                if (total > MaxPreviewBytes)
+                    return StatusCode(StatusCodes.Status413PayloadTooLarge, new { error = "The document exceeds the 50 MB preview limit." });
+                await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
+            }
+
+            var contentType = upstream.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+            return File(buffer.ToArray(), contentType);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "The document source could not be reached." });
+        }
+        catch (TaskCanceledException)
+        {
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new { error = "The document source timed out." });
+        }
+    }
 
     [HttpGet("sessions")]
     public async Task<IActionResult> GetSessions(CancellationToken cancellationToken)
@@ -75,8 +141,10 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             m.TimestampUtc,
             m.ToolCallName,
             ToolCallParameters = DecryptToolParameters(m.ToolCallParameters),
+            m.ToolResult,
             m.ConnectionName,
             m.ModelName,
+            m.ProviderResponseId,
             m.TokenUsage,
             m.ThinkingMilliseconds,
             m.SensitiveSegments,
@@ -126,6 +194,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
         // Stream and accumulate response
         var assistantContent = new System.Text.StringBuilder();
         string? assistantMessageId = null;
+        string? providerResponseId = null;
         var toolCallMessages = new List<ChatMessage>();
         var thinkingStart = DateTime.UtcNow;
         int? thinkingMilliseconds = null;
@@ -142,6 +211,8 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
                 var eventName = evt.Type switch
                 {
                     ChatStreamEventType.ToolCall => "tool-call",
+                    ChatStreamEventType.ToolResult => "tool-result",
+                    ChatStreamEventType.ApprovalRequest => "approval-request",
                     _ => evt.Type.ToString().ToLowerInvariant()
                 };
                 await WriteSseEvent(eventName, evt, cancellationToken);
@@ -168,12 +239,26 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
                         ModelName = model.Name,
                     });
                 }
+                else if (evt.Type == ChatStreamEventType.ToolResult)
+                {
+                    var toolCall = toolCallMessages.LastOrDefault(item =>
+                        item.ToolResult is null &&
+                        string.Equals(item.ToolCallName, evt.ToolName, StringComparison.Ordinal) &&
+                        string.Equals(item.ConnectionName, evt.ConnectionName, StringComparison.Ordinal));
+                    if (toolCall is not null)
+                        toolCall.ToolResult = evt.ToolResult;
+                }
                 else if (evt.Type == ChatStreamEventType.Usage && evt.Usage is not null)
                 {
                     tokenUsage = evt.Usage; // Keep the latest usage (final pass has the full totals)
                 }
-                else if (evt.Type == ChatStreamEventType.Done && evt.MessageId is not null)
-                    assistantMessageId = evt.MessageId;
+                else if (evt.Type == ChatStreamEventType.Done)
+                {
+                    if (evt.MessageId is not null)
+                        assistantMessageId = evt.MessageId;
+                    if (evt.ProviderResponseId is not null)
+                        providerResponseId = evt.ProviderResponseId;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -198,6 +283,7 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
             Content = assistantContent.ToString(),
             TimestampUtc = DateTime.UtcNow,
             ModelName = model.Name,
+            ProviderResponseId = providerResponseId,
             ThinkingMilliseconds = thinkingMilliseconds,
             TokenUsage = tokenUsage,
         };
@@ -261,3 +347,5 @@ public sealed class ChatController(IAiChatService chatService, IUserPreferencesS
 
 public sealed record SendMessageRequest(string Message, string? ModelName, IReadOnlyList<string>? ConnectionNames, string? PromptName = null, string? PromptInvocationParams = null);
 public sealed record RenameSessionRequest(string? Name);
+
+public sealed record DocumentPreviewRequest(string Url);

@@ -36,6 +36,10 @@ const messageText = ref('')
 const selectedModelName = ref<string | null>(null)
 const selectedConnectionNames = ref<string[]>([])
 const llmModels = ref<LlmModelDefinition[]>([])
+const selectedModel = computed(() => llmModels.value.find(m => m.name === selectedModelName.value))
+const isFoundryProjectModel = computed(() => selectedModel.value?.providerType === 'AzureAIFoundryProject')
+const isHostedFoundryAgent = computed(() => isFoundryProjectModel.value
+  && selectedModel.value?.agentInvocationMode === 'HostedAgentEndpoint')
 const messagesEl = ref<HTMLElement>()
 const renameDialog = ref(false)
 const renameValue = ref('')
@@ -47,6 +51,19 @@ const editSystemPrompt = ref('')
 const savingSystemPrompt = ref(false)
 const expandedParams = ref(new Set<string>())
 const revealedParams = ref(new Set<string>())
+const linkPreviewVisible = ref(false)
+const linkPreviewUrl = ref('')
+const linkPreviewObjectUrl = ref('')
+const linkPreviewBlob = ref<Blob | null>(null)
+const linkPreviewFileName = ref('download')
+const linkPreviewContentType = ref('')
+const isPdfPreview = computed(() =>
+  linkPreviewContentType.value.toLowerCase().includes('application/pdf')
+  || linkPreviewFileName.value.toLowerCase().endsWith('.pdf'))
+const linkPreviewLoading = ref(false)
+const linkPreviewError = ref('')
+const linkDownloading = ref(false)
+let linkPreviewAbort: AbortController | null = null
 
 // ── Slash command state ─────────────────────────────────────────────
 const slashMenuRef = ref<InstanceType<typeof SlashCommandMenu>>()
@@ -482,6 +499,121 @@ async function copyMessage(text: string) {
   }
 }
 
+function normalizePreviewUrl(rawUrl: string): string | null {
+  if (!rawUrl || rawUrl.startsWith('#')) return null
+  const httpStart = rawUrl.search(/https?:\/\//i)
+  const cleaned = (httpStart >= 0 ? rawUrl.slice(httpStart) : rawUrl).trim()
+  try {
+    const url = new URL(cleaned, window.location.href)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+function onMessageLinkClick(event: MouseEvent) {
+  if (!(event.target instanceof Element)) return
+  const anchor = event.target.closest('a')
+  if (!(anchor instanceof HTMLAnchorElement)) return
+
+  const url = normalizePreviewUrl(anchor.getAttribute('href') ?? '')
+  if (!url) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  void loadLinkPreview(url)
+}
+
+function releaseLinkPreview() {
+  linkPreviewAbort?.abort()
+  linkPreviewAbort = null
+  if (linkPreviewObjectUrl.value) URL.revokeObjectURL(linkPreviewObjectUrl.value)
+  linkPreviewObjectUrl.value = ''
+  linkPreviewBlob.value = null
+  linkPreviewContentType.value = ''
+}
+
+async function loadLinkPreview(urlValue: string) {
+  releaseLinkPreview()
+  linkPreviewUrl.value = urlValue
+  linkPreviewError.value = ''
+  linkPreviewLoading.value = true
+  linkPreviewVisible.value = true
+
+  const controller = new AbortController()
+  linkPreviewAbort = controller
+  try {
+    const url = new URL(urlValue)
+    const response = await apiClient.post<Blob>(
+      '/chat/document-preview',
+      { url: url.href },
+      { responseType: 'blob', signal: controller.signal },
+    )
+    const blob = response.data
+    const dispositionHeader = response.headers['content-disposition']
+    const typeHeader = response.headers['content-type']
+    const contentDisposition = typeof dispositionHeader === 'string' ? dispositionHeader : null
+    const contentType = typeof typeHeader === 'string' ? typeHeader : blob.type
+
+    if (controller.signal.aborted) return
+    linkPreviewBlob.value = blob
+    linkPreviewFileName.value = downloadFileName(url, contentDisposition)
+    linkPreviewContentType.value = contentType || 'application/octet-stream'
+    linkPreviewObjectUrl.value = URL.createObjectURL(blob)
+    linkPreviewLoading.value = false
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return
+    const detail = error instanceof Error ? error.message : 'Unable to load document'
+    linkPreviewLoading.value = false
+    linkPreviewError.value = `The document could not be loaded into the preview (${detail}).`
+  }
+}
+
+function closeLinkPreview() {
+  releaseLinkPreview()
+  linkPreviewLoading.value = false
+  linkPreviewError.value = ''
+}
+
+function onLinkPreviewLoaded() {
+  linkPreviewLoading.value = false
+}
+
+function onLinkPreviewFailed() {
+  linkPreviewLoading.value = false
+  linkPreviewError.value = 'This document format could not be rendered in the preview.'
+}
+
+function downloadFileName(url: URL, contentDisposition: string | null): string {
+  const encodedName = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const quotedName = contentDisposition?.match(/filename="([^"]+)"/i)?.[1]
+  const plainName = contentDisposition?.match(/filename=([^;]+)/i)?.[1]?.trim()
+  const candidate = encodedName ? decodeURIComponent(encodedName) : (quotedName ?? plainName)
+  if (candidate) return candidate.replace(/[\\/]/g, '_')
+
+  const pathName = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() ?? '')
+  return pathName || 'download'
+}
+
+function downloadPreviewUrl() {
+  if (!linkPreviewBlob.value || linkDownloading.value) return
+
+  linkDownloading.value = true
+  try {
+    const objectUrl = URL.createObjectURL(linkPreviewBlob.value)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = linkPreviewFileName.value
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+    toast.add({ severity: 'success', summary: 'Download started', life: 2000 })
+  } finally {
+    linkDownloading.value = false
+  }
+}
+
 // ── Session navigation with arrow keys ────────────────────────────────
 function onSidebarKey(e: KeyboardEvent) {
   if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return
@@ -505,6 +637,19 @@ async function sendMessage() {
     scrollToBottom()
   } catch (e: any) {
     toast.add({ severity: 'error', summary: 'Send failed', detail: e.message, life: 5000 })
+  }
+}
+
+async function resolveFoundryToolApproval(approved: boolean) {
+  try {
+    await chatStore.resolveToolApproval(approved)
+  } catch (e: any) {
+    toast.add({
+      severity: 'error',
+      summary: 'Approval failed',
+      detail: e.response?.data?.error ?? e.message,
+      life: 5000,
+    })
   }
 }
 
@@ -554,6 +699,7 @@ function selectSession(id: string) {
 }
 
 function openSystemPrompt() {
+  if (isFoundryProjectModel.value) return
   const model = llmModels.value.find(m => m.name === selectedModelName.value)
   editSystemPrompt.value = model?.systemPrompt ?? ''
   systemPromptVisible.value = true
@@ -617,6 +763,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('slash-command', onExternalSlashCommand)
+  releaseLinkPreview()
 })
 
 function onExternalSlashCommand(e: Event) {
@@ -692,8 +839,8 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
             icon="pi pi-sliders-h"
             size="small"
             text
-            :disabled="!selectedModelName"
-            :title="selectedModelName ? `Edit system prompt for ${selectedModelName}` : 'Select a model first'"
+            :disabled="!selectedModelName || isFoundryProjectModel"
+            :title="isFoundryProjectModel ? 'Instructions are managed by the Foundry agent' : (selectedModelName ? `Edit system prompt for ${selectedModelName}` : 'Select a model first')"
             @click="openSystemPrompt"
           />
           <Button
@@ -760,12 +907,14 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
             <div v-else-if="isToolCall(msg)" class="tool-call-block">
               <div class="tool-call-header">
                 <div class="avatar-circle tool-avatar-circle">🔧</div>
-                <span class="tool-label">Calling tool:&nbsp;<strong>{{ msg.toolCallName }}</strong></span>
+                <span class="tool-label">
+                  {{ msg.toolResult ? 'Tool completed:' : 'Calling tool:' }}&nbsp;<strong>{{ msg.toolCallName }}</strong>
+                </span>
                 <span v-if="msg.connectionName" class="conn-badge">🔌 {{ msg.connectionName }}</span>
                 <span v-if="msg.modelName" class="model-badge tool-model-badge">{{ msg.modelName }}</span>
                 <span class="tool-time">{{ formatTimestamp(msg.timestampUtc) }}</span>
                 <button
-                  v-if="msg.toolCallParameters"
+                  v-if="msg.toolCallParameters || msg.toolResult"
                   class="params-toggle"
                   :title="expandedParams.has(msg.id) ? 'Hide parameters' : 'Show parameters'"
                   @click="toggleParams(msg.id)"
@@ -773,14 +922,21 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
                   <i :class="expandedParams.has(msg.id) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" />
                 </button>
               </div>
-              <template v-if="msg.toolCallParameters && expandedParams.has(msg.id)">
-                <pre class="tool-params-pre">{{ getMaskedParams(msg.toolCallParameters, msg.id) }}</pre>
-                <div v-if="hasSensitiveParams(msg.toolCallParameters)" class="sensitive-banner">
-                  <span>🔒 Contains sensitive values</span>
-                  <button class="reveal-btn" @click="toggleReveal(msg.id)">
-                    {{ revealedParams.has(msg.id) ? '🙈 Hide values' : '👁 Reveal values' }}
-                  </button>
-                </div>
+              <template v-if="expandedParams.has(msg.id)">
+                <template v-if="msg.toolCallParameters">
+                  <div class="tool-detail-label">Arguments</div>
+                  <pre class="tool-params-pre">{{ getMaskedParams(msg.toolCallParameters, msg.id) }}</pre>
+                  <div v-if="hasSensitiveParams(msg.toolCallParameters)" class="sensitive-banner">
+                    <span>🔒 Contains sensitive values</span>
+                    <button class="reveal-btn" @click="toggleReveal(msg.id)">
+                      {{ revealedParams.has(msg.id) ? '🙈 Hide values' : '👁 Reveal values' }}
+                    </button>
+                  </div>
+                </template>
+                <template v-if="msg.toolResult">
+                  <div class="tool-detail-label">Result</div>
+                  <pre class="tool-params-pre tool-result-pre">{{ prettyJson(msg.toolResult) }}</pre>
+                </template>
               </template>
             </div>
 
@@ -796,7 +952,7 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
                   <span class="msg-role-name">{{ getName(msg.role) }}</span>
                   <div class="avatar-circle user-avatar-circle">👤</div>
                 </div>
-                <div class="message-content" v-html="getMaskedContent(msg.content, msg.id)" />
+                <div class="message-content" @click.capture="onMessageLinkClick" v-html="getMaskedContent(msg.content, msg.id)" />
                 <div v-if="hasSensitiveContent(msg.content)" class="sensitive-banner user-sensitive-banner">
                   <span>🔒 Contains sensitive values</span>
                   <button class="reveal-btn" @click="toggleReveal(msg.id)">
@@ -824,14 +980,64 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
                     <i class="pi pi-copy" />
                   </button>
                 </div>
-                <div class="message-content" v-html="renderContent(msg.content, 'assistant')" />
+                <div class="message-content" @click.capture="onMessageLinkClick" v-html="renderContent(msg.content, 'assistant')" />
               </div>
             </div>
 
           </template>
 
+          <!-- Foundry-managed MCP approval -->
+          <div v-if="chatStore.streaming && chatStore.pendingToolApproval" class="approval-block">
+            <div class="approval-header">
+              <div class="avatar-circle approval-avatar-circle"><i class="pi pi-shield" /></div>
+              <div class="approval-title">
+                <strong>Tool approval required</strong>
+                <span>Foundry is waiting for your decision</span>
+              </div>
+              <span v-if="chatStore.pendingToolApproval.serverLabel" class="conn-badge">
+                {{ chatStore.pendingToolApproval.serverLabel }}
+              </span>
+              <button
+                v-if="chatStore.pendingToolApproval.toolParameters"
+                class="params-toggle"
+                :title="expandedParams.has(chatStore.pendingToolApproval.approvalRequestId) ? 'Hide arguments' : 'Show arguments'"
+                @click="toggleParams(chatStore.pendingToolApproval.approvalRequestId)"
+              >
+                <i :class="expandedParams.has(chatStore.pendingToolApproval.approvalRequestId) ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" />
+              </button>
+            </div>
+            <div class="approval-tool-name">
+              <i class="pi pi-wrench" />
+              {{ chatStore.pendingToolApproval.toolName }}
+            </div>
+            <pre
+              v-if="chatStore.pendingToolApproval.toolParameters && expandedParams.has(chatStore.pendingToolApproval.approvalRequestId)"
+              class="tool-params-pre approval-params"
+              v-html="getMaskedContent(chatStore.pendingToolApproval.toolParameters, chatStore.pendingToolApproval.approvalRequestId)"
+            />
+            <div class="approval-actions">
+              <Button
+                label="Deny"
+                icon="pi pi-times"
+                severity="danger"
+                outlined
+                size="small"
+                :loading="chatStore.resolvingToolApproval"
+                @click="resolveFoundryToolApproval(false)"
+              />
+              <Button
+                label="Approve"
+                icon="pi pi-check"
+                severity="success"
+                size="small"
+                :loading="chatStore.resolvingToolApproval"
+                @click="resolveFoundryToolApproval(true)"
+              />
+            </div>
+          </div>
+
           <!-- Streaming placeholder -->
-          <div v-if="chatStore.streaming" class="message-row assistant">
+          <div v-else-if="chatStore.streaming" class="message-row assistant">
             <div class="message-bubble assistant-bubble streaming">
               <div class="message-header assistant-header">
                 <div class="avatar-circle asst-avatar-circle">🤖</div>
@@ -843,7 +1049,7 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
               <div v-if="!chatStore.streamingContent" class="thinking-indicator">
                 <span>Thinking</span><span class="thinking-dots">…</span>
               </div>
-              <div v-else class="message-content" v-html="renderContent(chatStore.streamingContent, 'assistant')" />
+              <div v-else class="message-content" @click.capture="onMessageLinkClick" v-html="renderContent(chatStore.streamingContent, 'assistant')" />
             </div>
           </div>
         </template>
@@ -869,6 +1075,18 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
             placeholder="Model…"
             class="model-select"
           />
+        </div>
+        <div
+          v-if="isFoundryProjectModel && selectedConnectionNames.length > 0"
+          class="foundry-tool-hint"
+        >
+          <i class="pi pi-info-circle" />
+          <span v-if="isHostedFoundryAgent">
+            The hosted agent implementation controls its tools. Selected MCP connections provide local execution only for matching function calls.
+          </span>
+          <span v-else>
+            The Foundry agent version must declare matching function tools. Selected MCP connections provide their local execution.
+          </span>
         </div>
         <div class="input-row-wrap">
           <SlashCommandMenu
@@ -1034,6 +1252,9 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
           @click="selectedModelName = m.name; modelPickerVisible = false"
         >
           <span class="model-picker-name">{{ m.name }}</span>
+          <span v-if="m.providerType === 'AzureAIFoundryProject'" class="model-picker-provider">
+            {{ m.agentInvocationMode === 'HostedAgentEndpoint' ? `${m.agentName} (hosted)` : `${m.agentName} v${m.agentVersion}` }}
+          </span>
           <span v-if="m.name === selectedModelName" class="model-active-badge">active</span>
         </div>
         <div v-if="!llmModels.length" class="model-picker-empty">No models configured</div>
@@ -1116,6 +1337,74 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
           :disabled="!canConfirmPrompt"
           :loading="promptPickerConfirming"
           @click="confirmPrompt"
+        />
+      </template>
+    </Dialog>
+
+    <!-- Chat document preview -->
+    <Dialog
+      v-model:visible="linkPreviewVisible"
+      header="Document preview"
+      modal
+      maximizable
+      :style="{ width: '92vw' }"
+      :breakpoints="{ '900px': '98vw' }"
+      class="link-preview-dialog"
+      @hide="closeLinkPreview"
+    >
+      <div class="link-preview-shell">
+        <div v-if="linkPreviewLoading" class="link-preview-loading">
+          <i class="pi pi-spin pi-spinner" />
+          <span>Loading document…</span>
+        </div>
+        <div v-if="linkPreviewError" class="link-preview-error">
+          <i class="pi pi-exclamation-triangle" />
+          <span>{{ linkPreviewError }}</span>
+        </div>
+        <div v-if="linkPreviewObjectUrl" class="link-preview-frame-wrap">
+          <object
+            v-if="isPdfPreview"
+            :key="linkPreviewObjectUrl"
+            :data="linkPreviewObjectUrl"
+            type="application/pdf"
+            class="link-preview-frame link-preview-pdf"
+            aria-label="PDF document preview"
+            @load="onLinkPreviewLoaded"
+            @error="onLinkPreviewFailed"
+          >
+            <div class="link-preview-error">
+              <i class="pi pi-exclamation-triangle" />
+              <span>The browser could not render this PDF. Use Download to save it.</span>
+            </div>
+          </object>
+          <img
+            v-else-if="linkPreviewContentType.startsWith('image/')"
+            :src="linkPreviewObjectUrl"
+            class="link-preview-image"
+            alt="Document preview"
+            @load="onLinkPreviewLoaded"
+            @error="onLinkPreviewFailed"
+          />
+          <iframe
+            v-else
+            :key="linkPreviewObjectUrl"
+            :src="linkPreviewObjectUrl"
+            class="link-preview-frame"
+            title="Document preview"
+            sandbox="allow-scripts allow-same-origin allow-forms"
+            @load="onLinkPreviewLoaded"
+            @error="onLinkPreviewFailed"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Close" severity="secondary" text @click="linkPreviewVisible = false" />
+        <Button
+          label="Download"
+          icon="pi pi-download"
+          :loading="linkDownloading"
+          :disabled="!linkPreviewBlob"
+          @click="downloadPreviewUrl"
         />
       </template>
     </Dialog>
@@ -1249,10 +1538,21 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 
 /* Tool call block */
 .tool-call-block { background:rgba(251,191,36,.08); border:1px solid rgba(251,191,36,.25); border-left:3px solid #f59e0b; border-radius:6px; padding:8px 12px; font-size:12px; align-self:stretch; }
+.approval-block { background:color-mix(in srgb, var(--bg-raised) 92%, #f59e0b); border:1px solid rgba(245,158,11,.45); border-left:3px solid #f59e0b; border-radius:8px; padding:12px 14px; align-self:stretch; box-shadow:0 4px 18px rgba(0,0,0,.12); }
+.approval-header { display:flex; align-items:center; gap:9px; }
+.approval-avatar-circle { background:rgba(245,158,11,.18); color:#f59e0b; }
+.approval-title { display:flex; flex:1; flex-direction:column; gap:1px; color:var(--text-primary); font-size:13px; }
+.approval-title span { color:var(--text-muted); font-size:11px; font-weight:400; }
+.approval-tool-name { display:flex; align-items:center; gap:7px; margin:10px 0 2px; padding:7px 9px; background:var(--code-bg); border:1px solid var(--border); border-radius:5px; color:var(--text-primary); font-family:var(--font-family-mono); font-size:12px; }
+.approval-tool-name .pi { color:#f59e0b; }
+.approval-params { white-space:pre-wrap; word-break:break-word; }
+.approval-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
 .tool-call-header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .tool-label { color:#f59e0b; flex:1; min-width:0; }
 .tool-label strong { font-weight:700; }
 .conn-badge { background:rgba(20,184,166,.15); color:#14b8a6; border:1px solid rgba(20,184,166,.4); padding:1px 8px; border-radius:10px; font-size:11px; white-space:nowrap; font-weight:500; }
+.tool-detail-label { margin-top:8px; color:var(--text-muted); font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+.tool-result-pre { border-left:3px solid var(--success); white-space:pre-wrap; }
 .tool-model-badge { background:rgba(251,191,36,.12); color:#f59e0b; border-color:rgba(251,191,36,.35) !important; }
 .tool-time { color:var(--text-muted); font-size:11px; margin-left:auto; white-space:nowrap; }
 .params-toggle { background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3); color:var(--accent); cursor:pointer; border-radius:3px; padding:2px 5px; font-size:10px; flex-shrink:0; }
@@ -1313,6 +1613,15 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 /* Message content */
 .message-content { font-size:14px; line-height:1.65; word-break:break-word; }
 
+/* In-app document preview */
+.link-preview-shell { position:relative; min-height:72vh; height:72vh; background:var(--bg-base); border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.link-preview-frame-wrap { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+.link-preview-frame { width:100%; height:100%; border:0; background:#fff; display:block; }
+.link-preview-image { display:block; width:100%; height:100%; object-fit:contain; background:var(--bg-base); }
+.link-preview-loading { position:absolute; inset:0; z-index:2; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--text-muted); background:var(--bg-base); }
+.link-preview-loading .pi { font-size:28px; color:var(--accent); }
+.link-preview-error { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:10px; padding:24px; color:var(--danger); text-align:center; background:var(--bg-base); }
+
 /* Thinking indicator */
 .thinking-indicator { display:flex; align-items:center; gap:4px; color:var(--text-muted); font-size:13px; padding:4px 0; }
 .thinking-dots { animation:blink 1s step-end infinite; }
@@ -1323,6 +1632,8 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .input-controls { display:flex; gap:8px; }
 .conn-select { flex:1; }
 .model-select { width:200px; }
+.foundry-tool-hint { display:flex; align-items:center; gap:6px; color:var(--text-muted); font-size:11px; line-height:1.35; }
+.foundry-tool-hint .pi { color:var(--accent); }
 .input-row-wrap { position:relative; }
 .input-row { display:flex; gap:8px; align-items:flex-end; }
 .message-input { flex:1; resize:none; }
@@ -1365,6 +1676,7 @@ watch(() => connStore.initialized, async (ready, wasReady) => {
 .model-picker-item:hover { background:var(--nav-item-hover); border-color:var(--border); }
 .model-picker-item.active { background:color-mix(in srgb, var(--accent) 12%, transparent); border-color:var(--accent); }
 .model-picker-name { font-size:14px; color:var(--text-primary); }
+.model-picker-provider { margin-left:auto; margin-right:8px; font-size:11px; color:var(--text-muted); }
 .model-active-badge { font-size:11px; background:var(--accent); color:#fff; padding:1px 7px; border-radius:8px; }
 .model-picker-empty { text-align:center; padding:24px; color:var(--text-muted); }
 

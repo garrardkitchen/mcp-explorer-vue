@@ -8,7 +8,7 @@ namespace Garrard.Mcp.Explorer.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/llm-models")]
-public sealed class LlmModelsController(IUserPreferencesStore store) : ControllerBase
+public sealed class LlmModelsController(IUserPreferencesStore store, IAiChatService chatService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct)
@@ -61,6 +61,33 @@ public sealed class LlmModelsController(IUserPreferencesStore store) : Controlle
         model.SystemPrompt = request.SystemPrompt ?? string.Empty;
         await store.SaveAsync(prefs, ct);
         return Ok(new { systemPrompt = model.SystemPrompt });
+    }
+
+    [HttpPost("{name}/test")]
+    public async Task<IActionResult> Test(string name, CancellationToken ct)
+    {
+        var prefs = await store.LoadAsync(ct);
+        var model = prefs.LlmModels.FirstOrDefault(m =>
+            string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (model is null)
+            return NotFound();
+
+        try
+        {
+            var output = await chatService.TestAsync(model, ct);
+            var summary = output.Length <= 500 ? output : $"{output[..500]}…";
+            return Ok(new { success = true, message = summary });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Preserve the SDK's top-level context. GetBaseException() can reduce a
+            // credential-chain failure to a misleading low-level IMDS socket error.
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpGet("selected")]

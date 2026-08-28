@@ -20,11 +20,16 @@ public sealed class AiChatService : IAiChatService
 {
     private readonly ILogger<AiChatService> _logger;
     private readonly ConnectionService _connectionService;
+    private readonly IFoundryProjectAgentService _foundryProjectAgentService;
 
-    public AiChatService(ILogger<AiChatService> logger, ConnectionService connectionService)
+    public AiChatService(
+        ILogger<AiChatService> logger,
+        ConnectionService connectionService,
+        IFoundryProjectAgentService foundryProjectAgentService)
     {
         _logger = logger;
         _connectionService = connectionService;
+        _foundryProjectAgentService = foundryProjectAgentService;
     }
 
     public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(
@@ -34,6 +39,18 @@ public sealed class AiChatService : IAiChatService
         IReadOnlyList<string> connectionNames,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (model.ProviderType == LlmProviderTypes.AzureAiFoundryProject)
+        {
+            await foreach (var streamEvent in _foundryProjectAgentService
+                               .StreamAsync(message, history, model, connectionNames, cancellationToken)
+                               .ConfigureAwait(false))
+            {
+                yield return streamEvent;
+            }
+
+            yield break;
+        }
+
         IChatClient? baseClient = null;
         string? clientError = null;
         try
@@ -150,10 +167,28 @@ public sealed class AiChatService : IAiChatService
         yield return new ChatStreamEvent(ChatStreamEventType.Done);
     }
 
+    public async Task<string> TestAsync(
+        LlmModelDefinition model,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+
+        if (model.ProviderType == LlmProviderTypes.AzureAiFoundryProject)
+            return await _foundryProjectAgentService.TestAsync(model, cancellationToken).ConfigureAwait(false);
+
+        var client = CreateBaseChatClient(model);
+        var response = await client.GetResponseAsync(
+                [new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "Reply with OK.")],
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return response.Text ?? "Model returned no text output.";
+    }
+
     private IChatClient CreateBaseChatClient(LlmModelDefinition model) => model.ProviderType switch
     {
-        "OpenAI" => CreateOpenAiClient(model),
-        "AzureAIFoundry" => CreateAzureClient(model),
+        LlmProviderTypes.OpenAi => CreateOpenAiClient(model),
+        LlmProviderTypes.AzureOpenAi or LlmProviderTypes.AzureAiFoundry => CreateAzureClient(model),
         _ => throw new NotSupportedException($"Provider type '{model.ProviderType}' is not supported.")
     };
 

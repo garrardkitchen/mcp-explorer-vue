@@ -1,6 +1,6 @@
 namespace Garrard.Mcp.Explorer.Core.Domain.Chat;
 
-public enum ChatStreamEventType { Token, ToolCall, ToolResult, Usage, Done, Error }
+public enum ChatStreamEventType { Token, ToolCall, ToolResult, ApprovalRequest, Usage, Done, Error }
 
 public sealed record ChatStreamEvent(ChatStreamEventType Type)
 {
@@ -9,7 +9,10 @@ public sealed record ChatStreamEvent(ChatStreamEventType Type)
     public string? ToolParameters { get; init; }
     public string? ToolResult { get; init; }
     public string? ConnectionName { get; init; }
+    public string? ApprovalRequestId { get; init; }
+    public string? ServerLabel { get; init; }
     public ChatTokenUsage? Usage { get; init; }
     public string? MessageId { get; init; }
+    public string? ProviderResponseId { get; init; }
     public string? ErrorMessage { get; init; }
 }

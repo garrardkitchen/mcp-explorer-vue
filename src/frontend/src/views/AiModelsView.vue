@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import DataTable from 'primevue/datatable'
@@ -14,7 +14,8 @@ import Tag from 'primevue/tag'
 import Skeleton from 'primevue/skeleton'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { llmModelsApi } from '@/api/llmModels'
-import type { LlmModelDefinition } from '@/api/types'
+import { extractApiError } from '@/api/client'
+import type { FoundryAgentCatalogItem, LlmModelDefinition } from '@/api/types'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -25,22 +26,60 @@ const selectedModelName = ref<string | null>(null)
 const showDialog = ref(false)
 const editMode = ref(false)
 const saving = ref(false)
+const testing = ref<Record<string, boolean>>({})
 const showApiKey = ref<Record<string, boolean>>({})
+const discoveringAgents = ref(false)
+const discoveredAgents = ref<FoundryAgentCatalogItem[]>([])
+const discoveryAttempted = ref(false)
 
 const blankForm = (): LlmModelDefinition => ({
   name: '', providerType: 'OpenAI', endpoint: '', apiKey: '',
-  modelName: '', systemPrompt: '', deploymentName: '', note: '',
+  modelName: '', systemPrompt: '', deploymentName: '',
+  authenticationMode: 'DefaultAzureCredential', agentInvocationMode: 'VersionedAgent',
+  agentName: '', agentVersion: '', note: '',
 })
 const form = ref<LlmModelDefinition>(blankForm())
 const originalName = ref('')
 
+const foundryAgentOptions = computed(() => discoveredAgents.value.map(agent => ({
+  label: agent.name,
+  value: agent.name,
+})))
+
+const selectedFoundryAgent = computed(() => discoveredAgents.value.find(agent =>
+  agent.name === form.value.agentName))
+
+const foundryVersionOptions = computed(() => (selectedFoundryAgent.value?.versions ?? []).map(version => ({
+  label: version.description ? `v${version.version} — ${version.description}` : `v${version.version}`,
+  value: version.version,
+})))
+
 const providerOptions = [
   { label: 'OpenAI', value: 'OpenAI' },
   { label: 'Azure OpenAI', value: 'AzureOpenAI' },
-  { label: 'Azure AI Foundry', value: 'AzureAIFoundry' },
+  { label: 'Azure AI Foundry Model', value: 'AzureAIFoundry' },
+  { label: 'Azure AI Foundry Project Agent', value: 'AzureAIFoundryProject' },
   { label: 'Ollama', value: 'Ollama' },
   { label: 'Custom', value: 'Custom' },
 ]
+
+const authenticationOptions = [
+  { label: 'Default Azure Credential', value: 'DefaultAzureCredential' },
+  { label: 'API Key', value: 'ApiKey' },
+]
+
+const agentInvocationOptions = [
+  { label: 'Versioned agent', value: 'VersionedAgent' },
+  { label: 'Hosted agent endpoint', value: 'HostedAgentEndpoint' },
+]
+
+function isFoundryProject(model: LlmModelDefinition) {
+  return model.providerType === 'AzureAIFoundryProject'
+}
+
+function isHostedAgent(model: LlmModelDefinition) {
+  return isFoundryProject(model) && model.agentInvocationMode === 'HostedAgentEndpoint'
+}
 
 async function load() {
   loading.value = true
@@ -55,17 +94,103 @@ async function load() {
 
 function openCreate() {
   editMode.value = false; originalName.value = ''
-  form.value = blankForm(); showDialog.value = true
+  form.value = blankForm(); resetFoundryDiscovery(); showDialog.value = true
 }
 
 function openEdit(m: LlmModelDefinition) {
   editMode.value = true; originalName.value = m.name
-  form.value = JSON.parse(JSON.stringify(m)); showDialog.value = true
+  form.value = JSON.parse(JSON.stringify(m)); resetFoundryDiscovery(); showDialog.value = true
+}
+
+function resetFoundryDiscovery() {
+  discoveredAgents.value = []
+  discoveryAttempted.value = false
+}
+
+function applyFoundryVersion(version: string | null | undefined) {
+  if (isHostedAgent(form.value)) {
+    form.value.agentVersion = ''
+    form.value.systemPrompt = ''
+    return
+  }
+
+  form.value.agentVersion = version ?? ''
+  const selectedVersion = selectedFoundryAgent.value?.versions.find(item => item.version === version)
+  form.value.systemPrompt = selectedVersion?.systemPrompt ?? ''
+}
+
+function selectFoundryAgent(agentName: string | null | undefined) {
+  form.value.agentName = agentName ?? ''
+  const agent = discoveredAgents.value.find(item => item.name === agentName)
+  applyFoundryVersion(isHostedAgent(form.value) ? '' : agent?.versions[0]?.version)
+}
+
+async function discoverFoundryAgents() {
+  if (!form.value.endpoint?.trim()) {
+    toast.add({ severity: 'warn', summary: 'Project endpoint required', detail: 'Enter the Foundry project endpoint before refreshing agents.', life: 4000 })
+    return
+  }
+  if (form.value.authenticationMode === 'ApiKey' && !form.value.apiKey?.trim()) {
+    toast.add({ severity: 'warn', summary: 'API key required', detail: 'Enter the project API key before refreshing agents.', life: 4000 })
+    return
+  }
+
+  discoveringAgents.value = true
+  try {
+    const currentAgentName = form.value.agentName
+    const currentVersion = form.value.agentVersion
+    discoveredAgents.value = await llmModelsApi.discoverFoundryAgents(form.value)
+    discoveryAttempted.value = true
+
+    if (discoveredAgents.value.length === 0) {
+      form.value.agentName = ''
+      applyFoundryVersion('')
+      toast.add({ severity: 'info', summary: 'No agents found', detail: 'The project returned no available agents.', life: 4000 })
+      return
+    }
+
+    const selectedAgent = discoveredAgents.value.find(agent => agent.name === currentAgentName)
+      ?? discoveredAgents.value[0]
+    form.value.agentName = selectedAgent.name
+    if (isHostedAgent(form.value)) {
+      applyFoundryVersion('')
+    } else {
+      const selectedVersion = selectedAgent.versions.find(version => version.version === currentVersion)
+        ?? selectedAgent.versions[0]
+      applyFoundryVersion(selectedVersion?.version)
+    }
+
+    toast.add({
+      severity: 'success',
+      summary: 'Agents refreshed',
+      detail: `Discovered ${discoveredAgents.value.length} agent${discoveredAgents.value.length === 1 ? '' : 's'}.`,
+      life: 2500,
+    })
+  } catch (e: unknown) {
+    toast.add({ severity: 'error', summary: 'Agent discovery failed', detail: extractApiError(e), life: 7000 })
+  } finally {
+    discoveringAgents.value = false
+  }
 }
 
 async function save() {
   if (!form.value.name?.trim()) {
     toast.add({ severity: 'warn', summary: 'Validation', detail: 'Name is required', life: 3000 }); return
+  }
+  if (isFoundryProject(form.value)) {
+    const missingRequiredField = !form.value.endpoint?.trim()
+      || !form.value.agentName?.trim()
+      || (!isHostedAgent(form.value) && !form.value.agentVersion?.trim())
+    if (missingRequiredField) {
+      const required = isHostedAgent(form.value)
+        ? 'Project endpoint and agent name are required'
+        : 'Project endpoint, agent name, and agent version are required'
+      toast.add({ severity: 'warn', summary: 'Validation', detail: required, life: 4000 }); return
+    }
+    if (form.value.authenticationMode === 'ApiKey' && !form.value.apiKey?.trim()) {
+      toast.add({ severity: 'warn', summary: 'Validation', detail: 'API key is required for API key authentication', life: 4000 }); return
+    }
+    if (form.value.authenticationMode === 'DefaultAzureCredential') form.value.apiKey = ''
   }
   saving.value = true
   try {
@@ -105,6 +230,18 @@ async function setDefault(m: LlmModelDefinition) {
   }
 }
 
+async function testModel(m: LlmModelDefinition) {
+  testing.value[m.name] = true
+  try {
+    const result = await llmModelsApi.test(m.name)
+    toast.add({ severity: 'success', summary: 'Connection succeeded', detail: result.message, life: 5000 })
+  } catch (e: unknown) {
+    toast.add({ severity: 'error', summary: 'Connection failed', detail: extractApiError(e), life: 7000 })
+  } finally {
+    testing.value[m.name] = false
+  }
+}
+
 function toggleKey(name: string) {
   showApiKey.value[name] = !showApiKey.value[name]
 }
@@ -113,6 +250,22 @@ function maskKey(k: string) {
   if (!k) return '—'
   return k.length > 8 ? `${k.slice(0, 4)}${'•'.repeat(Math.min(k.length - 8, 12))}${k.slice(-4)}` : '••••••••'
 }
+
+watch(
+  () => [form.value.providerType, form.value.endpoint, form.value.authenticationMode, form.value.apiKey],
+  () => resetFoundryDiscovery(),
+)
+
+watch(
+  () => form.value.agentInvocationMode,
+  mode => {
+    resetFoundryDiscovery()
+    if (mode === 'HostedAgentEndpoint') {
+      form.value.agentVersion = ''
+      form.value.systemPrompt = ''
+    }
+  },
+)
 
 onMounted(load)
 </script>
@@ -137,7 +290,11 @@ onMounted(load)
           </div>
           <div class="card-badges">
             <Tag :value="m.providerType" severity="secondary" />
-            <span class="model-id">{{ m.modelName || m.deploymentName }}</span>
+            <span class="model-id">
+              {{ isFoundryProject(m)
+                ? (isHostedAgent(m) ? `${m.agentName} (hosted endpoint)` : `${m.agentName} v${m.agentVersion}`)
+                : (m.modelName || m.deploymentName) }}
+            </span>
           </div>
         </div>
         <div class="card-body">
@@ -154,12 +311,19 @@ onMounted(load)
               <i :class="showApiKey[m.name] ? 'pi pi-eye-slash' : 'pi pi-eye'" />
             </button>
           </div>
+          <div v-if="isFoundryProject(m)" class="card-field">
+            <span class="field-label">Auth</span>
+            <span class="field-value">{{ m.authenticationMode === 'ApiKey' ? 'API Key' : 'Default Azure Credential' }}</span>
+          </div>
           <div v-if="m.note" class="card-field">
             <span class="field-label">Note</span>
             <span class="field-value">{{ m.note }}</span>
           </div>
         </div>
         <div class="card-actions">
+          <Button label="Test" icon="pi pi-bolt" text size="small"
+                  :loading="testing[m.name]" v-tooltip="'Sends a small live probe to this model or agent'"
+                  @click="testModel(m)" />
           <Button label="Set Default" icon="pi pi-star" text size="small"
                   :severity="selectedModelName === m.name ? 'success' : 'secondary'"
                   @click="setDefault(m)" />
@@ -180,7 +344,7 @@ onMounted(load)
           <label>Provider</label>
           <Select v-model="form.providerType" :options="providerOptions" optionLabel="label" optionValue="value" class="w-full" />
         </div>
-        <div class="form-field">
+        <div v-if="!isFoundryProject(form)" class="form-field">
           <label>Model Name</label>
           <InputText v-model="form.modelName" placeholder="gpt-4o" class="w-full" />
         </div>
@@ -188,17 +352,89 @@ onMounted(load)
           <label>Deployment Name</label>
           <InputText v-model="form.deploymentName" placeholder="my-deployment" class="w-full" />
         </div>
-        <div class="form-field">
-          <label>Endpoint / Base URL</label>
-          <InputText v-model="form.endpoint" placeholder="https://api.openai.com/v1" class="w-full" />
+        <div v-if="isFoundryProject(form)" class="form-field">
+          <label>Authentication</label>
+          <Select v-model="form.authenticationMode" :options="authenticationOptions" optionLabel="label" optionValue="value" class="w-full" />
+        </div>
+        <div v-if="isFoundryProject(form)" class="form-field">
+          <label>Agent Invocation</label>
+          <Select v-model="form.agentInvocationMode" :options="agentInvocationOptions" optionLabel="label" optionValue="value" class="w-full" />
+        </div>
+        <div v-if="isHostedAgent(form)" class="credential-hint full-width">
+          Calls the dedicated <code>/agents/{agentName}/endpoint/protocols/openai/responses</code> endpoint.
+          Foundry's endpoint configuration controls which hosted agent version receives traffic.
         </div>
         <div class="form-field">
-          <label>API Key</label>
+          <label>{{ isFoundryProject(form) ? 'Project Endpoint *' : 'Endpoint / Base URL' }}</label>
+          <InputText v-model="form.endpoint"
+                     :placeholder="isFoundryProject(form) ? 'https://resource.services.ai.azure.com/api/projects/project' : 'https://api.openai.com/v1'"
+                     class="w-full" />
+        </div>
+        <div v-if="!isFoundryProject(form) || form.authenticationMode === 'ApiKey'" class="form-field">
+          <label>API Key{{ isFoundryProject(form) ? ' *' : '' }}</label>
           <Password v-model="form.apiKey" placeholder="sk-…" :feedback="false" toggleMask class="w-full" inputClass="w-full" />
+        </div>
+        <div v-if="isFoundryProject(form)" class="form-field full-width">
+          <label>Agent Name *</label>
+          <div class="input-with-action">
+            <Select
+              :modelValue="form.agentName"
+              :options="foundryAgentOptions"
+              optionLabel="label"
+              optionValue="value"
+              :placeholder="discoveryAttempted ? 'Select an agent' : 'Refresh to discover agents'"
+              editable
+              :disabled="discoveringAgents"
+              class="w-full"
+              @update:modelValue="selectFoundryAgent"
+            />
+            <Button
+              icon="pi pi-refresh"
+              label="Refresh"
+              severity="secondary"
+              :loading="discoveringAgents"
+              @click="discoverFoundryAgents"
+            />
+          </div>
+        </div>
+        <div v-if="isFoundryProject(form) && !isHostedAgent(form)" class="form-field">
+          <label>Agent Version *</label>
+          <Select
+            :modelValue="form.agentVersion"
+            :options="foundryVersionOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Select a version"
+            editable
+            :disabled="discoveringAgents"
+            class="w-full"
+            @update:modelValue="applyFoundryVersion"
+          />
+        </div>
+        <div v-if="isFoundryProject(form) && form.authenticationMode === 'DefaultAzureCredential'" class="credential-hint full-width">
+          Uses the process identity when hosted, or your Azure CLI/developer credential locally. No credential is stored.
         </div>
         <div class="form-field full-width">
           <label>System Prompt</label>
-          <Textarea v-model="form.systemPrompt" rows="3" class="w-full" autoResize placeholder="You are a helpful assistant…" />
+          <Textarea
+            v-model="form.systemPrompt"
+            rows="3"
+            class="w-full"
+            autoResize
+            :readonly="isFoundryProject(form)"
+            :placeholder="isHostedAgent(form)
+              ? 'Instructions are managed by the hosted agent implementation.'
+              : (isFoundryProject(form) ? 'No instructions are defined for this agent version.' : 'You are a helpful assistant…')"
+          />
+        </div>
+        <div v-if="isFoundryProject(form)" class="credential-hint full-width">
+          <template v-if="isHostedAgent(form)">
+            Instructions and tools are controlled by the hosted agent implementation and its Foundry endpoint configuration.
+          </template>
+          <template v-else>
+            The system prompt is loaded from the selected immutable Foundry agent version and is read-only here.
+            Instructions and tools remain controlled by Foundry.
+          </template>
         </div>
         <div class="form-field full-width">
           <label>Note</label>
@@ -242,5 +478,7 @@ onMounted(load)
 .form-field { display:flex; flex-direction:column; gap:6px; }
 .form-field label { font-size:12px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; }
 .full-width { grid-column:1/-1; }
+.credential-hint { font-size:12px; color:var(--text-muted); line-height:1.45; }
+.input-with-action { display:flex; align-items:center; gap:8px; }
 .w-full { width:100%; }
 </style>

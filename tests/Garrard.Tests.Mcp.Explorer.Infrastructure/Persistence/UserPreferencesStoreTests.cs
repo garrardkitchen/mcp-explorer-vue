@@ -1,4 +1,5 @@
 using Garrard.Mcp.Explorer.Core.Domain.Connections;
+using Garrard.Mcp.Explorer.Core.Domain.LlmModels;
 using Garrard.Mcp.Explorer.Core.Domain.Preferences;
 using Garrard.Mcp.Explorer.Core.Interfaces;
 using Garrard.Mcp.Explorer.Infrastructure.Persistence;
@@ -282,5 +283,61 @@ public sealed class UserPreferencesStoreTests : IDisposable
         await store.SaveAsync(prefs);
 
         _protectorMock.Verify(p => p.Encrypt("oauth-secret"), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveAsync_FoundryProjectApiKey_IsEncrypted()
+    {
+        var store = CreateStore();
+        var prefs = new UserPreferences
+        {
+            LlmModels =
+            [
+                new LlmModelDefinition
+                {
+                    Name = "foundry-agent",
+                    ProviderType = LlmProviderTypes.AzureAiFoundryProject,
+                    AuthenticationMode = LlmAuthenticationMode.ApiKey,
+                    Endpoint = "https://resource.services.ai.azure.com/api/projects/project",
+                    ApiKey = "foundry-secret",
+                    AgentName = "codie",
+                    AgentVersion = "5"
+                }
+            ]
+        };
+
+        await store.SaveAsync(prefs);
+
+        _protectorMock.Verify(p => p.Encrypt("foundry-secret"), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveAndLoadAsync_FoundryProjectFields_RoundTrip()
+    {
+        var store = CreateStore();
+        var prefs = new UserPreferences
+        {
+            LlmModels =
+            [
+                new LlmModelDefinition
+                {
+                    Name = "foundry-agent",
+                    ProviderType = LlmProviderTypes.AzureAiFoundryProject,
+                    AuthenticationMode = LlmAuthenticationMode.DefaultAzureCredential,
+                    AgentInvocationMode = FoundryAgentInvocationMode.HostedAgentEndpoint,
+                    Endpoint = "https://resource.services.ai.azure.com/api/projects/project",
+                    AgentName = "codie"
+                }
+            ]
+        };
+
+        await store.SaveAsync(prefs);
+        var loaded = await store.LoadAsync();
+
+        var model = Assert.Single(loaded.LlmModels);
+        Assert.Equal(LlmAuthenticationMode.DefaultAzureCredential, model.AuthenticationMode);
+        Assert.Equal(FoundryAgentInvocationMode.HostedAgentEndpoint, model.AgentInvocationMode);
+        Assert.Equal("codie", model.AgentName);
+        Assert.Empty(model.AgentVersion);
     }
 }

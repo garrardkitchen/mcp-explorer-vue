@@ -14,6 +14,9 @@ export const chatApi = {
   getMessages: (sessionId: string) =>
     apiClient.get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`).then(r => r.data),
 
+  resolveToolApproval: (approvalRequestId: string, approved: boolean) =>
+    apiClient.post(`/chat/approvals/${encodeURIComponent(approvalRequestId)}`, { approved }),
+
   /**
    * SSE streaming: posts a message and returns an EventSource-like async iterator.
    * Uses fetch + ReadableStream so we can POST with a body (EventSource doesn't support POST).

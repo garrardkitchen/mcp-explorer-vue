@@ -8,8 +8,10 @@ public sealed class ChatMessage
     public DateTime TimestampUtc { get; init; } = DateTime.UtcNow;
     public string? ToolCallName { get; set; }
     public string? ToolCallParameters { get; set; }
+    public string? ToolResult { get; set; }
     public string? ConnectionName { get; set; }
     public string? ModelName { get; set; }
+    public string? ProviderResponseId { get; set; }
     public ChatTokenUsage? TokenUsage { get; set; }
     public int? ThinkingMilliseconds { get; set; }
     public List<SensitiveSegment> SensitiveSegments { get; init; } = [];

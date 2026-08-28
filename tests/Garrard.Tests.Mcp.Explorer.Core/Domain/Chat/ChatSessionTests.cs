@@ -124,6 +124,7 @@ public class ChatSessionTests
     [InlineData(ChatStreamEventType.Token)]
     [InlineData(ChatStreamEventType.ToolCall)]
     [InlineData(ChatStreamEventType.ToolResult)]
+    [InlineData(ChatStreamEventType.ApprovalRequest)]
     [InlineData(ChatStreamEventType.Usage)]
     [InlineData(ChatStreamEventType.Done)]
     [InlineData(ChatStreamEventType.Error)]

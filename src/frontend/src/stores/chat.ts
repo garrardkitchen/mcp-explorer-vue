@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref, nextTick } from 'vue'
 import { chatApi } from '@/api/chat'
-import type { ChatSession, ChatMessage, ChatTokenUsage } from '@/api/types'
+import type { ChatSession, ChatMessage, ChatTokenUsage, FoundryToolApprovalRequest } from '@/api/types'
 
 export const useChatStore = defineStore('chat', () => {
   const sessions = ref<ChatSession[]>([])
@@ -13,6 +13,8 @@ export const useChatStore = defineStore('chat', () => {
   const thinkingMs = ref(0)
   const error = ref<string | null>(null)
   const lastUsage = ref<ChatTokenUsage | null>(null)
+  const pendingToolApproval = ref<FoundryToolApprovalRequest | null>(null)
+  const resolvingToolApproval = ref(false)
 
   let _thinkingInterval: ReturnType<typeof setInterval> | null = null
   let _streamAbort: AbortController | null = null
@@ -61,6 +63,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent.value = ''
     thinkingMs.value = 0
     lastUsage.value = null
+    pendingToolApproval.value = null
 
     const paramsJson = promptInvocationParams && Object.keys(promptInvocationParams).length
       ? JSON.stringify(promptInvocationParams)
@@ -90,6 +93,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Track accumulated data for the final assistant message
     let assistantId: string | null = null
+    let assistantProviderResponseId: string | null = null
     let assistantThinkingMs: number | null = null
     let assistantTokenUsage: ChatTokenUsage | null = null
     let assistantContent = ''
@@ -114,6 +118,7 @@ export const useChatStore = defineStore('chat', () => {
           assistantContent += evt.text
           streamingContent.value = assistantContent
         } else if (evt.type === 'tool-call') {
+          pendingToolApproval.value = null
           // Push tool call message — it appears above the streaming placeholder in the DOM
           const toolMsg: ChatMessage = {
             id: crypto.randomUUID(),
@@ -127,11 +132,26 @@ export const useChatStore = defineStore('chat', () => {
           }
           messages.value.push(toolMsg)
           await nextTick() // flush DOM so tool call renders immediately
+        } else if (evt.type === 'tool-result') {
+          const toolMsg = [...messages.value].reverse().find(message =>
+            message.role === 'system'
+            && message.toolCallName === evt.toolName
+            && message.connectionName === evt.connectionName
+            && !message.toolResult)
+          if (toolMsg) toolMsg.toolResult = evt.toolResult
+        } else if (evt.type === 'approval-request' && evt.approvalRequestId && evt.toolName) {
+          pendingToolApproval.value = {
+            approvalRequestId: evt.approvalRequestId,
+            serverLabel: evt.serverLabel,
+            toolName: evt.toolName,
+            toolParameters: evt.toolParameters,
+          }
         } else if (evt.type === 'usage' && evt.usage) {
           assistantTokenUsage = evt.usage
           lastUsage.value = evt.usage
         } else if (evt.type === 'done') {
           if (evt.messageId) assistantId = evt.messageId
+          if (evt.providerResponseId) assistantProviderResponseId = evt.providerResponseId
         } else if (evt.type === 'error') {
           error.value = evt.errorMessage ?? 'Unknown streaming error'
         }
@@ -148,12 +168,15 @@ export const useChatStore = defineStore('chat', () => {
           content: assistantContent,
           timestampUtc: new Date().toISOString(),
           modelName,
+          providerResponseId: assistantProviderResponseId ?? undefined,
           thinkingMilliseconds: assistantThinkingMs ?? undefined,
           tokenUsage: assistantTokenUsage ?? undefined,
         })
       }
       streaming.value = false
       streamingContent.value = ''
+      pendingToolApproval.value = null
+      resolvingToolApproval.value = false
       if (_thinkingInterval) { clearInterval(_thinkingInterval); _thinkingInterval = null }
       // Refresh session list to update message count & lastActivityUtc
       await loadSessions()
@@ -162,6 +185,17 @@ export const useChatStore = defineStore('chat', () => {
 
   function cancelStream() {
     _streamAbort?.abort()
+  }
+
+  async function resolveToolApproval(approved: boolean) {
+    if (!pendingToolApproval.value || resolvingToolApproval.value) return
+    resolvingToolApproval.value = true
+    try {
+      await chatApi.resolveToolApproval(pendingToolApproval.value.approvalRequestId, approved)
+      pendingToolApproval.value = null
+    } finally {
+      resolvingToolApproval.value = false
+    }
   }
 
   async function clearMessages() {
@@ -176,7 +210,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     sessions, activeSessionId, messages, streaming,
-    streamingContent, thinkingMs, error, lastUsage,
-    loadSessions, createSession, deleteSession, selectSession, sendMessage, cancelStream, clearMessages,
+    streamingContent, thinkingMs, error, lastUsage, pendingToolApproval, resolvingToolApproval,
+    loadSessions, createSession, deleteSession, selectSession, sendMessage, cancelStream, resolveToolApproval, clearMessages,
   }
 })
