@@ -14,15 +14,14 @@ import Tag from 'primevue/tag'
 import Skeleton from 'primevue/skeleton'
 import Checkbox from 'primevue/checkbox'
 import ConfirmDialog from 'primevue/confirmdialog'
-import SelectButton from 'primevue/selectbutton'
 import { useConnectionsStore } from '@/stores/connections'
 import { connectionsApi } from '@/api/connections'
 import { apiClient } from '@/api/client'
 import type { CertificateReference, ConnectionDefinition, ConnectionGroup, AzureAccountInfo, AzureAppRegistration, AzureSubscription, ConnectionHeader } from '@/api/types'
 import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
-import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
-import CertificateCredentialPanel from '@/components/certificates/CertificateCredentialPanel.vue'
+import AzureCredentialSourcePanel from '@/components/connections/AzureCredentialSourcePanel.vue'
+import { inferAzureCredentialSource, type AzureCredentialSource } from '@/components/connections/azureCredentialSource'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -256,7 +255,8 @@ function openCreate() {
   editMode.value = false; originalName.value = ''
   form.value = blankForm()
   selectedSubscriptionId.value = undefined
-  azureCredentialType.value = 'secret'
+  azureCredentialSource.value = 'paste'
+  oauthCredentialSource.value = 'paste'
   showDialog.value = true
 }
 
@@ -312,13 +312,10 @@ function onAuthModeChange() {
   ensureAuthOptionModels()
 }
 
-// ── Azure credential type (secret vs certificate) ───────────────────────────
+// ── Azure / OAuth credential source (paste | Key Vault | certificate) ───────
 
-const azureCredentialType = ref<'secret' | 'certificate'>('secret')
-const credentialTypeOptions = [
-  { label: '🔑 Client Secret', value: 'secret' },
-  { label: '📜 Certificate', value: 'certificate' },
-]
+const azureCredentialSource = ref<AzureCredentialSource>('paste')
+const oauthCredentialSource = ref<AzureCredentialSource>('paste')
 
 const certificateRefModel = computed<CertificateReference | null>({
   get: () => form.value.azureCredentials?.certificateRef ?? null,
@@ -328,8 +325,18 @@ const certificateRefModel = computed<CertificateReference | null>({
   },
 })
 
+
+const oauthClientSecretModel = computed<string>({
+  get: () => form.value.oAuthOptions?.clientSecret ?? '',
+  set: (value) => {
+    if (form.value.oAuthOptions)
+      form.value.oAuthOptions = { ...form.value.oAuthOptions, clientSecret: value }
+  },
+})
+
 function syncCredentialTypeFromForm() {
-  azureCredentialType.value = form.value.azureCredentials?.certificateRef ? 'certificate' : 'secret'
+  azureCredentialSource.value = inferAzureCredentialSource(form.value.azureCredentials, true)
+  oauthCredentialSource.value = inferAzureCredentialSource(form.value.oAuthOptions, false)
 }
 
 // ── Azure Assist ─────────────────────────────────────────────────────────────
@@ -375,19 +382,21 @@ async function save() {
   }
   if (form.value.authenticationMode === 'AzureClientCredentials') {
     const az = form.value.azureCredentials
-    if (azureCredentialType.value === 'certificate') {
+    if (azureCredentialSource.value === 'certificate') {
       if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.certificateRef?.certificateName || !az?.scope?.trim()) {
         toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, a Certificate, and Scope are required for certificate authentication', life: 4000 }); return
       }
-      // Certificate mode: make sure no secret/KV reference is persisted alongside
       form.value.azureCredentials = { ...az, clientSecret: '', keyVaultSecretRef: undefined }
-    } else {
-      const hasSecret = !!az?.clientSecret?.trim() || !!az?.keyVaultSecretRef
-      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !hasSecret || !az?.scope?.trim()) {
-        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret (or Key Vault reference) and Scope are required for Azure Client Credentials', life: 4000 }); return
+    } else if (azureCredentialSource.value === 'keyVault') {
+      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.keyVaultSecretRef || !az?.scope?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, a Key Vault secret, and Scope are required for Azure Client Credentials', life: 4000 }); return
       }
-      // Secret mode: drop any certificate reference left over from a mode switch
-      form.value.azureCredentials = { ...az, certificateRef: null }
+      form.value.azureCredentials = { ...az, clientSecret: '', certificateRef: null }
+    } else {
+      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.clientSecret?.trim() || !az?.scope?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret, and Scope are required for Azure Client Credentials', life: 4000 }); return
+      }
+      form.value.azureCredentials = { ...az, keyVaultSecretRef: undefined, certificateRef: null }
     }
   }
   if (form.value.authenticationMode === 'OAuth') {
@@ -683,32 +692,12 @@ onMounted(load)
             <InputText v-model="form.azureCredentials!.scope" class="w-full" />
           </div>
           <div class="form-field full-width">
-            <label>Credential Type</label>
-            <SelectButton
-              v-model="azureCredentialType"
-              :options="credentialTypeOptions"
-              optionLabel="label"
-              optionValue="value"
-              :allowEmpty="false"
-            />
-          </div>
-          <div class="form-field" v-if="azureCredentialType === 'secret'">
-            <label>Client Secret</label>
-            <Password
-              v-if="!form.azureCredentials!.keyVaultSecretRef"
-              v-model="form.azureCredentials!.clientSecret"
-              :feedback="false"
-              toggleMask
-              class="w-full"
-            />
-            <KeyVaultSecretPicker
-              v-model="form.azureCredentials!.keyVaultSecretRef"
-              :subscriptionId="selectedSubscriptionId"
-            />
-          </div>
-          <div class="form-field full-width" v-else>
-            <CertificateCredentialPanel
-              v-model="certificateRefModel"
+            <AzureCredentialSourcePanel
+              v-model:source="azureCredentialSource"
+              v-model:client-secret="form.azureCredentials!.clientSecret"
+              v-model:key-vault-secret-ref="form.azureCredentials!.keyVaultSecretRef"
+              v-model:certificate-ref="certificateRefModel"
+              :subscription-id="selectedSubscriptionId"
               :client-id="form.azureCredentials!.clientId"
               :tenant-id="form.azureCredentials!.tenantId"
               :scope="form.azureCredentials!.scope"
@@ -737,18 +726,14 @@ onMounted(load)
             <InputText v-model="form.oAuthOptions!.clientId" class="w-full" />
             <AppRegistrationPicker :clientId="form.oAuthOptions!.clientId" @selected="onOAuthAppRegistrationSelected" />
           </div>
-          <div class="form-field">
-            <label>Client Secret <span class="optional">(optional)</span></label>
-            <Password
-              v-if="!form.oAuthOptions!.keyVaultSecretRef"
-              v-model="form.oAuthOptions!.clientSecret!"
-              :feedback="false"
-              toggleMask
-              class="w-full"
-            />
-            <KeyVaultSecretPicker
-              v-model="form.oAuthOptions!.keyVaultSecretRef"
-              :subscriptionId="selectedSubscriptionId"
+          <div class="form-field full-width">
+            <AzureCredentialSourcePanel
+              v-model:source="oauthCredentialSource"
+              v-model:client-secret="oauthClientSecretModel"
+              v-model:key-vault-secret-ref="form.oAuthOptions!.keyVaultSecretRef"
+              :allow-certificate="false"
+              :secret-optional="true"
+              :subscription-id="selectedSubscriptionId"
             />
           </div>
           <div class="form-field">
