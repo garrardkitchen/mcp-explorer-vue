@@ -1399,6 +1399,7 @@ onMounted(async () => {
               :tenant-id="form.azureCredentials!.tenantId"
               :scope="form.azureCredentials!.scope"
               :default-name="form.name"
+              storage-context="httpApi"
             />
           </div>
           <div class="form-row">

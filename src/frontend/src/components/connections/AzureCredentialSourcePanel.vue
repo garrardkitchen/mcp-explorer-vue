@@ -18,6 +18,8 @@ const props = withDefaults(defineProps<{
   allowCertificate?: boolean
   /** Soften copy when the secret itself is optional (OAuth). */
   secretOptional?: boolean
+  /** Select wording and resolution timing for the persisted credential. */
+  storageContext?: 'connection' | 'httpApi'
   clientId?: string
   tenantId?: string
   scope?: string
@@ -25,6 +27,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   allowCertificate: true,
   secretOptional: false,
+  storageContext: 'connection',
   clientSecret: '',
 })
 
@@ -64,6 +67,9 @@ const clientSecretModel = computed({
   get: () => props.clientSecret ?? '',
   set: (value: string) => emit('update:clientSecret', value),
 })
+
+const storageTarget = computed(() => props.storageContext === 'httpApi' ? 'HTTP API definition' : 'connection')
+const resolutionTime = computed(() => props.storageContext === 'httpApi' ? 'invoke' : 'connect')
 
 /** Clear inactive sources whenever the user switches the SelectButton. */
 watch(
@@ -118,10 +124,10 @@ watch(
       />
       <small class="csp-helper">
         <template v-if="secretOptional">
-          Stored encrypted with the connection when provided. Prefer Key Vault for production.
+          Stored encrypted with the {{ storageTarget }} when provided. Prefer Key Vault for production.
         </template>
         <template v-else>
-          Stored encrypted with the connection. Prefer Key Vault or a certificate for production.
+          Stored encrypted with the {{ storageTarget }}. Prefer Key Vault or a certificate for production.
         </template>
       </small>
     </div>
@@ -133,7 +139,7 @@ watch(
         :subscriptionId="subscriptionId"
       />
       <small class="csp-helper">
-        Only the vault and secret names are stored. The secret value is resolved at connect time via DefaultAzureCredential.
+        Only the vault and secret names are stored. The secret value is resolved at {{ resolutionTime }} time via DefaultAzureCredential.
       </small>
     </div>
 
