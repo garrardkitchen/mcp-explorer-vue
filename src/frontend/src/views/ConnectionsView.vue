@@ -404,6 +404,12 @@ async function save() {
     if (!oa?.clientId?.trim() || !oa?.redirectUri?.trim() || !oa?.scopes?.trim()) {
       toast.add({ severity: 'warn', summary: 'Validation', detail: 'Client ID, Redirect URI and Scopes are required for OAuth', life: 4000 }); return
     }
+    // Enforce Paste | Key Vault exclusivity on save (panel watch may not run on legacy dual-state loads)
+    if (oauthCredentialSource.value === 'keyVault') {
+      form.value.oAuthOptions = { ...oa, clientSecret: undefined }
+    } else {
+      form.value.oAuthOptions = { ...oa, keyVaultSecretRef: undefined }
+    }
   }
   saving.value = true
   // Persist the selected subscription so it's restored on next edit
