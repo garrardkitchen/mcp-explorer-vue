@@ -15,7 +15,6 @@ import Tag from 'primevue/tag'
 import Skeleton from 'primevue/skeleton'
 import Checkbox from 'primevue/checkbox'
 import ConfirmDialog from 'primevue/confirmdialog'
-import SelectButton from 'primevue/selectbutton'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
@@ -26,8 +25,8 @@ import SparklineChart from '@/components/common/SparklineChart.vue'
 import type { SparklineBar } from '@/components/common/SparklineChart.vue'
 import AzureContextBanner from '@/components/connections/AzureContextBanner.vue'
 import AppRegistrationPicker from '@/components/connections/AppRegistrationPicker.vue'
-import KeyVaultSecretPicker from '@/components/connections/KeyVaultSecretPicker.vue'
-import CertificateCredentialPanel from '@/components/certificates/CertificateCredentialPanel.vue'
+import AzureCredentialSourcePanel from '@/components/connections/AzureCredentialSourcePanel.vue'
+import { inferAzureCredentialSource, type AzureCredentialSource } from '@/components/connections/azureCredentialSource'
 import { useHttpApisStore } from '@/stores/httpApis'
 import { httpApisApi } from '@/api/httpApis'
 import { systemApi } from '@/api/system'
@@ -205,13 +204,9 @@ function onAuthModeChanged() {
   ensureAuthOptionModels()
 }
 
-// ── Azure credential type (secret vs certificate) ───────────────────────────
+// ── Azure credential source (paste | Key Vault | certificate) ───────────────
 
-const azureCredentialType = ref<'secret' | 'certificate'>('secret')
-const credentialTypeOptions = [
-  { label: '🔑 Client Secret', value: 'secret' },
-  { label: '📜 Certificate', value: 'certificate' },
-]
+const azureCredentialSource = ref<AzureCredentialSource>('paste')
 
 const certificateRefModel = computed<CertificateReference | null>({
   get: () => form.value.azureCredentials?.certificateRef ?? null,
@@ -222,7 +217,7 @@ const certificateRefModel = computed<CertificateReference | null>({
 })
 
 function syncCredentialTypeFromForm() {
-  azureCredentialType.value = form.value.azureCredentials?.certificateRef ? 'certificate' : 'secret'
+  azureCredentialSource.value = inferAzureCredentialSource(form.value.azureCredentials, true)
 }
 
 function onAzureAccountLoaded(account: AzureAccountInfo | null) {
@@ -257,7 +252,7 @@ function openCreate() {
   form.value = blankForm()
   normalizeAuthorizationHeaders(form.value.headers as HttpApiEditorHeader[])
   selectedSubscriptionId.value = undefined
-  azureCredentialType.value = 'secret'
+  azureCredentialSource.value = 'paste'
   originalId.value = ''
   editMode.value = false
   showDialog.value = true
@@ -284,17 +279,21 @@ async function saveForm() {
   }
   if (form.value.authenticationMode === 'AzureClientCredentials') {
     const az = form.value.azureCredentials
-    if (azureCredentialType.value === 'certificate') {
+    if (azureCredentialSource.value === 'certificate') {
       if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.certificateRef?.certificateName || !az?.scope?.trim()) {
         toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, a Certificate, and Scope are required for certificate authentication', life: 4000 }); return
       }
       form.value.azureCredentials = { ...az, clientSecret: '', keyVaultSecretRef: undefined }
-    } else {
-      const hasSecret = !!az?.clientSecret?.trim() || !!az?.keyVaultSecretRef
-      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !hasSecret || !az?.scope?.trim()) {
-        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret (or Key Vault reference) and Scope are required for Azure Client Credentials', life: 4000 }); return
+    } else if (azureCredentialSource.value === 'keyVault') {
+      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.keyVaultSecretRef || !az?.scope?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, a Key Vault secret, and Scope are required for Azure Client Credentials', life: 4000 }); return
       }
-      form.value.azureCredentials = { ...az, certificateRef: null }
+      form.value.azureCredentials = { ...az, clientSecret: '', certificateRef: null }
+    } else {
+      if (!az?.tenantId?.trim() || !az?.clientId?.trim() || !az?.clientSecret?.trim() || !az?.scope?.trim()) {
+        toast.add({ severity: 'warn', summary: 'Validation', detail: 'Tenant ID, Client ID, Client Secret, and Scope are required for Azure Client Credentials', life: 4000 }); return
+      }
+      form.value.azureCredentials = { ...az, keyVaultSecretRef: undefined, certificateRef: null }
     }
   }
   ensureAuthOptionModels()
@@ -1390,36 +1389,17 @@ onMounted(async () => {
             <InputText v-model="form.azureCredentials!.scope" placeholder="https://..." class="w-full" />
           </div>
           <div class="form-row">
-            <label>Credential Type</label>
-            <SelectButton
-              v-model="azureCredentialType"
-              :options="credentialTypeOptions"
-              optionLabel="label"
-              optionValue="value"
-              :allowEmpty="false"
-            />
-          </div>
-          <div v-if="azureCredentialType === 'secret'" class="form-row">
-            <label>Client Secret</label>
-            <Password
-              v-if="!form.azureCredentials!.keyVaultSecretRef"
-              v-model="form.azureCredentials!.clientSecret"
-              :feedback="false"
-              toggleMask
-              class="w-full"
-            />
-            <KeyVaultSecretPicker
-              v-model="form.azureCredentials!.keyVaultSecretRef"
-              :subscriptionId="selectedSubscriptionId"
-            />
-          </div>
-          <div v-else class="form-row">
-            <CertificateCredentialPanel
-              v-model="certificateRefModel"
+            <AzureCredentialSourcePanel
+              v-model:source="azureCredentialSource"
+              v-model:client-secret="form.azureCredentials!.clientSecret"
+              v-model:key-vault-secret-ref="form.azureCredentials!.keyVaultSecretRef"
+              v-model:certificate-ref="certificateRefModel"
+              :subscription-id="selectedSubscriptionId"
               :client-id="form.azureCredentials!.clientId"
               :tenant-id="form.azureCredentials!.tenantId"
               :scope="form.azureCredentials!.scope"
               :default-name="form.name"
+              storage-context="httpApi"
             />
           </div>
           <div class="form-row">
